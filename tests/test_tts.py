@@ -151,9 +151,14 @@ def test_apply_reading_overrides() -> None:
 
 def test_prepare_tts_text_strips_japanese_quotes() -> None:
     assert (
-        tts_util.prepare_tts_text("「聖書」『旧約』《新約》“Test”'OK'〝注〟")
-        == "聖書旧約新約TestOK注"
+        tts_util.prepare_tts_text("「聖書」『旧約』《新約》“Test” 'OK'〝注〟don't")
+        == "聖書旧約新約Test OK注don't"
     )
+
+
+def test_prepare_tts_text_normalizes_width_and_format_chars() -> None:
+    assert tts_util.prepare_tts_text("ＡＢＣ　１２３") == "ABC 123"
+    assert tts_util.prepare_tts_text("a\u200bb") == "ab"
 
 
 def test_load_reading_overrides(tmp_path: Path) -> None:
