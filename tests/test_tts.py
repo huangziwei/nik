@@ -151,6 +151,7 @@ def test_apply_reading_overrides() -> None:
 
 def test_load_reading_overrides(tmp_path: Path) -> None:
     payload = {
+        "global": [{"base": "妻子", "reading": "さいし"}],
         "chapters": {
             "0001-test": {
                 "replacements": [{"base": "漢字", "reading": "かんじ"}],
@@ -160,8 +161,16 @@ def test_load_reading_overrides(tmp_path: Path) -> None:
     }
     path = tmp_path / "reading-overrides.json"
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    overrides = tts_util._load_reading_overrides(tmp_path)
+    global_overrides, overrides = tts_util._load_reading_overrides(tmp_path)
+    assert global_overrides == [{"base": "妻子", "reading": "さいし"}]
     assert overrides == {"0001-test": [{"base": "漢字", "reading": "かんじ"}]}
+
+
+def test_merge_reading_overrides_prefers_chapter() -> None:
+    global_overrides = [{"base": "山田太一", "reading": "やまだたいち"}]
+    chapter_overrides = [{"base": "山田太一", "reading": "やまだたいいち"}]
+    merged = tts_util._merge_reading_overrides(global_overrides, chapter_overrides)
+    assert tts_util.apply_reading_overrides("山田太一", merged) == "やまだたいいち"
 
 
 def test_select_backend_prefers_mlx_on_apple(monkeypatch) -> None:
@@ -175,6 +184,36 @@ def test_select_backend_falls_back_to_torch(monkeypatch) -> None:
     monkeypatch.setattr(tts_util, "_has_mlx_audio", lambda: False)
     with pytest.raises(ValueError):
         tts_util._select_backend("auto")
+
+
+def test_normalize_lang_code() -> None:
+    assert tts_util._normalize_lang_code("Japanese") == "ja"
+    assert tts_util._normalize_lang_code("ja") == "ja"
+    assert tts_util._normalize_lang_code("EN") == "en"
+    assert tts_util._normalize_lang_code("zh-cn") == "zh"
+    assert tts_util._normalize_lang_code("") is None
+
+
+def test_generate_audio_mlx_passes_lang_code() -> None:
+    class DummyModel:
+        def __init__(self) -> None:
+            self.kwargs = None
+
+        def generate(self, text, lang_code=None, voice=None, **kwargs):
+            self.kwargs = {"lang_code": lang_code, "voice": voice}
+            return []
+
+    model = DummyModel()
+    config = voice_util.VoiceConfig(
+        name="jp",
+        ref_audio="voice.wav",
+        ref_text="こんにちは",
+        language="Japanese",
+    )
+    audio, rate = tts_util._generate_audio_mlx(model, "テスト", config)
+    assert audio == []
+    assert rate == 24000
+    assert model.kwargs["lang_code"] == "ja"
 
 
 def test_generate_audio_falls_back_to_generate() -> None:

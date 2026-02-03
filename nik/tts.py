@@ -41,6 +41,8 @@ _CLOSE_PUNCT = set("」』）】］〉》」』”’\"'")
 DEFAULT_TORCH_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 DEFAULT_MLX_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"
 MIN_MLX_AUDIO_VERSION = "0.3.1"
+FORCED_LANGUAGE = "Japanese"
+FORCED_LANG_CODE = "ja"
 
 
 @dataclass(frozen=True)
@@ -193,6 +195,24 @@ def _mlx_kwarg(name: str, signature: inspect.Signature) -> bool:
     return name in signature.parameters
 
 
+def _normalize_lang_code(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    if not cleaned:
+        return None
+    lowered = cleaned.lower()
+    if lowered in {"japanese", "ja", "jp"}:
+        return "ja"
+    if lowered in {"english", "en"}:
+        return "en"
+    if lowered in {"chinese", "zh", "zh-cn", "zh-hans", "mandarin"}:
+        return "zh"
+    if lowered in {"korean", "ko"}:
+        return "ko"
+    return lowered
+
+
 def _generate_audio_mlx(
     model: object,
     text: str,
@@ -211,6 +231,11 @@ def _generate_audio_mlx(
     if sig and voice_config:
         if voice_config.name and _mlx_kwarg("voice", sig):
             kwargs["voice"] = voice_config.name
+        lang_code = FORCED_LANG_CODE
+        if _mlx_kwarg("lang_code", sig):
+            kwargs["lang_code"] = lang_code
+        elif _mlx_kwarg("language", sig):
+            kwargs["language"] = lang_code
         if voice_config.ref_audio:
             for key in ("ref_audio", "reference_audio", "speaker_wav", "speaker_audio"):
                 if _mlx_kwarg(key, sig):
@@ -221,6 +246,12 @@ def _generate_audio_mlx(
                 if _mlx_kwarg(key, sig):
                     kwargs[key] = voice_config.ref_text
                     break
+    elif sig:
+        lang_code = FORCED_LANG_CODE
+        if _mlx_kwarg("lang_code", sig):
+            kwargs["lang_code"] = lang_code
+        elif _mlx_kwarg("language", sig):
+            kwargs["language"] = lang_code
 
     outputs = generate(text, **kwargs)
     if isinstance(outputs, np.ndarray):
@@ -421,39 +452,75 @@ def _load_voice_map(path: Optional[Path]) -> dict:
     }
 
 
-def _load_reading_overrides(book_dir: Path) -> dict[str, List[dict[str, str]]]:
+def _parse_reading_entries(raw: object) -> List[dict[str, str]]:
+    replacements: list[dict[str, str]] = []
+    if isinstance(raw, dict):
+        raw_replacements = raw.get("replacements") or raw.get("entries") or []
+    elif isinstance(raw, list):
+        raw_replacements = raw
+    else:
+        raw_replacements = []
+    for item in raw_replacements:
+        if isinstance(item, dict):
+            base = str(item.get("base") or "").strip()
+            reading = str(item.get("reading") or item.get("kana") or "").strip()
+        elif isinstance(item, (list, tuple)) and len(item) >= 2:
+            base = str(item[0] or "").strip()
+            reading = str(item[1] or "").strip()
+        else:
+            continue
+        if not base or not reading:
+            continue
+        replacements.append({"base": base, "reading": reading})
+    return replacements
+
+
+def _load_reading_overrides(
+    book_dir: Path,
+) -> tuple[List[dict[str, str]], dict[str, List[dict[str, str]]]]:
     path = book_dir / "reading-overrides.json"
     if not path.exists():
-        return {}
+        return [], {}
     data = json.loads(path.read_text(encoding="utf-8"))
-    if isinstance(data, dict) and "chapters" in data:
-        data = data.get("chapters") or {}
-    if not isinstance(data, dict):
-        return {}
+    global_entries: List[dict[str, str]] = []
+    chapters_data: object = data
+    if isinstance(data, dict):
+        if "global" in data:
+            global_entries = _parse_reading_entries(data.get("global"))
+        if "default" in data and not global_entries:
+            global_entries = _parse_reading_entries(data.get("default"))
+        if "*" in data and not global_entries:
+            global_entries = _parse_reading_entries(data.get("*"))
+        if "chapters" in data:
+            chapters_data = data.get("chapters") or {}
+    if not isinstance(chapters_data, dict):
+        return global_entries, {}
     overrides: dict[str, List[dict[str, str]]] = {}
-    for chapter_id, entry in data.items():
-        replacements: list[dict[str, str]] = []
-        if isinstance(entry, dict):
-            raw_replacements = entry.get("replacements") or entry.get("entries") or []
-        elif isinstance(entry, list):
-            raw_replacements = entry
-        else:
-            raw_replacements = []
-        for item in raw_replacements:
-            if isinstance(item, dict):
-                base = str(item.get("base") or "").strip()
-                reading = str(item.get("reading") or item.get("kana") or "").strip()
-            elif isinstance(item, (list, tuple)) and len(item) >= 2:
-                base = str(item[0] or "").strip()
-                reading = str(item[1] or "").strip()
-            else:
-                continue
-            if not base or not reading:
-                continue
-            replacements.append({"base": base, "reading": reading})
+    for chapter_id, entry in chapters_data.items():
+        replacements = _parse_reading_entries(entry)
         if replacements:
             overrides[str(chapter_id)] = replacements
-    return overrides
+    return global_entries, overrides
+
+
+def _merge_reading_overrides(
+    global_overrides: Sequence[dict[str, str]],
+    chapter_overrides: Sequence[dict[str, str]],
+) -> List[dict[str, str]]:
+    if not global_overrides and not chapter_overrides:
+        return []
+    merged: dict[str, str] = {}
+    for item in global_overrides:
+        base = item.get("base", "")
+        reading = item.get("reading", "")
+        if base and reading:
+            merged[base] = reading
+    for item in chapter_overrides:
+        base = item.get("base", "")
+        reading = item.get("reading", "")
+        if base and reading:
+            merged[base] = reading
+    return [{"base": base, "reading": reading} for base, reading in merged.items()]
 
 
 def apply_reading_overrides(
@@ -656,10 +723,11 @@ def _prepare_voice_prompt(
     ref_text = voice.ref_text
     if not ref_text and not voice.x_vector_only_mode:
         raise ValueError("Voice config is missing ref_text.")
+    language = FORCED_LANGUAGE
     kwargs: Dict[str, Any] = {
         "ref_audio": str(voice.audio_path),
         "ref_text": ref_text,
-        "language": voice.language,
+        "language": language,
         "x_vector_only_mode": voice.x_vector_only_mode,
     }
     create_fn = model.create_voice_clone_prompt
@@ -669,7 +737,7 @@ def _prepare_voice_prompt(
     else:
         filtered = {k: v for k, v in kwargs.items() if k in sig.parameters}
     prompt = create_fn(**filtered)
-    return prompt, voice.language
+    return prompt, language
 
 
 def _call_with_supported_kwargs(fn, kwargs: Dict[str, Any]) -> Any:
@@ -800,7 +868,7 @@ def synthesize_book(
     chapters = load_book_chapters(book_dir)
     backend_name = _select_backend(backend)
     model_name = _resolve_model_name(model_name, backend_name)
-    reading_overrides = _load_reading_overrides(book_dir)
+    global_overrides, reading_overrides = _load_reading_overrides(book_dir)
     if out_dir is None:
         out_dir = book_dir / "tts"
     if base_dir is None:
@@ -939,6 +1007,9 @@ def synthesize_book(
             language = voice_languages.get(voice_id)
             voice_config = voice_configs.get(voice_id)
             chapter_overrides = reading_overrides.get(chapter_id, [])
+            merged_overrides = _merge_reading_overrides(
+                global_overrides, chapter_overrides
+            )
 
             for chunk_idx, chunk_text in enumerate(chunks, start=1):
                 seg_path = chapter_seg_dir / f"{chunk_idx:06d}.wav"
@@ -957,7 +1028,7 @@ def synthesize_book(
                     progress.advance(overall_task, 1)
                     continue
 
-                tts_source = apply_reading_overrides(chunk_text, chapter_overrides)
+                tts_source = apply_reading_overrides(chunk_text, merged_overrides)
                 tts_text = prepare_tts_text(tts_source)
                 if not tts_text:
                     ch_entry["durations_ms"][chunk_idx - 1] = 0
@@ -1193,10 +1264,11 @@ def synthesize_chunk(
     override_dir = out_dir.parent
     if (out_dir / "reading-overrides.json").exists():
         override_dir = out_dir
-    reading_overrides = _load_reading_overrides(override_dir)
+    global_overrides, reading_overrides = _load_reading_overrides(override_dir)
     chapter_overrides = reading_overrides.get(chapter_id, [])
+    merged_overrides = _merge_reading_overrides(global_overrides, chapter_overrides)
     tts_text = prepare_tts_text(
-        apply_reading_overrides(chunk_text, chapter_overrides)
+        apply_reading_overrides(chunk_text, merged_overrides)
     )
     seg_path = out_dir / "segments" / chapter_id / f"{chunk_index + 1:06d}.wav"
     seg_path.parent.mkdir(parents=True, exist_ok=True)

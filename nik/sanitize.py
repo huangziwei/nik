@@ -689,22 +689,6 @@ def sanitize_book(
     dropped = 0
     clean_entries: List[dict] = []
 
-    source_epub = str(toc.get("source_epub", "")) if isinstance(toc, dict) else ""
-    source_suffix = Path(source_epub).suffix.lower()
-    include_title = source_suffix != ".txt"
-    title_text = format_title_chapter(metadata) if include_title else ""
-    if title_text:
-        title_path = clean_dir / "0000-title.txt"
-        title_path.write_text(title_text + "\n", encoding="utf-8")
-        clean_entries.append(
-            {
-                "index": 1,
-                "title": metadata.get("title") or "Title",
-                "path": title_path.relative_to(book_dir).as_posix(),
-                "source_index": 0,
-                "kind": "title",
-            }
-        )
 
     for entry in chapters:
         title = str(entry.get("title") or "").strip()
@@ -812,11 +796,6 @@ def sanitize_book(
             "total_chapters": len(report_entries),
             "dropped_chapters": dropped,
             "removed_by_pattern": pattern_stats,
-            "added_title_chapter": bool(title_text),
-        },
-        "title_chapter": {
-            "text": title_text,
-            "path": clean_entries[0]["path"] if title_text else "",
         },
         "chapters": [
             {

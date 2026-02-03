@@ -31,11 +31,11 @@ def _write_book(tmp_path: Path) -> Path:
 def test_sanitize_book_creates_clean_chapters(tmp_path: Path) -> None:
     book_dir = _write_book(tmp_path)
     written = sanitize_util.sanitize_book(book_dir=book_dir, overwrite=True)
-    assert written == 2
+    assert written == 1
     clean_path = book_dir / "clean" / "chapters" / "0001-chapter.txt"
     assert clean_path.exists()
     title_path = book_dir / "clean" / "chapters" / "0000-title.txt"
-    assert title_path.exists()
+    assert title_path.exists() is False
 
 
 def test_refresh_chunks_creates_manifest(tmp_path: Path) -> None:

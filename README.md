@@ -52,6 +52,26 @@ If the EPUB contains `<ruby>` tags, ingest will extract them into
 `reading-overrides.json`. These overrides are only applied at TTS time
 so the clean text stays unchanged.
 
+You can also add global overrides that apply to every chapter (useful for
+names or kanji-only words). Chapter-specific overrides win when the same
+base text appears in both:
+
+```json
+{
+  "global": [
+    { "base": "妻子", "reading": "さいし" },
+    { "base": "山田太一", "reading": "やまだたいいち" }
+  ],
+  "chapters": {
+    "0003-chapter": {
+      "replacements": [
+        { "base": "一日", "reading": "いちにち" }
+      ]
+    }
+  }
+}
+```
+
 ### 3) Prepare a voice clone
 ```bash
 uv run nik clone \

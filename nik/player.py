@@ -173,8 +173,33 @@ def _resolve_raw_path(book_dir: Path, raw_toc: dict, clean_entry: dict) -> Optio
 
 def _slug_from_title(title: str, fallback: str) -> str:
     base = title.strip() if title else fallback
-    slug = epub_util.slugify(base)
+    base = base or fallback or "book"
+    slug = _sanitize_title_for_path(base)
     return slug or "book"
+
+
+def _sanitize_title_for_path(value: str, max_len: int = 80) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = text.replace("/", " ").replace("\\", " ")
+    text = text.translate({ord(ch): " " for ch in ':*?"<>|'})
+    text = "".join(ch for ch in text if ch.isprintable() and ch != "\x00")
+    text = re.sub(r"\s+", " ", text).strip()
+    text = text.strip(".")
+    if len(text) > max_len:
+        text = text[:max_len].rstrip()
+    return text
+
+
+def _ensure_unique_slug(root_dir: Path, slug: str) -> str:
+    if not (root_dir / slug).exists():
+        return slug
+    for idx in range(2, 1000):
+        candidate = f"{slug}-{idx}"
+        if not (root_dir / candidate).exists():
+            return candidate
+    return f"{slug}-{int(time.time())}"
 
 
 def _source_type_from_toc(toc: dict) -> str:
@@ -369,6 +394,23 @@ def _sanitize_voice_map(payload: dict, repo_root: Path, fallback_default: str) -
                 continue
             chapters[str(key)] = voice
     return {"default": default_voice, "chapters": chapters}
+
+
+def _normalize_reading_overrides(raw: object) -> List[dict[str, str]]:
+    items = raw if isinstance(raw, list) else []
+    cleaned: List[dict[str, str]] = []
+    for item in items:
+        if isinstance(item, dict):
+            base = str(item.get("base") or "").strip()
+            reading = str(item.get("reading") or item.get("kana") or "").strip()
+        elif isinstance(item, (list, tuple)) and len(item) >= 2:
+            base = str(item[0] or "").strip()
+            reading = str(item[1] or "").strip()
+        else:
+            continue
+        if base and reading:
+            cleaned.append({"base": base, "reading": reading})
+    return cleaned
 
 
 def _load_voice_map(book_dir: Path, repo_root: Path) -> dict:
@@ -827,6 +869,11 @@ class CleanEditPayload(BaseModel):
     book_id: str
     chapter_index: int
     text: str
+
+
+class ReadingOverridesPayload(BaseModel):
+    book_id: str
+    overrides: List[dict] = []
 
 
 class PlaybackPayload(BaseModel):
@@ -1369,6 +1416,50 @@ def create_app(root_dir: Path) -> FastAPI:
         return _no_store(
             {"status": "ok", "chapter_index": payload.chapter_index, "tts_cleared": tts_cleared}
         )
+
+    @app.get("/api/reading-overrides")
+    def reading_overrides_get(book_id: str) -> JSONResponse:
+        book_dir = _resolve_book_dir(root_dir, book_id)
+        try:
+            global_overrides, _ = tts_util._load_reading_overrides(book_dir)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return _no_store({"book_id": book_id, "overrides": global_overrides})
+
+    @app.post("/api/reading-overrides")
+    def reading_overrides_save(payload: ReadingOverridesPayload) -> JSONResponse:
+        book_dir = _resolve_book_dir(root_dir, payload.book_id)
+        synth_job = jobs.get(payload.book_id)
+        if synth_job and synth_job.process.poll() is None:
+            raise HTTPException(
+                status_code=409, detail="Stop TTS before editing readings."
+            )
+        merge_job = merge_jobs.get(payload.book_id)
+        if merge_job and merge_job.process.poll() is None:
+            raise HTTPException(
+                status_code=409, detail="Stop merge before editing readings."
+            )
+        overrides = _normalize_reading_overrides(payload.overrides)
+        overrides_path = book_dir / "reading-overrides.json"
+        data: dict = {}
+        if overrides_path.exists():
+            try:
+                data = _load_json(overrides_path)
+            except Exception:
+                data = {}
+        if not isinstance(data, dict):
+            data = {}
+        now = int(time.time())
+        data.setdefault("created_unix", now)
+        data["updated_unix"] = now
+        data["global"] = overrides
+        overrides_path.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_json(overrides_path, data)
+        try:
+            tts_cleared = sanitize.refresh_chunks(book_dir=book_dir)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return _no_store({"status": "ok", "overrides": overrides, "tts_cleared": tts_cleared})
 
     @app.get("/api/synth/status")
     def synth_status(book_id: str) -> JSONResponse:
