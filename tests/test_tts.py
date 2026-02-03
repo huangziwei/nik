@@ -178,11 +178,8 @@ def test_merge_reading_overrides_prefers_chapter() -> None:
 def test_load_reading_overrides_includes_template(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    template_path = tmp_path / "template.json"
-    template_path.write_text(
-        json.dumps({"global": [{"base": "妻子", "reading": "さいし"}]}, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    template_path = tmp_path / "template.md"
+    template_path.write_text("# header\n妻子＝さいし\n", encoding="utf-8")
     monkeypatch.setattr(
         tts_util, "_template_reading_overrides_path", lambda: template_path
     )

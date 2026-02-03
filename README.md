@@ -54,7 +54,9 @@ so the clean text stays unchanged.
 
 You can also add global overrides that apply to every chapter (useful for
 names or kanji-only words). Chapter-specific overrides win when the same
-base text appears in both:
+base text appears in both. Global defaults live in
+`nik/templates/global-reading-overrides.md` and are merged with per-book
+overrides.
 
 ```json
 {

@@ -43,7 +43,7 @@ DEFAULT_MLX_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"
 MIN_MLX_AUDIO_VERSION = "0.3.1"
 FORCED_LANGUAGE = "Japanese"
 FORCED_LANG_CODE = "ja"
-READING_TEMPLATE_FILENAME = "global-reading-overrides.json"
+READING_TEMPLATE_FILENAME = "global-reading-overrides.md"
 
 
 @dataclass(frozen=True)
@@ -476,6 +476,34 @@ def _parse_reading_entries(raw: object) -> List[dict[str, str]]:
     return replacements
 
 
+def _parse_reading_overrides_text(text: str) -> List[dict[str, str]]:
+    replacements: list[dict[str, str]] = []
+    for line in (text or "").splitlines():
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        for prefix in ("- ", "* ", "• "):
+            if raw.startswith(prefix):
+                raw = raw[len(prefix) :].strip()
+                break
+        if not raw:
+            continue
+        if "＝" in raw:
+            base, reading = raw.split("＝", 1)
+        elif "=" in raw:
+            base, reading = raw.split("=", 1)
+        elif "\t" in raw:
+            base, reading = raw.split("\t", 1)
+        else:
+            continue
+        base = base.strip()
+        reading = reading.strip()
+        if not base or not reading:
+            continue
+        replacements.append({"base": base, "reading": reading})
+    return replacements
+
+
 def _template_reading_overrides_path() -> Path:
     return Path(__file__).parent / "templates" / READING_TEMPLATE_FILENAME
 
@@ -515,8 +543,8 @@ def _load_reading_overrides(
     if include_template:
         template_path = _template_reading_overrides_path()
         if template_path.exists():
-            template_data = json.loads(template_path.read_text(encoding="utf-8"))
-            global_entries, _ = _split_reading_overrides_data(template_data)
+            template_text = template_path.read_text(encoding="utf-8")
+            global_entries = _parse_reading_overrides_text(template_text)
 
     path = book_dir / "reading-overrides.json"
     if not path.exists():
