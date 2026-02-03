@@ -490,6 +490,46 @@ def _merge_output_path(book_dir: Path) -> Path:
     return library_dir / f"{book_dir.name}.m4b"
 
 
+def _list_m4b_parts(book_dir: Path) -> List[Path]:
+    library_dir = _m4b_library_dir(book_dir.parent)
+    pattern = f"{book_dir.name}.part*.m4b"
+    return sorted(library_dir.glob(pattern))
+
+
+def _delete_m4b_outputs(book_dir: Path) -> bool:
+    removed = False
+    base = _merge_output_path(book_dir)
+    if base.exists():
+        base.unlink()
+        removed = True
+    for path in _list_m4b_parts(book_dir):
+        if path.exists():
+            path.unlink()
+            removed = True
+    return removed
+
+
+def _merge_progress_data(tts_dir: Path) -> dict:
+    progress_path = tts_dir / "merge.progress.json"
+    if progress_path.exists():
+        return _load_json(progress_path)
+    part_paths = sorted(tts_dir.glob("merge.progress.part*.json"))
+    if part_paths:
+        return _load_json(part_paths[-1])
+    return {}
+
+
+def _clear_merge_progress(tts_dir: Path) -> None:
+    progress_path = tts_dir / "merge.progress.json"
+    if progress_path.exists():
+        progress_path.unlink()
+    for part_path in tts_dir.glob("merge.progress.part*.json"):
+        try:
+            part_path.unlink()
+        except OSError:
+            continue
+
+
 def _merge_ready(book_dir: Path) -> bool:
     manifest = _load_json(book_dir / "tts" / "manifest.json")
     if not manifest:
@@ -1005,9 +1045,7 @@ def create_app(root_dir: Path) -> FastAPI:
         merge_job = merge_jobs.get(payload.book_id)
         if merge_job and merge_job.process.poll() is None:
             raise HTTPException(status_code=409, detail="Stop merge before deleting.")
-        m4b_path = _merge_output_path(book_dir)
-        if m4b_path.exists():
-            m4b_path.unlink()
+        _delete_m4b_outputs(book_dir)
         if book_dir.exists():
             shutil.rmtree(book_dir)
         return _no_store({"status": "deleted", "book_id": payload.book_id})
@@ -1018,11 +1056,7 @@ def create_app(root_dir: Path) -> FastAPI:
         merge_job = merge_jobs.get(payload.book_id)
         if merge_job and merge_job.process.poll() is None:
             raise HTTPException(status_code=409, detail="Stop merge before deleting.")
-        m4b_path = _merge_output_path(book_dir)
-        removed = False
-        if m4b_path.exists():
-            m4b_path.unlink()
-            removed = True
+        removed = _delete_m4b_outputs(book_dir)
         return _no_store(
             {
                 "status": "deleted" if removed else "missing",
@@ -1859,6 +1893,7 @@ def create_app(root_dir: Path) -> FastAPI:
     def merge_status(book_id: str) -> JSONResponse:
         book_dir = _resolve_book_dir(root_dir, book_id)
         output_path = _merge_output_path(book_dir)
+        output_parts = _list_m4b_parts(book_dir)
         tts_dir = book_dir / "tts"
         progress_path = tts_dir / "merge.progress.json"
         job = merge_jobs.get(book_id)
@@ -1886,7 +1921,7 @@ def create_app(root_dir: Path) -> FastAPI:
                 stage = "installing"
             else:
                 stage = "merging"
-        elif output_path.exists():
+        elif output_path.exists() or output_parts:
             stage = "done"
         elif exit_code is not None and exit_code != 0:
             stage = "failed"
@@ -1895,10 +1930,11 @@ def create_app(root_dir: Path) -> FastAPI:
             "running": running,
             "exit_code": exit_code,
             "output_path": str(output_path),
-            "output_exists": output_path.exists(),
+            "output_exists": output_path.exists() or bool(output_parts),
+            "output_parts": [path.name for path in output_parts],
             "log_path": log_path,
             "stage": stage,
-            "progress": _load_json(progress_path) if progress_path.exists() else {},
+            "progress": _merge_progress_data(tts_dir),
         }
         return _no_store(payload)
 
@@ -1915,7 +1951,7 @@ def create_app(root_dir: Path) -> FastAPI:
         if not _merge_ready(book_dir):
             raise HTTPException(status_code=409, detail="TTS is not complete.")
 
-        if output_path.exists() and not payload.overwrite:
+        if (output_path.exists() or _list_m4b_parts(book_dir)) and not payload.overwrite:
             raise HTTPException(status_code=409, detail="Output file already exists.")
 
         if ffmpeg_job and ffmpeg_job.process.poll() is None:
@@ -1925,12 +1961,13 @@ def create_app(root_dir: Path) -> FastAPI:
         tts_dir.mkdir(parents=True, exist_ok=True)
         log_path = tts_dir / "merge.log"
         progress_path = tts_dir / "merge.progress.json"
-        if progress_path.exists():
-            progress_path.unlink()
+        _clear_merge_progress(tts_dir)
         log_handle = log_path.open("w", encoding="utf-8")
 
         install_ffmpeg = shutil.which("ffmpeg") is None
         try:
+            if payload.overwrite:
+                _delete_m4b_outputs(book_dir)
             cmd = _build_merge_command(
                 book_dir=book_dir,
                 output_path=output_path,
@@ -1973,10 +2010,19 @@ def create_app(root_dir: Path) -> FastAPI:
         )
 
     @app.get("/api/m4b/download")
-    def download_m4b(book_id: str) -> FileResponse:
+    def download_m4b(book_id: str, part: Optional[int] = None) -> FileResponse:
         book_dir = _resolve_book_dir(root_dir, book_id)
         output_path = _merge_output_path(book_dir)
-        if not output_path.exists():
+        if part is not None:
+            output_parts = _list_m4b_parts(book_dir)
+            if part < 1 or part > len(output_parts):
+                raise HTTPException(status_code=404, detail="M4B part not found.")
+            output_path = output_parts[part - 1]
+        elif not output_path.exists():
+            if _list_m4b_parts(book_dir):
+                raise HTTPException(
+                    status_code=409, detail="M4B is split; request a part."
+                )
             raise HTTPException(status_code=404, detail="M4B not found.")
         return FileResponse(
             path=str(output_path),

@@ -55,3 +55,22 @@ def test_normalize_reading_overrides() -> None:
         {"base": "山田太一", "reading": "やまだたいいち"},
         {"base": "東京", "reading": "とうきょう"},
     ]
+
+
+def test_delete_m4b_outputs_removes_parts(tmp_path: Path) -> None:
+    book_dir = tmp_path / "book"
+    book_dir.mkdir()
+    library_dir = tmp_path / "_m4b"
+    library_dir.mkdir()
+    base = library_dir / "book.m4b"
+    part1 = library_dir / "book.part01.m4b"
+    part2 = library_dir / "book.part02.m4b"
+    base.write_bytes(b"base")
+    part1.write_bytes(b"part1")
+    part2.write_bytes(b"part2")
+
+    removed = player_util._delete_m4b_outputs(book_dir)
+    assert removed is True
+    assert not base.exists()
+    assert not part1.exists()
+    assert not part2.exists()

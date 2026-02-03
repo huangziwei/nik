@@ -2067,6 +2067,7 @@
         mergeReady: false,
         mergeExitCode: null,
         mergeOutputExists: false,
+        mergeOutputParts: [],
         mergeStage: "idle",
         editOpen: false,
         previewChapterIndex: null,
@@ -3257,6 +3258,7 @@
         state.mergeReady = false;
         state.mergeExitCode = null;
         state.mergeOutputExists = false;
+        state.mergeOutputParts = [];
         state.mergeStage = "idle";
         state.synthRunning = false;
         state.synthMode = "tts";
@@ -3493,6 +3495,7 @@
           state.mergeReady = false;
           state.mergeExitCode = null;
           state.mergeOutputExists = false;
+          state.mergeOutputParts = [];
           state.mergeStage = "idle";
           state.synthMode = "tts";
           mergeStatus.textContent = "";
@@ -4209,7 +4212,7 @@
 
       function updateMergeButtonState() {
         const hasM4b = state.mergeOutputExists;
-        mergeBtn.hidden = hasM4b;
+        mergeBtn.hidden = hasM4b && !state.mergeRunning;
         if (downloadM4bBtn) {
           downloadM4bBtn.hidden = !hasM4b || state.mergeRunning;
         }
@@ -4245,7 +4248,10 @@
         if (!available) {
           downloadM4bBtn.title = "No merged M4B available.";
         } else {
-          downloadM4bBtn.title = "Download M4B";
+          downloadM4bBtn.title =
+            state.mergeOutputParts.length > 1
+              ? "Download M4B parts"
+              : "Download M4B";
         }
       }
 
@@ -4393,18 +4399,42 @@
         state.mergeExitCode =
           typeof data.exit_code === "number" ? data.exit_code : null;
         state.mergeOutputExists = !!data.output_exists;
+        state.mergeOutputParts = Array.isArray(data.output_parts)
+          ? data.output_parts
+          : [];
         state.mergeStage = data.stage || (state.mergeRunning ? "merging" : "idle");
         updateMergeButtonState();
-        let percentText = "";
-        if (data.progress && typeof data.progress.percent === "number") {
-          percentText = ` ${data.progress.percent.toFixed(1)}%`;
-        }
+        const progress = data && data.progress ? data.progress : {};
+        const percent =
+          progress && typeof progress.percent === "number"
+            ? progress.percent
+            : null;
+        const partIndex =
+          progress && typeof progress.part_index === "number"
+            ? progress.part_index
+            : null;
+        const partTotal =
+          progress && typeof progress.part_total === "number"
+            ? progress.part_total
+            : null;
         if (state.mergeStage === "installing") {
           mergeStatus.textContent = "Installing ffmpeg...";
         } else if (state.mergeStage === "merging") {
-          mergeStatus.textContent = `Merging book...${percentText}`;
+          let label = "Merging book";
+          if (partIndex && partTotal && partTotal > 1) {
+            label = `Merging part ${partIndex}/${partTotal}`;
+          }
+          if (percent !== null) {
+            mergeStatus.textContent = `${label}: ${percent.toFixed(1)}%`;
+          } else {
+            mergeStatus.textContent = `${label}...`;
+          }
         } else if (state.mergeStage === "done") {
-          mergeStatus.textContent = "M4B ready.";
+          if (state.mergeOutputParts.length > 1) {
+            mergeStatus.textContent = `M4B parts ready (${state.mergeOutputParts.length}).`;
+          } else {
+            mergeStatus.textContent = "M4B ready.";
+          }
         } else if (state.mergeStage === "failed") {
           mergeStatus.textContent = "Merge failed. Check tts/merge.log.";
         } else {
@@ -4448,6 +4478,7 @@
         }
         state.mergeExitCode = null;
         state.mergeOutputExists = false;
+        state.mergeOutputParts = [];
         mergeStatus.textContent = "";
         updateMergeButtonState();
         const payload = {
@@ -4501,16 +4532,39 @@
           setStatus("No merged M4B available.");
           return;
         }
-        const url = `/api/m4b/download?book_id=${encodeURIComponent(
-          state.book.id
-        )}`;
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `${state.book.id}.m4b`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setStatus("Downloading M4B...");
+        const parts = state.mergeOutputParts || [];
+        const downloads =
+          parts.length > 1
+            ? parts.map((_, idx) => ({
+                url: `/api/m4b/download?book_id=${encodeURIComponent(
+                  state.book.id
+                )}&part=${idx + 1}`,
+                name: parts[idx] || `${state.book.id}.part${idx + 1}.m4b`,
+              }))
+            : [
+                {
+                  url: `/api/m4b/download?book_id=${encodeURIComponent(
+                    state.book.id
+                  )}`,
+                  name: `${state.book.id}.m4b`,
+                },
+              ];
+
+        downloads.forEach((item, idx) => {
+          const link = document.createElement("a");
+          link.href = item.url;
+          link.download = item.name;
+          document.body.appendChild(link);
+          setTimeout(() => {
+            link.click();
+            link.remove();
+          }, idx * 200);
+        });
+        setStatus(
+          parts.length > 1
+            ? `Downloading ${parts.length} M4B parts...`
+            : "Downloading M4B..."
+        );
       }
 
       async function sampleSynth() {
@@ -4609,6 +4663,7 @@
             body: JSON.stringify({ book_id: state.book.id }),
           });
           state.mergeOutputExists = false;
+          state.mergeOutputParts = [];
           state.mergeExitCode = null;
           state.mergeStage = "idle";
           mergeStatus.textContent = "";
@@ -4640,6 +4695,7 @@
           });
           setStatus("TTS cache deleted.");
           state.mergeOutputExists = false;
+          state.mergeOutputParts = [];
           state.mergeExitCode = null;
           state.mergeStage = "idle";
           mergeStatus.textContent = "";

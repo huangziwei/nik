@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import math
 import shutil
 import subprocess
@@ -231,7 +232,12 @@ def _parse_timecode(value: str) -> int:
 
 
 def _write_progress(
-    path: Path, stage: str, out_time_ms: int, total_ms: int
+    path: Path,
+    stage: str,
+    out_time_ms: int,
+    total_ms: int,
+    part_index: int | None = None,
+    part_total: int | None = None,
 ) -> None:
     percent = 0.0
     if total_ms > 0:
@@ -242,6 +248,10 @@ def _write_progress(
         "total_ms": int(total_ms),
         "percent": round(percent, 2),
     }
+    if part_index is not None:
+        payload["part_index"] = int(part_index)
+    if part_total is not None:
+        payload["part_total"] = int(part_total)
     _atomic_write_json(path, payload)
 
 
@@ -269,7 +279,7 @@ def _build_concat_file(
 ) -> None:
     lines = []
     for path in segment_paths:
-        rel = path.relative_to(base_dir).as_posix()
+        rel = Path(os.path.relpath(path, start=base_dir)).as_posix()
         lines.append(f"file '{rel}'")
     concat_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -508,7 +518,7 @@ def _build_part_inputs(
     out_dir.mkdir(parents=True, exist_ok=True)
     concat_path = out_dir / "concat.txt"
     chapters_path = out_dir / "chapters.ffmeta"
-    _build_concat_file(segment_paths, concat_path, base_dir=tts_dir)
+    _build_concat_file(segment_paths, concat_path, base_dir=out_dir)
     _build_chapters_ffmeta(chapter_meta, chapters_path, metadata=metadata)
     return concat_path, chapters_path, total_ms
 
@@ -517,8 +527,17 @@ def _run_ffmpeg_with_progress(
     cmd: list[str],
     progress_path: Path,
     total_ms: int,
+    part_index: int | None = None,
+    part_total: int | None = None,
 ) -> int:
-    _write_progress(progress_path, "merging", 0, total_ms)
+    _write_progress(
+        progress_path,
+        "merging",
+        0,
+        total_ms,
+        part_index=part_index,
+        part_total=part_total,
+    )
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -551,12 +570,33 @@ def _run_ffmpeg_with_progress(
                     pending_time_ms = None
                 if value == "end":
                     out_time_ms = total_ms or out_time_ms
-                    _write_progress(progress_path, "done", out_time_ms, total_ms)
+                    _write_progress(
+                        progress_path,
+                        "done",
+                        out_time_ms,
+                        total_ms,
+                        part_index=part_index,
+                        part_total=part_total,
+                    )
                 elif value == "continue":
-                    _write_progress(progress_path, "merging", out_time_ms, total_ms)
+                    _write_progress(
+                        progress_path,
+                        "merging",
+                        out_time_ms,
+                        total_ms,
+                        part_index=part_index,
+                        part_total=part_total,
+                    )
     proc.wait()
     if proc.returncode != 0:
-        _write_progress(progress_path, "failed", out_time_ms, total_ms)
+        _write_progress(
+            progress_path,
+            "failed",
+            out_time_ms,
+            total_ms,
+            part_index=part_index,
+            part_total=part_total,
+        )
     return int(proc.returncode)
 
 
@@ -635,11 +675,17 @@ def merge_book(
             progress=part_progress is not None,
         )
         if part_progress is not None:
-            code = _run_ffmpeg_with_progress(cmd, part_progress, part_ms)
+            code = _run_ffmpeg_with_progress(
+                cmd,
+                part_progress,
+                part_ms,
+                part_index=idx,
+                part_total=len(parts),
+            )
         else:
             proc = subprocess.run(cmd, cwd=str(tts_dir))
             code = int(proc.returncode)
         if code != 0:
             return code
     return 0
-AUTO_SPLIT_HOURS = 8.0
+AUTO_SPLIT_HOURS = 2.0
