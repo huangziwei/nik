@@ -1421,7 +1421,9 @@ def create_app(root_dir: Path) -> FastAPI:
     def reading_overrides_get(book_id: str) -> JSONResponse:
         book_dir = _resolve_book_dir(root_dir, book_id)
         try:
-            global_overrides, _ = tts_util._load_reading_overrides(book_dir)
+            global_overrides, _ = tts_util._load_reading_overrides(
+                book_dir, include_template=False
+            )
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return _no_store({"book_id": book_id, "overrides": global_overrides})

@@ -161,7 +161,9 @@ def test_load_reading_overrides(tmp_path: Path) -> None:
     }
     path = tmp_path / "reading-overrides.json"
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    global_overrides, overrides = tts_util._load_reading_overrides(tmp_path)
+    global_overrides, overrides = tts_util._load_reading_overrides(
+        tmp_path, include_template=False
+    )
     assert global_overrides == [{"base": "妻子", "reading": "さいし"}]
     assert overrides == {"0001-test": [{"base": "漢字", "reading": "かんじ"}]}
 
@@ -171,6 +173,28 @@ def test_merge_reading_overrides_prefers_chapter() -> None:
     chapter_overrides = [{"base": "山田太一", "reading": "やまだたいいち"}]
     merged = tts_util._merge_reading_overrides(global_overrides, chapter_overrides)
     assert tts_util.apply_reading_overrides("山田太一", merged) == "やまだたいいち"
+
+
+def test_load_reading_overrides_includes_template(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template_path = tmp_path / "template.json"
+    template_path.write_text(
+        json.dumps({"global": [{"base": "妻子", "reading": "さいし"}]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        tts_util, "_template_reading_overrides_path", lambda: template_path
+    )
+    book_dir = tmp_path / "book"
+    book_dir.mkdir()
+    (book_dir / "reading-overrides.json").write_text(
+        json.dumps({"global": [{"base": "妻子", "reading": "つまこ"}]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    global_overrides, overrides = tts_util._load_reading_overrides(book_dir)
+    assert overrides == {}
+    assert tts_util.apply_reading_overrides("妻子", global_overrides) == "つまこ"
 
 
 def test_select_backend_prefers_mlx_on_apple(monkeypatch) -> None:

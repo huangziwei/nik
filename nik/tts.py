@@ -43,6 +43,7 @@ DEFAULT_MLX_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"
 MIN_MLX_AUDIO_VERSION = "0.3.1"
 FORCED_LANGUAGE = "Japanese"
 FORCED_LANG_CODE = "ja"
+READING_TEMPLATE_FILENAME = "global-reading-overrides.json"
 
 
 @dataclass(frozen=True)
@@ -475,16 +476,17 @@ def _parse_reading_entries(raw: object) -> List[dict[str, str]]:
     return replacements
 
 
-def _load_reading_overrides(
-    book_dir: Path,
+def _template_reading_overrides_path() -> Path:
+    return Path(__file__).parent / "templates" / READING_TEMPLATE_FILENAME
+
+
+def _split_reading_overrides_data(
+    data: object,
 ) -> tuple[List[dict[str, str]], dict[str, List[dict[str, str]]]]:
-    path = book_dir / "reading-overrides.json"
-    if not path.exists():
-        return [], {}
-    data = json.loads(path.read_text(encoding="utf-8"))
     global_entries: List[dict[str, str]] = []
     chapters_data: object = data
     if isinstance(data, dict):
+        has_known_keys = any(key in data for key in ("global", "default", "*", "chapters"))
         if "global" in data:
             global_entries = _parse_reading_entries(data.get("global"))
         if "default" in data and not global_entries:
@@ -493,6 +495,8 @@ def _load_reading_overrides(
             global_entries = _parse_reading_entries(data.get("*"))
         if "chapters" in data:
             chapters_data = data.get("chapters") or {}
+        elif has_known_keys:
+            chapters_data = {}
     if not isinstance(chapters_data, dict):
         return global_entries, {}
     overrides: dict[str, List[dict[str, str]]] = {}
@@ -500,6 +504,29 @@ def _load_reading_overrides(
         replacements = _parse_reading_entries(entry)
         if replacements:
             overrides[str(chapter_id)] = replacements
+    return global_entries, overrides
+
+
+def _load_reading_overrides(
+    book_dir: Path,
+    include_template: bool = True,
+) -> tuple[List[dict[str, str]], dict[str, List[dict[str, str]]]]:
+    global_entries: List[dict[str, str]] = []
+    if include_template:
+        template_path = _template_reading_overrides_path()
+        if template_path.exists():
+            template_data = json.loads(template_path.read_text(encoding="utf-8"))
+            global_entries, _ = _split_reading_overrides_data(template_data)
+
+    path = book_dir / "reading-overrides.json"
+    if not path.exists():
+        return global_entries, {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    book_global, overrides = _split_reading_overrides_data(data)
+    if global_entries and book_global:
+        global_entries = _merge_reading_overrides(global_entries, book_global)
+    elif book_global:
+        global_entries = book_global
     return global_entries, overrides
 
 
