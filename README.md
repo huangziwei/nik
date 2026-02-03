@@ -113,6 +113,17 @@ uv run nik merge \
   --output out/some-book/some-book.m4b
 ```
 
+Merge auto-splits if the book is longer than 8 hours, keeping parts near-equal
+and splitting only at chapter boundaries.
+
+To override the split threshold:
+```bash
+uv run nik merge \
+  --book out/some-book \
+  --output out/some-book/some-book.m4b \
+  --split-hours 8
+```
+
 ### Play in web UI
 ```bash
 uv run nik play --root out --port 1912
