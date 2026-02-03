@@ -11,6 +11,20 @@ def test_make_chunk_spans_splits_japanese_sentences() -> None:
     assert len(spans) >= 2
 
 
+def test_chunking_splits_on_commas_and_linebreaks() -> None:
+    text = "私は、猫です。\n次の行です。"
+    spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["私は、猫です。", "次の行です。"]
+
+
+def test_chunking_splits_on_commas_when_too_long() -> None:
+    text = "これはとても長い文章なので、途中で区切る必要があります。"
+    spans = tts_util.make_chunk_spans(text, max_chars=15, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert any("、" in chunk for chunk in chunks)
+
+
 def test_chunk_book_writes_manifest(tmp_path: Path) -> None:
     book_dir = tmp_path / "book"
     clean_dir = book_dir / "clean" / "chapters"

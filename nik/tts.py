@@ -30,7 +30,7 @@ torch = None
 Qwen3TTSModel = None
 
 _END_PUNCT = set("。！？?!…")
-_MID_PUNCT = set("、，,;；")
+_MID_PUNCT = set("、，,;；:：")
 _CLOSE_PUNCT = set("」』）】］〉》」』”’\"'")
 
 
@@ -159,35 +159,12 @@ def make_chunk_spans(
     text: str, max_chars: int, chunk_mode: str = "japanese"
 ) -> List[Tuple[int, int]]:
     _ = chunk_mode
-    if max_chars <= 0:
-        return [span for span in split_sentence_spans(text)]
-
     spans: List[Tuple[int, int]] = []
-    current_start: Optional[int] = None
-    current_end: Optional[int] = None
-
     for sent_start, sent_end in split_sentence_spans(text):
-        if current_start is None:
-            current_start, current_end = sent_start, sent_end
-            continue
-
-        if sent_end - current_start <= max_chars:
-            current_end = sent_end
-            continue
-
-        if current_end is not None:
-            spans.append((current_start, current_end))
-
-        if sent_end - sent_start > max_chars:
+        if max_chars > 0 and sent_end - sent_start > max_chars:
             spans.extend(_split_long_span(text, sent_start, sent_end, max_chars))
-            current_start = None
-            current_end = None
         else:
-            current_start, current_end = sent_start, sent_end
-
-    if current_start is not None and current_end is not None:
-        spans.append((current_start, current_end))
-
+            spans.append((sent_start, sent_end))
     return spans
 
 
