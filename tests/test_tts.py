@@ -149,6 +149,13 @@ def test_apply_reading_overrides() -> None:
     )
 
 
+def test_prepare_tts_text_strips_japanese_quotes() -> None:
+    assert (
+        tts_util.prepare_tts_text("「聖書」『旧約』《新約》“Test”'OK'〝注〟")
+        == "聖書旧約新約TestOK注"
+    )
+
+
 def test_load_reading_overrides(tmp_path: Path) -> None:
     payload = {
         "global": [{"base": "妻子", "reading": "さいし"}],

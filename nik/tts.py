@@ -37,6 +37,41 @@ mlx_load_model = None
 _END_PUNCT = set("。！？?!…")
 _MID_PUNCT = set("、，,;；:：")
 _CLOSE_PUNCT = set("」』）】］〉》」』”’\"'")
+_JP_QUOTE_CHARS = {
+    "\"",
+    "'",
+    "“",
+    "”",
+    "‘",
+    "’",
+    "«",
+    "»",
+    "„",
+    "‟",
+    "❝",
+    "❞",
+    "＂",
+    "＇",
+    "「",
+    "」",
+    "『",
+    "』",
+    "《",
+    "》",
+    "〈",
+    "〉",
+    "【",
+    "】",
+    "〔",
+    "〕",
+    "［",
+    "］",
+    "｢",
+    "｣",
+    "〝",
+    "〞",
+    "〟",
+}
 
 DEFAULT_TORCH_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 DEFAULT_MLX_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"
@@ -372,6 +407,9 @@ def make_chunks(text: str, max_chars: int, chunk_mode: str = "japanese") -> List
 
 
 def prepare_tts_text(text: str) -> str:
+    if not text:
+        return ""
+    text = "".join(ch for ch in text if ch not in _JP_QUOTE_CHARS)
     return re.sub(r"\s+", " ", text).strip()
 
 
