@@ -1,6 +1,6 @@
 # nik
 
-Japanese EPUB -> M4B pipeline using Qwen TTS voice cloning.
+Japanese EPUB -> M4B pipeline using Qwen TTS voice cloning, superseding [nk](https://github.com/huangziwei/nk).
 
 ## Prerequisites
 
