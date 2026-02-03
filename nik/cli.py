@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import shutil
 import subprocess
@@ -285,10 +286,17 @@ def _merge(args: argparse.Namespace) -> int:
         return 2
 
 
+def _play(args: argparse.Namespace) -> int:
+    player_util = importlib.import_module("nik.player")
+    player_util.run(Path(args.root), host=args.host, port=args.port)
+    return 0
+
+
 def _synth(args: argparse.Namespace) -> int:
     book_dir = Path(args.book)
     out_dir = Path(args.out) if args.out else None
     voice_text_path = Path(args.voice_text_file) if args.voice_text_file else None
+    voice_map_path = Path(args.voice_map) if args.voice_map else None
 
     try:
         voice_config = voice_util.resolve_voice_config(
@@ -310,6 +318,43 @@ def _synth(args: argparse.Namespace) -> int:
         max_chars=args.max_chars,
         pad_ms=args.pad_ms,
         rechunk=args.rechunk,
+        voice_map_path=voice_map_path,
+        base_dir=Path.cwd(),
+        model_name=args.model,
+        device_map=args.device,
+        dtype=args.dtype,
+        attn_implementation=args.attn,
+    )
+
+
+def _sample(args: argparse.Namespace) -> int:
+    book_dir = Path(args.book)
+    out_dir = Path(args.out) if args.out else None
+    voice_text_path = Path(args.voice_text_file) if args.voice_text_file else None
+    voice_map_path = Path(args.voice_map) if args.voice_map else None
+
+    try:
+        voice_config = voice_util.resolve_voice_config(
+            voice=args.voice,
+            base_dir=Path.cwd(),
+            voice_text=args.voice_text,
+            voice_text_path=voice_text_path,
+            language=args.language,
+            x_vector_only_mode=bool(args.x_vector_only),
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 2
+
+    return tts_util.synthesize_book_sample(
+        book_dir=book_dir,
+        voice=voice_config,
+        out_dir=out_dir,
+        max_chars=args.max_chars,
+        pad_ms=args.pad_ms,
+        rechunk=args.rechunk,
+        voice_map_path=voice_map_path,
+        base_dir=Path.cwd(),
         model_name=args.model,
         device_map=args.device,
         dtype=args.dtype,
@@ -396,6 +441,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Voice config name/path, or a raw audio path with --voice-text",
     )
     synth.add_argument(
+        "--voice-map",
+        help="Path to voice map JSON for per-chapter voices",
+    )
+    synth.add_argument(
         "--voice-text",
         help="Reference transcript when providing a raw audio file",
     )
@@ -438,6 +487,66 @@ def build_parser() -> argparse.ArgumentParser:
     )
     synth.set_defaults(func=_synth)
 
+    sample = subparsers.add_parser(
+        "sample", help="Generate a sample (first chapter)"
+    )
+    sample.add_argument("--book", required=True, help="Book output directory")
+    sample.add_argument(
+        "--out",
+        help="Output directory (default: <book>/tts)",
+    )
+    sample.add_argument(
+        "--voice",
+        required=True,
+        help="Voice config name/path, or a raw audio path with --voice-text",
+    )
+    sample.add_argument(
+        "--voice-map",
+        help="Path to voice map JSON for per-chapter voices",
+    )
+    sample.add_argument(
+        "--voice-text",
+        help="Reference transcript when providing a raw audio file",
+    )
+    sample.add_argument(
+        "--voice-text-file",
+        help="Reference transcript file when providing a raw audio file",
+    )
+    sample.add_argument(
+        "--language",
+        default=voice_util.DEFAULT_LANGUAGE,
+        help="Language label for qwen-tts (default: Japanese)",
+    )
+    sample.add_argument(
+        "--x-vector-only",
+        action="store_true",
+        help="Skip text requirement and use x-vector only cloning",
+    )
+    sample.add_argument("--max-chars", type=int, default=220)
+    sample.add_argument("--pad-ms", type=int, default=120)
+    sample.add_argument("--rechunk", action="store_true")
+    sample.add_argument(
+        "--model",
+        default="Qwen/Qwen3-TTS-1.7B-Base",
+        help="Hugging Face model id",
+    )
+    sample.add_argument(
+        "--device",
+        default=None,
+        help="Device map (e.g., cuda:0, cpu, or auto)",
+    )
+    sample.add_argument(
+        "--dtype",
+        default=None,
+        help="Torch dtype (e.g., bfloat16, float16, float32)",
+    )
+    sample.add_argument(
+        "--attn",
+        default=None,
+        help="Attention implementation (e.g., flash_attention_2)",
+    )
+    sample.set_defaults(func=_sample)
+
     merge = subparsers.add_parser("merge", help="Merge audio into M4B")
     merge.add_argument("--book", required=True, help="Book output directory")
     merge.add_argument("--output", required=True, help="Path to output .m4b")
@@ -450,6 +559,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write merge progress to JSON file",
     )
     merge.set_defaults(func=_merge)
+
+    play = subparsers.add_parser("play", help="Play generated audio in a web UI")
+    play.add_argument(
+        "--root",
+        default="out",
+        help="Root folder containing book outputs (default: out)",
+    )
+    play.add_argument("--host", default="0.0.0.0")
+    play.add_argument("--port", type=int, default=1912)
+    play.set_defaults(func=_play)
 
     return parser
 

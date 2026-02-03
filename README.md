@@ -57,3 +57,8 @@ uv run nik merge \
   --book out/some-book \
   --output out/some-book/some-book.m4b
 ```
+
+### Play in web UI
+```bash
+uv run nik play --root out --port 1912
+```

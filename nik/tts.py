@@ -21,15 +21,12 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
+from . import voice as voice_util
 from .text import read_clean_text
 from .voice import VoiceConfig
 
-try:
-    import torch
-    from qwen_tts import Qwen3TTSModel
-except Exception:  # pragma: no cover - optional runtime dependency
-    torch = None
-    Qwen3TTSModel = None
+torch = None
+Qwen3TTSModel = None
 
 _END_PUNCT = set("。！？?!…")
 _MID_PUNCT = set("、，,;；")
@@ -57,12 +54,24 @@ def chapter_id_from_path(index: int, title: str, rel_path: Optional[str]) -> str
     return f"{index:04d}-chapter"
 
 
-def _require_tts() -> None:
-    if torch is None or Qwen3TTSModel is None:
+def _lazy_import_tts() -> None:
+    global torch, Qwen3TTSModel
+    if torch is not None and Qwen3TTSModel is not None:
+        return
+    try:
+        import torch as _torch
+        from qwen_tts import Qwen3TTSModel as _Qwen3TTSModel
+    except Exception as exc:  # pragma: no cover - optional runtime dependency
         raise RuntimeError(
             "qwen-tts dependencies are missing. Install qwen-tts + torch, "
             "or run with uv after adding them to pyproject.toml."
-        )
+        ) from exc
+    torch = _torch
+    Qwen3TTSModel = _Qwen3TTSModel
+
+
+def _require_tts() -> None:
+    _lazy_import_tts()
 
 
 def _normalize_text(text: str) -> str:
@@ -217,7 +226,7 @@ def load_book_chapters(book_dir: Path) -> List[ChapterInput]:
 
         index = int(entry.get("index") or fallback_idx)
         title = str(entry.get("title") or f"Chapter {index}")
-    chapter_id = chapter_id_from_path(index, title, rel)
+        chapter_id = chapter_id_from_path(index, title, rel)
 
         chapters.append(
             ChapterInput(
@@ -242,6 +251,41 @@ def atomic_write_json(path: Path, obj: Any) -> None:
         encoding="utf-8",
     )
     tmp.replace(path)
+
+
+def write_status(out_dir: Path, stage: str, detail: Optional[str] = None) -> None:
+    payload = {"stage": stage, "updated_unix": int(time.time())}
+    if detail:
+        payload["detail"] = detail
+    atomic_write_json(out_dir / "status.json", payload)
+
+
+def _load_voice_map(path: Optional[Path]) -> dict:
+    if path is None:
+        return {}
+    if not path.exists():
+        raise FileNotFoundError(f"Voice map not found: {path}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"Voice map must be a JSON object: {path}")
+    chapters = data.get("chapters", {})
+    if not isinstance(chapters, dict):
+        chapters = {}
+    return {
+        "default": data.get("default"),
+        "chapters": chapters,
+    }
+
+
+def _normalize_voice_id(value: Optional[str], default_voice: str) -> str:
+    if value is None:
+        return default_voice
+    cleaned = str(value).strip()
+    if not cleaned:
+        return default_voice
+    if cleaned.lower() == "default":
+        return default_voice
+    return cleaned
 
 
 def write_chunk_files(
@@ -318,7 +362,7 @@ def _prepare_manifest(
     chapter_chunks: List[List[str]] = []
     manifest_chapters: List[dict] = []
     for ch in chapters:
-    spans = make_chunk_spans(ch.text, max_chars=max_chars, chunk_mode="japanese")
+        spans = make_chunk_spans(ch.text, max_chars=max_chars, chunk_mode="japanese")
         chunks = [ch.text[start:end] for start, end in spans]
         if not chunks:
             raise ValueError(f"No chunks generated for chapter: {ch.id}")
@@ -491,14 +535,25 @@ def synthesize_book(
     max_chars: int = 220,
     pad_ms: int = 120,
     rechunk: bool = False,
+    voice_map_path: Optional[Path] = None,
+    base_dir: Optional[Path] = None,
     model_name: str = "Qwen/Qwen3-TTS-1.7B-Base",
     device_map: Optional[str] = None,
     dtype: Optional[str] = None,
     attn_implementation: Optional[str] = None,
+    only_chapter_ids: Optional[set[str]] = None,
 ) -> int:
     chapters = load_book_chapters(book_dir)
     if out_dir is None:
         out_dir = book_dir / "tts"
+    if base_dir is None:
+        base_dir = Path.cwd()
+
+    try:
+        voice_map = _load_voice_map(voice_map_path)
+    except (FileNotFoundError, ValueError) as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 2
 
     try:
         manifest, chapter_chunks = _prepare_manifest(
@@ -517,6 +572,45 @@ def synthesize_book(
     manifest_path = out_dir / "manifest.json"
     concat_path = out_dir / "concat.txt"
     chapters_path = out_dir / "chapters.ffmeta"
+    if rechunk and seg_dir.exists():
+        shutil.rmtree(seg_dir)
+
+    default_voice = voice.name
+    if voice_map:
+        default_voice = _normalize_voice_id(voice_map.get("default"), default_voice)
+
+    chapter_voice_map: Dict[str, str] = {}
+    voice_overrides: Dict[str, str] = {}
+    raw_overrides = voice_map.get("chapters", {}) if voice_map else {}
+    for entry in manifest.get("chapters", []):
+        chapter_id = entry.get("id") or "chapter"
+        raw_value = raw_overrides.get(chapter_id) if isinstance(raw_overrides, dict) else None
+        selected = _normalize_voice_id(raw_value, default_voice)
+        chapter_voice_map[chapter_id] = selected
+        entry["voice"] = selected
+        if voice_map and selected != default_voice:
+            voice_overrides[chapter_id] = selected
+    manifest["voice"] = default_voice
+    if voice_map:
+        manifest["voice_overrides"] = voice_overrides
+    manifest["pad_ms"] = int(pad_ms)
+    atomic_write_json(manifest_path, manifest)
+
+    voice_configs: Dict[str, VoiceConfig] = {}
+    try:
+        for voice_id in sorted(set(chapter_voice_map.values())):
+            if voice_id == voice.name:
+                voice_configs[voice_id] = voice
+            else:
+                voice_configs[voice_id] = voice_util.resolve_voice_config(
+                    voice=voice_id,
+                    base_dir=base_dir,
+                )
+    except (FileNotFoundError, ValueError) as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 2
+
+    write_status(out_dir, "cloning", "Preparing voice")
 
     model = _load_model(
         model_name=model_name,
@@ -524,9 +618,26 @@ def synthesize_book(
         dtype=dtype,
         attn_implementation=attn_implementation,
     )
-    prompt, language = _prepare_voice_prompt(model, voice)
+    voice_prompts: Dict[str, Any] = {}
+    voice_languages: Dict[str, str] = {}
+    for voice_id, config in voice_configs.items():
+        prompt, language = _prepare_voice_prompt(model, config)
+        voice_prompts[voice_id] = prompt
+        voice_languages[voice_id] = language
 
-    total_chunks = sum(len(chunks) for chunks in chapter_chunks)
+    write_status(out_dir, "synthesizing")
+
+    selected_ids = set(only_chapter_ids) if only_chapter_ids else None
+    selected_indices = [
+        idx
+        for idx, entry in enumerate(manifest["chapters"])
+        if not selected_ids or (entry.get("id") or "chapter") in selected_ids
+    ]
+    if selected_ids and not selected_indices:
+        sys.stderr.write("No matching chapters found for synthesis.\n")
+        return 2
+
+    total_chunks = sum(len(chapter_chunks[idx]) for idx in selected_indices)
     if total_chunks <= 0:
         sys.stderr.write("No chunks selected for synthesis.\n")
         return 2
@@ -549,6 +660,8 @@ def synthesize_book(
             chapter_id = ch_entry.get("id") or "chapter"
             chapter_title = ch_entry.get("title") or chapter_id
             chapter_total = len(chunks)
+            if selected_ids and chapter_id not in selected_ids:
+                continue
             progress.update(
                 chapter_task,
                 total=chapter_total,
@@ -557,6 +670,9 @@ def synthesize_book(
             )
 
             chapter_seg_dir = seg_dir / chapter_id
+            voice_id = chapter_voice_map.get(chapter_id, default_voice)
+            prompt = voice_prompts[voice_id]
+            language = voice_languages[voice_id]
 
             for chunk_idx, chunk_text in enumerate(chunks, start=1):
                 seg_path = chapter_seg_dir / f"{chunk_idx:06d}.wav"
@@ -631,4 +747,213 @@ def synthesize_book(
         chapter_meta.append((title, total_ms))
 
     build_chapters_ffmeta(chapter_meta, chapters_path)
+    write_status(out_dir, "done")
     return 0
+
+
+def synthesize_book_sample(
+    book_dir: Path,
+    voice: VoiceConfig,
+    out_dir: Optional[Path] = None,
+    max_chars: int = 220,
+    pad_ms: int = 120,
+    rechunk: bool = False,
+    voice_map_path: Optional[Path] = None,
+    base_dir: Optional[Path] = None,
+    model_name: str = "Qwen/Qwen3-TTS-1.7B-Base",
+    device_map: Optional[str] = None,
+    dtype: Optional[str] = None,
+    attn_implementation: Optional[str] = None,
+) -> int:
+    chapters = load_book_chapters(book_dir)
+    if not chapters:
+        sys.stderr.write("No chapters found for sampling.\n")
+        return 2
+    if out_dir is None:
+        out_dir = book_dir / "tts"
+
+    sample_id = chapters[0].id
+    sample_dir = out_dir / "segments" / sample_id
+    if sample_dir.exists():
+        shutil.rmtree(sample_dir)
+
+    manifest_path = out_dir / "manifest.json"
+    if manifest_path.exists():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            manifest = {}
+        chapters_meta = manifest.get("chapters")
+        if isinstance(chapters_meta, list):
+            for entry in chapters_meta:
+                if entry.get("id") == sample_id:
+                    chunks = entry.get("chunks")
+                    if isinstance(chunks, list):
+                        entry["durations_ms"] = [None] * len(chunks)
+                    break
+            atomic_write_json(manifest_path, manifest)
+
+    return synthesize_book(
+        book_dir=book_dir,
+        voice=voice,
+        out_dir=out_dir,
+        max_chars=max_chars,
+        pad_ms=pad_ms,
+        rechunk=rechunk,
+        voice_map_path=voice_map_path,
+        base_dir=base_dir,
+        model_name=model_name,
+        device_map=device_map,
+        dtype=dtype,
+        attn_implementation=attn_implementation,
+        only_chapter_ids={sample_id},
+    )
+
+
+def synthesize_chunk(
+    out_dir: Path,
+    chapter_id: str,
+    chunk_index: int,
+    voice: Optional[str] = None,
+    voice_map_path: Optional[Path] = None,
+    base_dir: Optional[Path] = None,
+    model_name: str = "Qwen/Qwen3-TTS-1.7B-Base",
+    device_map: Optional[str] = None,
+    dtype: Optional[str] = None,
+    attn_implementation: Optional[str] = None,
+) -> dict:
+    _require_tts()
+    if base_dir is None:
+        base_dir = Path.cwd()
+    if chunk_index < 0:
+        raise ValueError("chunk_index must be >= 0")
+
+    manifest_path = out_dir / "manifest.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Missing manifest at {manifest_path}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    chapters = manifest.get("chapters", [])
+    if not isinstance(chapters, list):
+        raise ValueError("manifest.json chapters missing or invalid")
+
+    entry = None
+    for item in chapters:
+        if isinstance(item, dict) and item.get("id") == chapter_id:
+            entry = item
+            break
+    if entry is None:
+        raise ValueError(f"Unknown chapter_id: {chapter_id}")
+
+    chunks = entry.get("chunks")
+    if not isinstance(chunks, list):
+        chunks = []
+    spans = entry.get("chunk_spans")
+    if not isinstance(spans, list):
+        spans = []
+    chunk_count = len(chunks) or len(spans)
+    if chunk_count <= 0:
+        chunk_dir = out_dir / "chunks" / chapter_id
+        if chunk_dir.exists():
+            chunk_count = len([p for p in chunk_dir.glob("*.txt") if p.stem.isdigit()])
+    if chunk_count <= 0:
+        raise ValueError(f"No chunks available for chapter: {chapter_id}")
+    if chunk_index >= chunk_count:
+        raise ValueError(f"chunk_index out of range for {chapter_id}")
+
+    chunk_text: Optional[str] = None
+    if chunks and chunk_index < len(chunks):
+        chunk_text = str(chunks[chunk_index])
+    if chunk_text is None:
+        chunk_path = out_dir / "chunks" / chapter_id / f"{chunk_index + 1:06d}.txt"
+        if chunk_path.exists():
+            chunk_text = chunk_path.read_text(encoding="utf-8").rstrip("\n")
+    if chunk_text is None:
+        raise ValueError(f"Chunk text missing for {chapter_id} #{chunk_index + 1}")
+
+    durations = entry.get("durations_ms")
+    if not isinstance(durations, list) or len(durations) != chunk_count:
+        durations = [None] * chunk_count
+        entry["durations_ms"] = durations
+
+    default_voice = voice or entry.get("voice") or manifest.get("voice") or ""
+    if not default_voice:
+        raise ValueError("Voice is required for synthesis.")
+
+    voice_id = default_voice
+    if voice_map_path:
+        voice_map = _load_voice_map(voice_map_path)
+        if voice_map:
+            default_voice = _normalize_voice_id(voice_map.get("default"), default_voice)
+            raw_voice = (
+                voice_map.get("chapters", {}).get(chapter_id)
+                if isinstance(voice_map.get("chapters"), dict)
+                else None
+            )
+            voice_id = _normalize_voice_id(raw_voice, default_voice)
+    else:
+        voice_id = _normalize_voice_id(entry.get("voice"), default_voice)
+
+    config = voice_util.resolve_voice_config(voice=voice_id, base_dir=base_dir)
+    model = _load_model(
+        model_name=model_name,
+        device_map=device_map,
+        dtype=dtype,
+        attn_implementation=attn_implementation,
+    )
+    prompt, language = _prepare_voice_prompt(model, config)
+
+    tts_text = prepare_tts_text(chunk_text)
+    seg_path = out_dir / "segments" / chapter_id / f"{chunk_index + 1:06d}.wav"
+    seg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not tts_text:
+        if seg_path.exists():
+            seg_path.unlink()
+        durations[chunk_index] = 0
+        atomic_write_json(manifest_path, manifest)
+        return {
+            "status": "skipped",
+            "chapter_id": chapter_id,
+            "chunk_index": chunk_index,
+            "duration_ms": 0,
+        }
+
+    wavs, sample_rate = model.generate(
+        text=tts_text,
+        prompt=prompt,
+        language=language,
+    )
+    if not wavs:
+        durations[chunk_index] = 0
+        atomic_write_json(manifest_path, manifest)
+        return {
+            "status": "skipped",
+            "chapter_id": chapter_id,
+            "chunk_index": chunk_index,
+            "duration_ms": 0,
+        }
+
+    if isinstance(wavs, np.ndarray):
+        audio = wavs.flatten()
+    else:
+        audio = np.concatenate([np.asarray(w).flatten() for w in wavs])
+
+    pad_ms = int(manifest.get("pad_ms") or 0)
+    if pad_ms > 0:
+        pad_samples = int(round(sample_rate * (pad_ms / 1000.0)))
+        if pad_samples > 0:
+            pad = np.zeros(pad_samples, dtype=audio.dtype)
+            audio = np.concatenate([audio, pad])
+
+    _write_wav(seg_path, audio, sample_rate)
+    dms = int(round(audio.shape[0] * 1000.0 / sample_rate))
+    durations[chunk_index] = dms
+    if manifest.get("sample_rate") != sample_rate:
+        manifest["sample_rate"] = sample_rate
+    atomic_write_json(manifest_path, manifest)
+    return {
+        "status": "ok",
+        "chapter_id": chapter_id,
+        "chunk_index": chunk_index,
+        "duration_ms": dms,
+    }

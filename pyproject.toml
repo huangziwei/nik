@@ -11,13 +11,17 @@ requires-python = "==3.12.*"
 dependencies = [
     "beautifulsoup4>=4.12",
     "ebooklib>=0.18",
+    "fastapi>=0.110",
+    "jinja2>=3.1",
+    "librosa",
     "lxml>=5.0",
     "numpy>=1.24",
+    "python-multipart>=0.0.9",
     "qwen-tts",
     "rich>=13.7",
     "soundfile>=0.12",
     "torch",
-    "librosa",
+    "uvicorn>=0.27",
 ]
 readme = {file = "README.md", content-type = "text/markdown"}
 
