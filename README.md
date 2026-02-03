@@ -15,22 +15,6 @@ Apple Silicon (MLX backend):
 uv sync --prerelease=allow
 ```
 
-Optional (auto-transcribe voice clips with Whisper):
-```bash
-uv sync --extra whisper
-```
-
-You can combine extras (e.g., `uv sync --extra whisper --prerelease=allow`).
-
-### Apple Silicon (MLX backend)
-nik currently targets Apple Silicon only. It uses the MLX backend (via
-`mlx-audio`). The backend defaults to `auto`, which picks MLX when available.
-MLX currently requires a pre-release `transformers`, so install with
-pre-releases enabled (see above).
-
-You can override the model with `--model`.
-Qwen3 MLX models require `mlx-audio>=0.3.1`.
-
 ## Usage
 
 ### 1) Ingest EPUB
