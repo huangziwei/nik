@@ -6,12 +6,18 @@ Japanese EPUB -> M4B pipeline using Qwen TTS voice cloning.
 
 - Python 3.12
 - `ffmpeg` on PATH (required for merge, voice clip prep, and Whisper)
-- A compatible PyTorch install for your hardware
+- A compatible TTS backend (Torch on non-Apple, MLX on Apple Silicon)
 
 ## Installation
 
+Non-Apple (Torch backend):
 ```bash
-uv sync
+uv sync --extra torch
+```
+
+Apple Silicon (MLX backend):
+```bash
+uv sync --extra mlx --prerelease=allow
 ```
 
 Optional (auto-transcribe voice clips with Whisper):
@@ -19,9 +25,12 @@ Optional (auto-transcribe voice clips with Whisper):
 uv sync --extra whisper
 ```
 
+You can combine extras (e.g., `uv sync --extra mlx --extra whisper --prerelease=allow`).
+
 ### Apple Silicon (MLX backend)
-On Apple Silicon, nik can use the MLX backend (via `mlx-audio`). The backend
-defaults to `auto`, which picks MLX when available.
+On Apple Silicon, nik uses the MLX backend (via `mlx-audio`). The backend
+defaults to `auto`, which picks MLX when available. MLX currently requires a
+pre-release `transformers`, so install with pre-releases enabled (see above).
 
 Force a backend if needed:
 ```bash
@@ -30,6 +39,7 @@ uv run nik synth --backend mlx ...
 ```
 
 You can override the model with `--model` for either backend.
+Qwen3 MLX models require `mlx-audio>=0.3.1`.
 
 ## Usage
 

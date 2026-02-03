@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import importlib.util
 import inspect
 import json
@@ -39,6 +40,7 @@ _CLOSE_PUNCT = set("」』）】］〉》」』”’\"'")
 
 DEFAULT_TORCH_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 DEFAULT_MLX_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"
+MIN_MLX_AUDIO_VERSION = "0.3.1"
 
 
 @dataclass(frozen=True)
@@ -71,8 +73,8 @@ def _lazy_import_tts() -> None:
         from qwen_tts import Qwen3TTSModel as _Qwen3TTSModel
     except Exception as exc:  # pragma: no cover - optional runtime dependency
         raise RuntimeError(
-            "qwen-tts dependencies are missing. Install qwen-tts + torch, "
-            "or run with uv after adding them to pyproject.toml."
+            "Torch backend dependencies are missing. "
+            "Install them with `uv sync --extra torch`."
         ) from exc
     torch = _torch
     Qwen3TTSModel = _Qwen3TTSModel
@@ -86,17 +88,67 @@ def _is_apple_silicon() -> bool:
     return sys.platform == "darwin" and platform.machine().lower() in {"arm64", "aarch64"}
 
 
+def _parse_version(value: str) -> tuple:
+    try:  # Prefer packaging if available.
+        from packaging.version import Version  # type: ignore
+
+        return (Version(value),)
+    except Exception:
+        parts = []
+        for token in re.split(r"[.+-]", value):
+            if not token:
+                continue
+            digits = "".join(ch for ch in token if ch.isdigit())
+            if digits:
+                parts.append(int(digits))
+            else:
+                parts.append(0)
+        return tuple(parts)
+
+
+def _version_at_least(value: str, minimum: str) -> bool:
+    left = _parse_version(value)
+    right = _parse_version(minimum)
+    return left >= right
+
+
+def _mlx_audio_version() -> Optional[str]:
+    try:
+        return importlib.metadata.version("mlx-audio")
+    except Exception:
+        return None
+
+
+def _is_mlx_audio_compatible() -> bool:
+    version = _mlx_audio_version()
+    if not version:
+        return False
+    return _version_at_least(version, MIN_MLX_AUDIO_VERSION)
+
+
 def _has_mlx_audio() -> bool:
-    return importlib.util.find_spec("mlx_audio") is not None
+    if importlib.util.find_spec("mlx_audio") is None:
+        return False
+    return _is_mlx_audio_compatible()
 
 
 def _select_backend(value: Optional[str]) -> str:
     normalized = (value or "auto").strip().lower()
     if normalized in {"torch", "mlx"}:
+        if normalized == "mlx" and not _is_mlx_audio_compatible():
+            raise ValueError(
+                f"mlx-audio>={MIN_MLX_AUDIO_VERSION} is required for MLX backend. "
+                "Install it with `uv sync --extra mlx --prerelease=allow`."
+            )
         return normalized
     if normalized in {"", "auto"}:
-        if _is_apple_silicon() and _has_mlx_audio():
-            return "mlx"
+        if _is_apple_silicon():
+            if _has_mlx_audio():
+                return "mlx"
+            raise ValueError(
+                "MLX backend requires mlx-audio on Apple Silicon. "
+                "Install it with `uv sync --extra mlx --prerelease=allow`."
+            )
         return "torch"
     raise ValueError(f"Unsupported backend: {value}")
 
@@ -115,12 +167,18 @@ def _lazy_import_mlx_audio() -> None:
     global mlx_audio, mlx_load_model
     if mlx_audio is not None and mlx_load_model is not None:
         return
+    if not _is_mlx_audio_compatible():
+        raise RuntimeError(
+            f"mlx-audio>={MIN_MLX_AUDIO_VERSION} is required for MLX backend. "
+            "Install it with `uv sync --extra mlx --prerelease=allow`."
+        )
     try:
         import mlx_audio as _mlx_audio
         from mlx_audio.tts.utils import load_model as _load_model
     except Exception as exc:  # pragma: no cover - optional runtime dependency
         raise RuntimeError(
-            "mlx-audio is not installed. Install it or disable the MLX backend."
+            "mlx-audio is not installed. Install it with "
+            "`uv sync --extra mlx --prerelease=allow`."
         ) from exc
     mlx_audio = _mlx_audio
     mlx_load_model = _load_model
@@ -825,7 +883,11 @@ def synthesize_book(
             voice_prompts[voice_id] = prompt
             voice_languages[voice_id] = language
     else:
-        model = _load_mlx_model(model_name)
+        try:
+            model = _load_mlx_model(model_name)
+        except RuntimeError as exc:
+            sys.stderr.write(f"{exc}\n")
+            return 2
 
     write_status(out_dir, "synthesizing")
 
@@ -1121,7 +1183,10 @@ def synthesize_chunk(
         )
         prompt, language = _prepare_voice_prompt(model, config)
     else:
-        model = _load_mlx_model(model_name)
+        try:
+            model = _load_mlx_model(model_name)
+        except RuntimeError as exc:
+            raise ValueError(str(exc)) from exc
         prompt = None
         language = None
 

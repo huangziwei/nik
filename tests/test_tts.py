@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from nik import tts as tts_util
 from nik import voice as voice_util
 
@@ -171,7 +173,8 @@ def test_select_backend_prefers_mlx_on_apple(monkeypatch) -> None:
 def test_select_backend_falls_back_to_torch(monkeypatch) -> None:
     monkeypatch.setattr(tts_util, "_is_apple_silicon", lambda: True)
     monkeypatch.setattr(tts_util, "_has_mlx_audio", lambda: False)
-    assert tts_util._select_backend("auto") == "torch"
+    with pytest.raises(ValueError):
+        tts_util._select_backend("auto")
 
 
 def test_generate_audio_falls_back_to_generate() -> None:
