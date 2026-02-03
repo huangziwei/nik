@@ -27,3 +27,9 @@ def test_clone_parser_allows_disabling_auto_text() -> None:
     parser = cli.build_parser()
     args = parser.parse_args(["clone", "voice.wav", "--no-auto-text"])
     assert args.auto_text is False
+
+
+def test_synth_parser_supports_backend() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(["synth", "--book", "out", "--voice", "voice.json", "--backend", "mlx"])
+    assert args.backend == "mlx"

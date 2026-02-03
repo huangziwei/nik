@@ -19,6 +19,18 @@ Optional (auto-transcribe voice clips with Whisper):
 uv sync --extra whisper
 ```
 
+### Apple Silicon (MLX backend)
+On Apple Silicon, nik can use the MLX backend (via `mlx-audio`). The backend
+defaults to `auto`, which picks MLX when available.
+
+Force a backend if needed:
+```bash
+uv run nik synth --backend torch ...
+uv run nik synth --backend mlx ...
+```
+
+You can override the model with `--model` for either backend.
+
 ## Usage
 
 ### 1) Ingest EPUB

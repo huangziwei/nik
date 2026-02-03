@@ -398,6 +398,7 @@ def _synth(args: argparse.Namespace) -> int:
         device_map=args.device,
         dtype=args.dtype,
         attn_implementation=args.attn,
+        backend=args.backend,
     )
 
 
@@ -433,6 +434,7 @@ def _sample(args: argparse.Namespace) -> int:
         device_map=args.device,
         dtype=args.dtype,
         attn_implementation=args.attn,
+        backend=args.backend,
     )
 
 
@@ -564,8 +566,14 @@ def build_parser() -> argparse.ArgumentParser:
     synth.add_argument("--rechunk", action="store_true")
     synth.add_argument(
         "--model",
-        default="Qwen/Qwen3-TTS-12Hz-1.7B-Base",
-        help="Hugging Face model id",
+        default=None,
+        help="Model id/path (defaults depend on backend)",
+    )
+    synth.add_argument(
+        "--backend",
+        choices=("auto", "torch", "mlx"),
+        default="auto",
+        help="TTS backend (auto chooses MLX on Apple Silicon when available)",
     )
     synth.add_argument(
         "--device",
@@ -624,8 +632,14 @@ def build_parser() -> argparse.ArgumentParser:
     sample.add_argument("--rechunk", action="store_true")
     sample.add_argument(
         "--model",
-        default="Qwen/Qwen3-TTS-12Hz-1.7B-Base",
-        help="Hugging Face model id",
+        default=None,
+        help="Model id/path (defaults depend on backend)",
+    )
+    sample.add_argument(
+        "--backend",
+        choices=("auto", "torch", "mlx"),
+        default="auto",
+        help="TTS backend (auto chooses MLX on Apple Silicon when available)",
     )
     sample.add_argument(
         "--device",

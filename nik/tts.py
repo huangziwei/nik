@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import inspect
 import json
+import platform
 import re
 import shutil
 import sys
@@ -28,10 +30,15 @@ from .voice import VoiceConfig
 
 torch = None
 Qwen3TTSModel = None
+mlx_audio = None
+mlx_load_model = None
 
 _END_PUNCT = set("。！？?!…")
 _MID_PUNCT = set("、，,;；:：")
 _CLOSE_PUNCT = set("」』）】］〉》」』”’\"'")
+
+DEFAULT_TORCH_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+DEFAULT_MLX_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"
 
 
 @dataclass(frozen=True)
@@ -74,6 +81,107 @@ def _lazy_import_tts() -> None:
 def _require_tts() -> None:
     _lazy_import_tts()
 
+
+def _is_apple_silicon() -> bool:
+    return sys.platform == "darwin" and platform.machine().lower() in {"arm64", "aarch64"}
+
+
+def _has_mlx_audio() -> bool:
+    return importlib.util.find_spec("mlx_audio") is not None
+
+
+def _select_backend(value: Optional[str]) -> str:
+    normalized = (value or "auto").strip().lower()
+    if normalized in {"torch", "mlx"}:
+        return normalized
+    if normalized in {"", "auto"}:
+        if _is_apple_silicon() and _has_mlx_audio():
+            return "mlx"
+        return "torch"
+    raise ValueError(f"Unsupported backend: {value}")
+
+
+def _default_model_for_backend(backend: str) -> str:
+    return DEFAULT_MLX_MODEL if backend == "mlx" else DEFAULT_TORCH_MODEL
+
+
+def _resolve_model_name(value: Optional[str], backend: str) -> str:
+    if value:
+        return value
+    return _default_model_for_backend(backend)
+
+
+def _lazy_import_mlx_audio() -> None:
+    global mlx_audio, mlx_load_model
+    if mlx_audio is not None and mlx_load_model is not None:
+        return
+    try:
+        import mlx_audio as _mlx_audio
+        from mlx_audio.tts.utils import load_model as _load_model
+    except Exception as exc:  # pragma: no cover - optional runtime dependency
+        raise RuntimeError(
+            "mlx-audio is not installed. Install it or disable the MLX backend."
+        ) from exc
+    mlx_audio = _mlx_audio
+    mlx_load_model = _load_model
+
+
+def _load_mlx_model(model_name: str):
+    _lazy_import_mlx_audio()
+    return mlx_load_model(model_name)
+
+
+def _mlx_kwarg(name: str, signature: inspect.Signature) -> bool:
+    return name in signature.parameters
+
+
+def _generate_audio_mlx(
+    model: object,
+    text: str,
+    voice_config: Optional[VoiceConfig] = None,
+) -> Tuple[List[np.ndarray], int]:
+    generate = getattr(model, "generate", None)
+    if not callable(generate):
+        raise RuntimeError("MLX model does not expose generate().")
+
+    kwargs: dict[str, object] = {}
+    try:
+        sig = inspect.signature(generate)
+    except (TypeError, ValueError):
+        sig = None
+
+    if sig and voice_config:
+        if voice_config.name and _mlx_kwarg("voice", sig):
+            kwargs["voice"] = voice_config.name
+        if voice_config.ref_audio:
+            for key in ("ref_audio", "reference_audio", "speaker_wav", "speaker_audio"):
+                if _mlx_kwarg(key, sig):
+                    kwargs[key] = voice_config.ref_audio
+                    break
+        if voice_config.ref_text:
+            for key in ("ref_text", "reference_text", "prompt_text"):
+                if _mlx_kwarg(key, sig):
+                    kwargs[key] = voice_config.ref_text
+                    break
+
+    outputs = generate(text, **kwargs)
+    if isinstance(outputs, np.ndarray):
+        audio = outputs
+        sample_rate = getattr(outputs, "sample_rate", None)
+        return [np.asarray(audio).flatten()], int(sample_rate or 24000)
+
+    audio_parts: List[np.ndarray] = []
+    sample_rate: Optional[int] = None
+    for result in outputs:
+        audio = getattr(result, "audio", result)
+        audio_parts.append(np.asarray(audio).flatten())
+        if sample_rate is None:
+            sample_rate = getattr(result, "sample_rate", None)
+    if not audio_parts:
+        return [], int(sample_rate or 24000)
+    if sample_rate is None:
+        sample_rate = getattr(model, "sample_rate", None)
+    return audio_parts, int(sample_rate or 24000)
 
 def _normalize_text(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
@@ -624,13 +732,16 @@ def synthesize_book(
     rechunk: bool = False,
     voice_map_path: Optional[Path] = None,
     base_dir: Optional[Path] = None,
-    model_name: str = "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+    model_name: Optional[str] = None,
     device_map: Optional[str] = None,
     dtype: Optional[str] = None,
     attn_implementation: Optional[str] = None,
     only_chapter_ids: Optional[set[str]] = None,
+    backend: Optional[str] = None,
 ) -> int:
     chapters = load_book_chapters(book_dir)
+    backend_name = _select_backend(backend)
+    model_name = _resolve_model_name(model_name, backend_name)
     reading_overrides = _load_reading_overrides(book_dir)
     if out_dir is None:
         out_dir = book_dir / "tts"
@@ -700,18 +811,21 @@ def synthesize_book(
 
     write_status(out_dir, "cloning", "Preparing voice")
 
-    model = _load_model(
-        model_name=model_name,
-        device_map=device_map,
-        dtype=dtype,
-        attn_implementation=attn_implementation,
-    )
     voice_prompts: Dict[str, Any] = {}
     voice_languages: Dict[str, str] = {}
-    for voice_id, config in voice_configs.items():
-        prompt, language = _prepare_voice_prompt(model, config)
-        voice_prompts[voice_id] = prompt
-        voice_languages[voice_id] = language
+    if backend_name == "torch":
+        model = _load_model(
+            model_name=model_name,
+            device_map=device_map,
+            dtype=dtype,
+            attn_implementation=attn_implementation,
+        )
+        for voice_id, config in voice_configs.items():
+            prompt, language = _prepare_voice_prompt(model, config)
+            voice_prompts[voice_id] = prompt
+            voice_languages[voice_id] = language
+    else:
+        model = _load_mlx_model(model_name)
 
     write_status(out_dir, "synthesizing")
 
@@ -759,8 +873,9 @@ def synthesize_book(
 
             chapter_seg_dir = seg_dir / chapter_id
             voice_id = chapter_voice_map.get(chapter_id, default_voice)
-            prompt = voice_prompts[voice_id]
-            language = voice_languages[voice_id]
+            prompt = voice_prompts.get(voice_id)
+            language = voice_languages.get(voice_id)
+            voice_config = voice_configs.get(voice_id)
             chapter_overrides = reading_overrides.get(chapter_id, [])
 
             for chunk_idx, chunk_text in enumerate(chunks, start=1):
@@ -789,12 +904,19 @@ def synthesize_book(
                     progress.advance(overall_task, 1)
                     continue
 
-                wavs, sample_rate = _generate_audio(
-                    model=model,
-                    text=tts_text,
-                    prompt=prompt,
-                    language=language,
-                )
+                if backend_name == "torch":
+                    wavs, sample_rate = _generate_audio(
+                        model=model,
+                        text=tts_text,
+                        prompt=prompt,
+                        language=language,
+                    )
+                else:
+                    wavs, sample_rate = _generate_audio_mlx(
+                        model=model,
+                        text=tts_text,
+                        voice_config=voice_config,
+                    )
                 if not wavs:
                     sys.stderr.write(
                         f"Skipping empty audio {chapter_id} ({chunk_idx}/{chapter_total}).\n"
@@ -851,10 +973,11 @@ def synthesize_book_sample(
     rechunk: bool = False,
     voice_map_path: Optional[Path] = None,
     base_dir: Optional[Path] = None,
-    model_name: str = "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+    model_name: Optional[str] = None,
     device_map: Optional[str] = None,
     dtype: Optional[str] = None,
     attn_implementation: Optional[str] = None,
+    backend: Optional[str] = None,
 ) -> int:
     chapters = load_book_chapters(book_dir)
     if not chapters:
@@ -898,6 +1021,7 @@ def synthesize_book_sample(
         dtype=dtype,
         attn_implementation=attn_implementation,
         only_chapter_ids={sample_id},
+        backend=backend,
     )
 
 
@@ -908,14 +1032,16 @@ def synthesize_chunk(
     voice: Optional[str] = None,
     voice_map_path: Optional[Path] = None,
     base_dir: Optional[Path] = None,
-    model_name: str = "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+    model_name: Optional[str] = None,
     device_map: Optional[str] = None,
     dtype: Optional[str] = None,
     attn_implementation: Optional[str] = None,
+    backend: Optional[str] = None,
 ) -> dict:
-    _require_tts()
     if base_dir is None:
         base_dir = Path.cwd()
+    backend_name = _select_backend(backend)
+    model_name = _resolve_model_name(model_name, backend_name)
     if chunk_index < 0:
         raise ValueError("chunk_index must be >= 0")
 
@@ -985,13 +1111,19 @@ def synthesize_chunk(
         voice_id = _normalize_voice_id(entry.get("voice"), default_voice)
 
     config = voice_util.resolve_voice_config(voice=voice_id, base_dir=base_dir)
-    model = _load_model(
-        model_name=model_name,
-        device_map=device_map,
-        dtype=dtype,
-        attn_implementation=attn_implementation,
-    )
-    prompt, language = _prepare_voice_prompt(model, config)
+    if backend_name == "torch":
+        _require_tts()
+        model = _load_model(
+            model_name=model_name,
+            device_map=device_map,
+            dtype=dtype,
+            attn_implementation=attn_implementation,
+        )
+        prompt, language = _prepare_voice_prompt(model, config)
+    else:
+        model = _load_mlx_model(model_name)
+        prompt = None
+        language = None
 
     override_dir = out_dir.parent
     if (out_dir / "reading-overrides.json").exists():
@@ -1016,12 +1148,19 @@ def synthesize_chunk(
             "duration_ms": 0,
         }
 
-    wavs, sample_rate = _generate_audio(
-        model=model,
-        text=tts_text,
-        prompt=prompt,
-        language=language,
-    )
+    if backend_name == "torch":
+        wavs, sample_rate = _generate_audio(
+            model=model,
+            text=tts_text,
+            prompt=prompt,
+            language=language,
+        )
+    else:
+        wavs, sample_rate = _generate_audio_mlx(
+            model=model,
+            text=tts_text,
+            voice_config=config,
+        )
     if not wavs:
         durations[chunk_index] = 0
         atomic_write_json(manifest_path, manifest)
