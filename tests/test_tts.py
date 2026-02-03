@@ -135,6 +135,33 @@ def test_generate_audio_prefers_voice_clone() -> None:
     assert model.kwargs["voice_clone_prompt"] == {"p": 1}
 
 
+def test_apply_reading_overrides() -> None:
+    text = "私は漢字と東京。"
+    overrides = [
+        {"base": "漢字", "reading": "かんじ"},
+        {"base": "東京", "reading": "とうきょう"},
+    ]
+    assert (
+        tts_util.apply_reading_overrides(text, overrides)
+        == "私はかんじととうきょう。"
+    )
+
+
+def test_load_reading_overrides(tmp_path: Path) -> None:
+    payload = {
+        "chapters": {
+            "0001-test": {
+                "replacements": [{"base": "漢字", "reading": "かんじ"}],
+                "conflicts": [{"base": "生", "readings": ["せい", "なま"]}],
+            }
+        }
+    }
+    path = tmp_path / "reading-overrides.json"
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    overrides = tts_util._load_reading_overrides(tmp_path)
+    assert overrides == {"0001-test": [{"base": "漢字", "reading": "かんじ"}]}
+
+
 def test_generate_audio_falls_back_to_generate() -> None:
     class ModelGenerate:
         def __init__(self) -> None:

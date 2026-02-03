@@ -35,6 +35,11 @@ uv run nik sanitize \
   --overwrite
 ```
 
+### Ruby readings (Japanese)
+If the EPUB contains `<ruby>` tags, ingest will extract them into
+`reading-overrides.json`. These overrides are only applied at TTS time
+so the clean text stays unchanged.
+
 ### 3) Prepare a voice clone
 ```bash
 uv run nik clone \

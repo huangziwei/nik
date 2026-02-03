@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, List, Optional
 from urllib.parse import unquote
@@ -23,6 +23,7 @@ class Chapter:
     href: str
     source: str
     text: str
+    ruby_pairs: List[tuple[str, str]] = field(default_factory=list)
 
 
 def read_epub(path: Path) -> epub.EpubBook:
@@ -259,6 +260,27 @@ def _join_item_text(
     return normalize_text("\n\n".join(parts))
 
 
+def _join_item_text_and_ruby(
+    items: Iterable[object],
+    footnote_index: dict[str, set[str]] | None = None,
+) -> tuple[str, List[tuple[str, str]]]:
+    parts: List[str] = []
+    ruby_pairs: List[tuple[str, str]] = []
+    for item in items:
+        content = item.get_content()
+        text = html_to_text(
+            content,
+            footnote_index=footnote_index,
+            source_href=_item_name(item),
+        )
+        if text:
+            parts.append(text)
+        ruby_pairs.extend(extract_ruby_pairs(content))
+    if not parts:
+        return "", ruby_pairs
+    return normalize_text("\n\n".join(parts)), ruby_pairs
+
+
 _NOTE_MARKER_RE = re.compile(r"^\d{1,4}[a-z]?[.)]?$", re.IGNORECASE)
 
 
@@ -350,6 +372,8 @@ def html_to_text(
     head = html.lstrip()[:512].lower()
     parser = "lxml-xml" if (head.startswith(b"<?xml") or b"xmlns=" in head) else "lxml"
     soup = BeautifulSoup(html, parser)
+    for tag in soup.find_all(["rt", "rp"]):
+        tag.decompose()
     for tag in soup(["script", "style", "nav", "header", "footer", "aside", "noscript"]):
         tag.decompose()
     for tag in soup.find_all("sup"):
@@ -437,6 +461,42 @@ def html_to_text(
 
     text = root.get_text(separator="", strip=False)
     return normalize_text(text)
+
+
+def extract_ruby_pairs(html: bytes | str) -> List[tuple[str, str]]:
+    if isinstance(html, bytes):
+        head = html.lstrip()[:512].lower()
+        parser = (
+            "lxml-xml"
+            if (head.startswith(b"<?xml") or b"xmlns=" in head)
+            else "lxml"
+        )
+    else:
+        head = str(html).lstrip()[:512].lower()
+        parser = "lxml-xml" if (head.startswith("<?xml") or "xmlns=" in head) else "lxml"
+    soup = BeautifulSoup(html, parser)
+    pairs: List[tuple[str, str]] = []
+    for ruby in soup.find_all("ruby"):
+        base_parts: List[str] = []
+        for child in ruby.contents:
+            name = getattr(child, "name", None)
+            if name in {"rt", "rp"}:
+                continue
+            if isinstance(child, str):
+                base_parts.append(child)
+            else:
+                base_parts.append(child.get_text(separator="", strip=False))
+        base = "".join(base_parts).strip()
+        if not base:
+            continue
+        reading_parts = [
+            rt.get_text(separator="", strip=False) for rt in ruby.find_all("rt")
+        ]
+        reading = "".join(reading_parts).strip()
+        if not reading:
+            continue
+        pairs.append((base, reading))
+    return pairs
 
 
 def normalize_text(text: str) -> str:
@@ -538,13 +598,15 @@ def _chapters_from_entries(
         if not item or item.get_type() != ITEM_DOCUMENT:
             continue
 
+        content = item.get_content()
         text = html_to_text(
-            item.get_content(),
+            content,
             footnote_index=footnote_index,
             source_href=_item_name(item),
         )
         if not text:
             continue
+        ruby_pairs = extract_ruby_pairs(content)
 
         title = ""
         if title_overrides and base_href in title_overrides:
@@ -562,7 +624,13 @@ def _chapters_from_entries(
         if _looks_like_filename(title, base_href):
             title = f"{fallback_prefix} {idx}"
         chapters.append(
-            Chapter(title=title, href=entry.href, source=base_href, text=text)
+            Chapter(
+                title=title,
+                href=entry.href,
+                source=base_href,
+                text=text,
+                ruby_pairs=ruby_pairs,
+            )
         )
 
     return chapters
@@ -615,7 +683,9 @@ def _chapters_from_toc_entries(
                     idx += 1
 
         if merged_items:
-            text = _join_item_text(merged_items, footnote_index=footnote_index)
+            text, ruby_pairs = _join_item_text_and_ruby(
+                merged_items, footnote_index=footnote_index
+            )
             item_for_title = merged_items[0]
         else:
             item_for_title = None
@@ -627,18 +697,26 @@ def _chapters_from_toc_entries(
                 item_for_title = book.get_item_with_id(base_href)
             if not item_for_title or item_for_title.get_type() != ITEM_DOCUMENT:
                 continue
+            content = item_for_title.get_content()
             text = html_to_text(
-                item_for_title.get_content(),
+                content,
                 footnote_index=footnote_index,
                 source_href=_item_name(item_for_title),
             )
+            ruby_pairs = extract_ruby_pairs(content)
 
         if not text:
             continue
 
         title = entry.title or _item_title(item_for_title) or Path(base_href).stem
         chapters.append(
-            Chapter(title=title, href=entry.href, source=base_href, text=text)
+            Chapter(
+                title=title,
+                href=entry.href,
+                source=base_href,
+                text=text,
+                ruby_pairs=ruby_pairs,
+            )
         )
 
     return chapters

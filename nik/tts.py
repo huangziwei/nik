@@ -255,6 +255,61 @@ def _load_voice_map(path: Optional[Path]) -> dict:
     }
 
 
+def _load_reading_overrides(book_dir: Path) -> dict[str, List[dict[str, str]]]:
+    path = book_dir / "reading-overrides.json"
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(data, dict) and "chapters" in data:
+        data = data.get("chapters") or {}
+    if not isinstance(data, dict):
+        return {}
+    overrides: dict[str, List[dict[str, str]]] = {}
+    for chapter_id, entry in data.items():
+        replacements: list[dict[str, str]] = []
+        if isinstance(entry, dict):
+            raw_replacements = entry.get("replacements") or entry.get("entries") or []
+        elif isinstance(entry, list):
+            raw_replacements = entry
+        else:
+            raw_replacements = []
+        for item in raw_replacements:
+            if isinstance(item, dict):
+                base = str(item.get("base") or "").strip()
+                reading = str(item.get("reading") or item.get("kana") or "").strip()
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                base = str(item[0] or "").strip()
+                reading = str(item[1] or "").strip()
+            else:
+                continue
+            if not base or not reading:
+                continue
+            replacements.append({"base": base, "reading": reading})
+        if replacements:
+            overrides[str(chapter_id)] = replacements
+    return overrides
+
+
+def apply_reading_overrides(
+    text: str, overrides: Sequence[dict[str, str]]
+) -> str:
+    if not overrides:
+        return text
+    ordered = sorted(
+        overrides,
+        key=lambda item: len(item.get("base", "")),
+        reverse=True,
+    )
+    out = text
+    for item in ordered:
+        base = item.get("base", "")
+        reading = item.get("reading", "")
+        if not base or not reading:
+            continue
+        out = out.replace(base, reading)
+    return out
+
+
 def _normalize_voice_id(value: Optional[str], default_voice: str) -> str:
     if value is None:
         return default_voice
@@ -576,6 +631,7 @@ def synthesize_book(
     only_chapter_ids: Optional[set[str]] = None,
 ) -> int:
     chapters = load_book_chapters(book_dir)
+    reading_overrides = _load_reading_overrides(book_dir)
     if out_dir is None:
         out_dir = book_dir / "tts"
     if base_dir is None:
@@ -705,6 +761,7 @@ def synthesize_book(
             voice_id = chapter_voice_map.get(chapter_id, default_voice)
             prompt = voice_prompts[voice_id]
             language = voice_languages[voice_id]
+            chapter_overrides = reading_overrides.get(chapter_id, [])
 
             for chunk_idx, chunk_text in enumerate(chunks, start=1):
                 seg_path = chapter_seg_dir / f"{chunk_idx:06d}.wav"
@@ -723,7 +780,8 @@ def synthesize_book(
                     progress.advance(overall_task, 1)
                     continue
 
-                tts_text = prepare_tts_text(chunk_text)
+                tts_source = apply_reading_overrides(chunk_text, chapter_overrides)
+                tts_text = prepare_tts_text(tts_source)
                 if not tts_text:
                     ch_entry["durations_ms"][chunk_idx - 1] = 0
                     atomic_write_json(manifest_path, manifest)
@@ -935,7 +993,14 @@ def synthesize_chunk(
     )
     prompt, language = _prepare_voice_prompt(model, config)
 
-    tts_text = prepare_tts_text(chunk_text)
+    override_dir = out_dir.parent
+    if (out_dir / "reading-overrides.json").exists():
+        override_dir = out_dir
+    reading_overrides = _load_reading_overrides(override_dir)
+    chapter_overrides = reading_overrides.get(chapter_id, [])
+    tts_text = prepare_tts_text(
+        apply_reading_overrides(chunk_text, chapter_overrides)
+    )
     seg_path = out_dir / "segments" / chapter_id / f"{chunk_index + 1:06d}.wav"
     seg_path.parent.mkdir(parents=True, exist_ok=True)
 

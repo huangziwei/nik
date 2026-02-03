@@ -24,3 +24,9 @@ def test_extract_chapters_from_sample_epub() -> None:
     chapters = epub_util.extract_chapters(book, prefer_toc=True)
     assert len(chapters) > 3
     assert not any(ch.title.endswith(".xhtml") for ch in chapters)
+
+
+def test_extract_ruby_pairs_and_strip_rt() -> None:
+    html = "<p><ruby>漢字<rt>かんじ</rt></ruby>です。</p>".encode("utf-8")
+    assert epub_util.html_to_text(html) == "漢字です。"
+    assert epub_util.extract_ruby_pairs(html) == [("漢字", "かんじ")]

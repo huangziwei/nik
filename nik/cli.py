@@ -21,6 +21,34 @@ from . import tts as tts_util
 from . import voice as voice_util
 
 
+def _summarize_ruby_pairs(
+    pairs: list[tuple[str, str]],
+) -> Optional[dict]:
+    if not pairs:
+        return None
+    readings: dict[str, set[str]] = {}
+    for base, reading in pairs:
+        base_text = str(base).strip()
+        reading_text = str(reading).strip()
+        if not base_text or not reading_text:
+            continue
+        readings.setdefault(base_text, set()).add(reading_text)
+    if not readings:
+        return None
+    replacements = []
+    conflicts = []
+    for base, values in sorted(
+        readings.items(), key=lambda item: (-len(item[0]), item[0])
+    ):
+        if len(values) == 1:
+            replacements.append({"base": base, "reading": sorted(values)[0]})
+        else:
+            conflicts.append({"base": base, "readings": sorted(values)})
+    if not replacements and not conflicts:
+        return None
+    return {"replacements": replacements, "conflicts": conflicts}
+
+
 def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
     book = epub_util.read_epub(input_path)
     metadata = epub_util.extract_metadata(book)
@@ -43,6 +71,7 @@ def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
         return 2
 
     toc_items = []
+    ruby_overrides: dict[str, dict] = {}
     for idx, chapter in enumerate(chapters, start=1):
         title = chapter.title or f"Chapter {idx}"
         slug = epub_util.slugify(title)
@@ -50,6 +79,10 @@ def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
         out_path = raw_dir / filename
 
         out_path.write_text(chapter.text.rstrip() + "\n", encoding="utf-8")
+        chapter_id = Path(filename).stem
+        summary = _summarize_ruby_pairs(chapter.ruby_pairs)
+        if summary:
+            ruby_overrides[chapter_id] = summary
         toc_items.append(
             {
                 "index": idx,
@@ -72,6 +105,19 @@ def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
         json.dumps(toc_data, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+    if ruby_overrides:
+        overrides_path = out_dir / "reading-overrides.json"
+        overrides_payload = {
+            "created_unix": int(time.time()),
+            "source_epub": str(input_path),
+            "chapters": ruby_overrides,
+        }
+        overrides_path.write_text(
+            json.dumps(overrides_payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        print(f"Reading overrides saved to {overrides_path}")
 
     print(f"Wrote {len(toc_items)} chapters to {raw_dir}")
     print(f"TOC metadata saved to {toc_path}")
