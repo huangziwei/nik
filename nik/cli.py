@@ -467,7 +467,7 @@ def build_parser() -> argparse.ArgumentParser:
     synth.add_argument("--rechunk", action="store_true")
     synth.add_argument(
         "--model",
-        default="Qwen/Qwen3-TTS-1.7B-Base",
+        default="Qwen/Qwen3-TTS-12Hz-1.7B-Base",
         help="Hugging Face model id",
     )
     synth.add_argument(
@@ -527,7 +527,7 @@ def build_parser() -> argparse.ArgumentParser:
     sample.add_argument("--rechunk", action="store_true")
     sample.add_argument(
         "--model",
-        default="Qwen/Qwen3-TTS-1.7B-Base",
+        default="Qwen/Qwen3-TTS-12Hz-1.7B-Base",
         help="Hugging Face model id",
     )
     sample.add_argument(

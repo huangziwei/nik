@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import re
 import shutil
@@ -438,13 +439,48 @@ def _prepare_voice_prompt(
     ref_text = voice.ref_text
     if not ref_text and not voice.x_vector_only_mode:
         raise ValueError("Voice config is missing ref_text.")
-    prompt = model.create_voice_clone_prompt(
-        ref_audio=str(voice.audio_path),
-        ref_text=ref_text,
-        language=voice.language,
-        x_vector_only_mode=voice.x_vector_only_mode,
-    )
+    kwargs: Dict[str, Any] = {
+        "ref_audio": str(voice.audio_path),
+        "ref_text": ref_text,
+        "language": voice.language,
+        "x_vector_only_mode": voice.x_vector_only_mode,
+    }
+    create_fn = model.create_voice_clone_prompt
+    sig = inspect.signature(create_fn)
+    if any(param.kind == param.VAR_KEYWORD for param in sig.parameters.values()):
+        filtered = kwargs
+    else:
+        filtered = {k: v for k, v in kwargs.items() if k in sig.parameters}
+    prompt = create_fn(**filtered)
     return prompt, voice.language
+
+
+def _call_with_supported_kwargs(fn, kwargs: Dict[str, Any]) -> Any:
+    sig = inspect.signature(fn)
+    if any(param.kind == param.VAR_KEYWORD for param in sig.parameters.values()):
+        return fn(**kwargs)
+    filtered = {k: v for k, v in kwargs.items() if k in sig.parameters}
+    return fn(**filtered)
+
+
+def _generate_audio(
+    model: "Qwen3TTSModel",
+    text: str,
+    prompt: Any,
+    language: Optional[str],
+) -> Tuple[List[np.ndarray], int]:
+    if hasattr(model, "generate_voice_clone"):
+        kwargs = {
+            "text": text,
+            "language": language,
+            "voice_clone_prompt": prompt,
+            "non_streaming_mode": True,
+        }
+        return _call_with_supported_kwargs(model.generate_voice_clone, kwargs)
+    if hasattr(model, "generate"):
+        kwargs = {"text": text, "prompt": prompt, "language": language}
+        return _call_with_supported_kwargs(model.generate, kwargs)
+    raise AttributeError("Qwen3TTSModel has no supported generate method.")
 
 
 def _is_valid_wav(path: Path) -> bool:
@@ -537,7 +573,7 @@ def synthesize_book(
     rechunk: bool = False,
     voice_map_path: Optional[Path] = None,
     base_dir: Optional[Path] = None,
-    model_name: str = "Qwen/Qwen3-TTS-1.7B-Base",
+    model_name: str = "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
     device_map: Optional[str] = None,
     dtype: Optional[str] = None,
     attn_implementation: Optional[str] = None,
@@ -699,7 +735,8 @@ def synthesize_book(
                     progress.advance(overall_task, 1)
                     continue
 
-                wavs, sample_rate = model.generate(
+                wavs, sample_rate = _generate_audio(
+                    model=model,
                     text=tts_text,
                     prompt=prompt,
                     language=language,
@@ -760,7 +797,7 @@ def synthesize_book_sample(
     rechunk: bool = False,
     voice_map_path: Optional[Path] = None,
     base_dir: Optional[Path] = None,
-    model_name: str = "Qwen/Qwen3-TTS-1.7B-Base",
+    model_name: str = "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
     device_map: Optional[str] = None,
     dtype: Optional[str] = None,
     attn_implementation: Optional[str] = None,
@@ -817,7 +854,7 @@ def synthesize_chunk(
     voice: Optional[str] = None,
     voice_map_path: Optional[Path] = None,
     base_dir: Optional[Path] = None,
-    model_name: str = "Qwen/Qwen3-TTS-1.7B-Base",
+    model_name: str = "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
     device_map: Optional[str] = None,
     dtype: Optional[str] = None,
     attn_implementation: Optional[str] = None,
@@ -918,7 +955,8 @@ def synthesize_chunk(
             "duration_ms": 0,
         }
 
-    wavs, sample_rate = model.generate(
+    wavs, sample_rate = _generate_audio(
+        model=model,
         text=tts_text,
         prompt=prompt,
         language=language,

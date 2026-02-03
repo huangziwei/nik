@@ -48,7 +48,7 @@ You can also pass a raw audio path directly with `--voice` and supply
 uv run nik synth \
   --book out/some-book \
   --voice myvoice \
-  --model Qwen/Qwen3-TTS-1.7B-Base
+  --model Qwen/Qwen3-TTS-12Hz-1.7B-Base
 ```
 
 ### 5) Merge to M4B

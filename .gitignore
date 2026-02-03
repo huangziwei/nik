@@ -30,4 +30,5 @@ venv/
 
 AGENTS.md
 out/
+voices/
 *.epub
