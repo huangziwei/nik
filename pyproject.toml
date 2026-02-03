@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nik"
+version = "0.1.0"
+description = "Japanese EPUB to M4B pipeline using Qwen TTS voice cloning"
+authors = []
+requires-python = "==3.12.*"
+dependencies = [
+    "beautifulsoup4>=4.12",
+    "ebooklib>=0.18",
+    "lxml>=5.0",
+    "numpy>=1.24",
+    "qwen-tts",
+    "rich>=13.7",
+    "soundfile>=0.12",
+    "torch",
+    "librosa",
+]
+readme = {file = "README.md", content-type = "text/markdown"}
+
+[project.scripts]
+nik = "nik.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "pytest",
+    "twine", 
+    "maturin",
+]
+
+[tool.setuptools]
+packages = {find = {}}
+include-package-data = true

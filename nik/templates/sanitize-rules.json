@@ -1,0 +1,26 @@
+{
+  "replace_defaults": false,
+  "drop_chapter_title_patterns": [
+    "^目次$",
+    "^奥付$",
+    "^著作権$",
+    "^著作権情報$",
+    "^権利表記$",
+    "^表紙$",
+    "^カバー$",
+    "^著者紹介$",
+    "^作者紹介$",
+    "^広告$",
+    "^内容紹介$"
+  ],
+  "section_cutoff_patterns": [
+    "^\\s*参考文献\\s*$",
+    "^\\s*索引\\s*$",
+    "^\\s*注\\s*$",
+    "^\\s*脚注\\s*$",
+    "^\\s*引用文献\\s*$"
+  ],
+  "remove_patterns": [
+  ],
+  "paragraph_breaks": "double"
+}
