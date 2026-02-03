@@ -14,3 +14,16 @@ def test_cli_has_expected_commands() -> None:
     choices = set(subparsers[0].choices.keys())
     for name in ("ingest", "sanitize", "clone", "synth", "sample", "merge", "play"):
         assert name in choices
+
+
+def test_clone_parser_supports_auto_text() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(["clone", "voice.wav", "--whisper-model", "tiny"])
+    assert args.auto_text is True
+    assert args.whisper_model == "tiny"
+
+
+def test_clone_parser_allows_disabling_auto_text() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(["clone", "voice.wav", "--no-auto-text"])
+    assert args.auto_text is False

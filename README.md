@@ -4,14 +4,19 @@ Japanese EPUB -> M4B pipeline using Qwen TTS voice cloning.
 
 ## Prerequisites
 
-- Python 3.10+
-- `ffmpeg` on PATH (required for merge and voice clip prep)
+- Python 3.12
+- `ffmpeg` on PATH (required for merge, voice clip prep, and Whisper)
 - A compatible PyTorch install for your hardware
 
 ## Installation
 
 ```bash
 uv sync
+```
+
+Optional (auto-transcribe voice clips with Whisper):
+```bash
+uv sync --extra whisper
 ```
 
 ## Usage
@@ -38,6 +43,17 @@ uv run nik clone \
   --text "REFERENCE TRANSCRIPT HERE" \
   --duration 10
 ```
+
+If you omit `--text`, nik will use Whisper to auto-transcribe the clip:
+```bash
+uv run nik clone \
+  voices/source.wav \
+  --name myvoice \
+  --duration 10
+```
+
+Disable auto-transcription with `--no-auto-text`. You can tweak Whisper with
+`--whisper-model`, `--whisper-language`, or `--whisper-device`.
 
 This creates `voices/myvoice.json` pointing at `voices/myvoice.wav`.
 You can also pass a raw audio path directly with `--voice` and supply

@@ -13,6 +13,7 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
+from . import asr as asr_util
 from . import epub as epub_util
 from . import merge as merge_util
 from . import sanitize as sanitize_util
@@ -196,9 +197,10 @@ def _clone(args: argparse.Namespace) -> int:
     elif args.text:
         voice_text = str(args.text).strip()
 
-    if not voice_text and not args.x_vector_only:
+    if not voice_text and not args.x_vector_only and not args.auto_text:
         sys.stderr.write(
-            "Reference text is required. Provide --text/--text-file or use --x-vector-only.\n"
+            "Reference text is required. Provide --text/--text-file, enable Whisper "
+            "auto-text, or use --x-vector-only.\n"
         )
         return 2
 
@@ -233,6 +235,32 @@ def _clone(args: argparse.Namespace) -> int:
         if result.returncode != 0:
             sys.stderr.write("ffmpeg failed to process the audio.\n")
             return 2
+
+    if not voice_text and args.auto_text:
+        whisper_language = args.whisper_language or args.language
+        try:
+            voice_text = asr_util.transcribe_audio(
+                output_path,
+                model_name=args.whisper_model,
+                language=whisper_language,
+                device=args.whisper_device,
+                initial_prompt=args.whisper_prompt,
+            )
+        except Exception as exc:
+            sys.stderr.write(f"Whisper transcription failed: {exc}\n")
+            return 2
+        if not voice_text:
+            sys.stderr.write(
+                "Whisper returned empty text; provide --text/--text-file instead.\n"
+            )
+            return 2
+
+    if not voice_text and not args.x_vector_only:
+        sys.stderr.write(
+            "Reference text is required. Provide --text/--text-file, enable Whisper "
+            "auto-text, or use --x-vector-only.\n"
+        )
+        return 2
 
     config = voice_util.VoiceConfig(
         name=output_name,
@@ -417,6 +445,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     clone.add_argument("--text", help="Reference transcript for the audio clip")
     clone.add_argument("--text-file", dest="text_file", help="Path to transcript file")
+    clone.add_argument(
+        "--auto-text",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Auto-transcribe the clip with Whisper when no text is provided",
+    )
+    clone.add_argument(
+        "--whisper-model",
+        default="small",
+        help="Whisper model name (default: small)",
+    )
+    clone.add_argument(
+        "--whisper-language",
+        help="Whisper language code/name (default: derived from --language)",
+    )
+    clone.add_argument(
+        "--whisper-device",
+        help="Whisper device (e.g., cpu, cuda, mps)",
+    )
+    clone.add_argument(
+        "--whisper-prompt",
+        help="Initial prompt to guide Whisper transcription",
+    )
     clone.add_argument(
         "--language",
         default=voice_util.DEFAULT_LANGUAGE,
