@@ -4,7 +4,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, Optional
 from urllib.parse import unquote
 
 from bs4 import BeautifulSoup
@@ -468,15 +468,65 @@ def slugify(text: str) -> str:
     return text[:60] or "chapter"
 
 
+_TITLE_MAX_LEN = 40
+
+
+def _title_from_text(text: str, max_len: int = _TITLE_MAX_LEN) -> str:
+    for line in text.splitlines():
+        cleaned = line.strip()
+        if not cleaned:
+            continue
+        if len(cleaned) > max_len:
+            return cleaned[:max_len].rstrip() + "..."
+        return cleaned
+    return ""
+
+
+def _extract_heading_title(html: bytes | str) -> str:
+    try:
+        soup = BeautifulSoup(html, "lxml")
+    except Exception:
+        soup = BeautifulSoup(html, "html.parser")
+    for tag in ("h1", "h2", "h3", "h4", "title"):
+        node = soup.find(tag)
+        if not node:
+            continue
+        text = node.get_text(separator=" ", strip=True)
+        if text:
+            return text
+    return ""
+
+
+def _looks_like_filename(title: str, href: str) -> bool:
+    cleaned = str(title or "").strip()
+    if not cleaned:
+        return True
+    base = Path(href or "")
+    stem = base.stem
+    name = base.name
+    if cleaned == href or cleaned == name or cleaned == stem:
+        return True
+    lowered = cleaned.lower()
+    if lowered.endswith(".xhtml") or lowered.endswith(".html"):
+        return True
+    if stem and lowered == stem.lower():
+        return True
+    if re.fullmatch(r"[a-z]\d+[a-z0-9]*", lowered):
+        return True
+    return False
+
+
 def _chapters_from_entries(
     book: epub.EpubBook,
     entries: Iterable[TocEntry],
     footnote_index: dict[str, set[str]] | None = None,
+    title_overrides: Optional[dict[str, str]] = None,
+    fallback_prefix: str = "Chapter",
 ) -> List[Chapter]:
     seen: set[str] = set()
     chapters: List[Chapter] = []
 
-    for entry in entries:
+    for idx, entry in enumerate(entries, start=1):
         base_href = normalize_href(entry.href)
         if not base_href or base_href in seen:
             continue
@@ -496,7 +546,21 @@ def _chapters_from_entries(
         if not text:
             continue
 
-        title = entry.title or _item_title(item) or Path(base_href).stem
+        title = ""
+        if title_overrides and base_href in title_overrides:
+            title = str(title_overrides[base_href] or "").strip()
+        if not title:
+            title = entry.title or _item_title(item) or ""
+        if _looks_like_filename(title, base_href):
+            heading = _extract_heading_title(item.get_content())
+            if heading and not _looks_like_filename(heading, base_href):
+                title = heading
+        if _looks_like_filename(title, base_href):
+            text_title = _title_from_text(text)
+            if text_title and not _looks_like_filename(text_title, base_href):
+                title = text_title
+        if _looks_like_filename(title, base_href):
+            title = f"{fallback_prefix} {idx}"
         chapters.append(
             Chapter(title=title, href=entry.href, source=base_href, text=text)
         )
@@ -590,6 +654,20 @@ def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> List[Chapt
     )
     if entries and not chapters:
         chapters = _chapters_from_entries(book, entries, footnote_index)
+    if chapters and prefer_toc:
+        spine_chapters = _chapters_from_entries(
+            book,
+            build_spine_entries(book),
+            footnote_index,
+            title_overrides={normalize_href(e.href): e.title for e in entries if e.href},
+        )
+        if spine_chapters:
+            toc_chars = sum(len(ch.text) for ch in chapters if ch.text)
+            spine_chars = sum(len(ch.text) for ch in spine_chapters if ch.text)
+            if spine_chars > 0:
+                ratio = toc_chars / spine_chars
+                if ratio < 0.2 and len(spine_chapters) > len(chapters):
+                    chapters = spine_chapters
     if not chapters:
         chapters = _chapters_from_entries(
             book, build_spine_entries(book), footnote_index

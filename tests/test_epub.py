@@ -12,8 +12,15 @@ def test_normalize_text_collapses_whitespace() -> None:
     assert epub_util.normalize_text(raw) == "Hello\n\nWorld"
 
 
+def test_title_from_text_uses_first_line_and_truncates() -> None:
+    text = "これはとても長い章タイトルですので途中で切ります\n次の行です"
+    title = epub_util._title_from_text(text, max_len=10)
+    assert title == "これはとても長い章タ..."
+
+
 def test_extract_chapters_from_sample_epub() -> None:
     epub_path = Path(__file__).parent / "data" / "異人たちとの夏.epub"
     book = epub_util.read_epub(epub_path)
     chapters = epub_util.extract_chapters(book, prefer_toc=True)
-    assert chapters
+    assert len(chapters) > 3
+    assert not any(ch.title.endswith(".xhtml") for ch in chapters)
