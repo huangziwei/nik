@@ -891,6 +891,10 @@
         position: relative;
       }
 
+      .download-menu {
+        position: relative;
+      }
+
       .menu-panel {
         position: fixed;
         top: 0;
@@ -1800,7 +1804,19 @@
             <button class="btn" id="sampleTts" type="button">Sample</button>
             <span class="tts-divider" aria-hidden="true"></span>
             <button class="btn" id="mergeBtn" type="button">Merge M4B</button>
-            <button class="btn" id="downloadM4bBtn" type="button" hidden>Download M4B</button>
+            <div class="download-menu" id="downloadMenu">
+              <button
+                class="btn"
+                id="downloadM4bBtn"
+                type="button"
+                hidden
+                aria-haspopup="true"
+                aria-expanded="false"
+              >
+                Download M4B
+              </button>
+              <div class="menu-panel" id="downloadMenuPanel"></div>
+            </div>
             <button class="btn subtle tts-delete" id="clearTtsBtn" type="button" title="Delete TTS segments for this book.">Delete TTS cache</button>
           </div>
           <div class="progress-track">
@@ -2162,6 +2178,7 @@
       const sampleTts = document.getElementById("sampleTts");
       const mergeBtn = document.getElementById("mergeBtn");
       const downloadM4bBtn = document.getElementById("downloadM4bBtn");
+      const downloadMenuPanel = document.getElementById("downloadMenuPanel");
       const clearTtsBtn = document.getElementById("clearTtsBtn");
       const progressFill = document.getElementById("progressFill");
       const progressText = document.getElementById("progressText");
@@ -3913,6 +3930,35 @@
         bookMenuPanel.style.transform = "none";
       }
 
+      function positionDownloadMenuPanel() {
+        if (!downloadMenuPanel || !downloadMenuPanel.classList.contains("open")) {
+          return;
+        }
+        const panelRect = downloadMenuPanel.getBoundingClientRect();
+        const anchorRect = downloadM4bBtn.getBoundingClientRect();
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+        const margin = 16;
+        const anchorCenter = anchorRect.left + anchorRect.width / 2;
+        const idealLeft = anchorCenter - panelRect.width / 2;
+        const maxLeft = viewportWidth - panelRect.width - margin;
+        const left = Math.max(margin, Math.min(idealLeft, maxLeft));
+        let top = anchorRect.bottom + 8;
+        if (top + panelRect.height + margin > viewportHeight) {
+          const above = anchorRect.top - panelRect.height - 8;
+          if (above >= margin) {
+            top = above;
+          } else {
+            top = Math.max(margin, viewportHeight - panelRect.height - margin);
+          }
+        }
+        downloadMenuPanel.style.left = `${left}px`;
+        downloadMenuPanel.style.top = `${top}px`;
+        downloadMenuPanel.style.right = "auto";
+        downloadMenuPanel.style.bottom = "auto";
+        downloadMenuPanel.style.transform = "none";
+      }
+
       function openBookmarkPanel() {
         bookmarkPanel.classList.add("open");
         requestAnimationFrame(positionBookmarkPanel);
@@ -4023,6 +4069,17 @@
         requestAnimationFrame(positionBookMenuPanel);
         window.addEventListener("resize", positionBookMenuPanel);
         window.addEventListener("scroll", positionBookMenuPanel, { passive: true });
+      }
+
+      function openDownloadMenu() {
+        if (!downloadMenuPanel || downloadMenuPanel.classList.contains("open")) {
+          return;
+        }
+        downloadMenuPanel.classList.add("open");
+        downloadM4bBtn.setAttribute("aria-expanded", "true");
+        requestAnimationFrame(positionDownloadMenuPanel);
+        window.addEventListener("resize", positionDownloadMenuPanel);
+        window.addEventListener("scroll", positionDownloadMenuPanel, { passive: true });
       }
 
       function addBookmark(index) {
@@ -4243,16 +4300,44 @@
           return;
         }
         const available = state.mergeOutputExists && !state.mergeRunning;
+        if (!available) {
+          closeDownloadMenu();
+        }
+        renderDownloadMenu();
         downloadM4bBtn.hidden = !available;
         downloadM4bBtn.disabled = !available;
         if (!available) {
           downloadM4bBtn.title = "No merged M4B available.";
         } else {
-          downloadM4bBtn.title =
-            state.mergeOutputParts.length > 1
-              ? "Download M4B parts"
-              : "Download M4B";
+          if ((state.mergeOutputParts || []).length > 1) {
+            downloadM4bBtn.title = "Choose an M4B part to download.";
+          } else {
+            downloadM4bBtn.title = "Download M4B";
+          }
         }
+      }
+
+      function renderDownloadMenu() {
+        if (!downloadMenuPanel) {
+          return;
+        }
+        const parts = state.mergeOutputParts || [];
+        downloadMenuPanel.innerHTML = "";
+        if (parts.length <= 1) {
+          closeDownloadMenu();
+          return;
+        }
+        parts.forEach((name, idx) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "btn";
+          btn.textContent = `Download Part ${idx + 1}`;
+          btn.addEventListener("click", () => {
+            closeDownloadMenu();
+            downloadM4bPart(idx + 1, name);
+          });
+          downloadMenuPanel.appendChild(btn);
+        });
       }
 
       function updateSampleButtonState() {
@@ -4454,6 +4539,16 @@
         }
       }
 
+      function closeDownloadMenu() {
+        if (!downloadMenuPanel || !downloadMenuPanel.classList.contains("open")) {
+          return;
+        }
+        downloadMenuPanel.classList.remove("open");
+        downloadM4bBtn.setAttribute("aria-expanded", "false");
+        window.removeEventListener("resize", positionDownloadMenuPanel);
+        window.removeEventListener("scroll", positionDownloadMenuPanel);
+      }
+
       function closeBookMenu() {
         if (!bookMenuPanel.classList.contains("open")) {
           return;
@@ -4479,6 +4574,7 @@
         state.mergeExitCode = null;
         state.mergeOutputExists = false;
         state.mergeOutputParts = [];
+        closeDownloadMenu();
         mergeStatus.textContent = "";
         updateMergeButtonState();
         const payload = {
@@ -4527,44 +4623,50 @@
         }
       }
 
+      function downloadM4bPart(index, filename) {
+        if (!state.book) {
+          return;
+        }
+        const baseUrl = `/api/m4b/download?book_id=${encodeURIComponent(
+          state.book.id
+        )}`;
+        const link = document.createElement("a");
+        link.href = `${baseUrl}&part=${index}`;
+        link.download = filename || `${state.book.id}.m4b`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setStatus("Downloading M4B...");
+      }
+
       function downloadM4b() {
         if (!state.book || !state.mergeOutputExists) {
           setStatus("No merged M4B available.");
           return;
         }
         const parts = state.mergeOutputParts || [];
-        const downloads =
-          parts.length > 1
-            ? parts.map((_, idx) => ({
-                url: `/api/m4b/download?book_id=${encodeURIComponent(
-                  state.book.id
-                )}&part=${idx + 1}`,
-                name: parts[idx] || `${state.book.id}.part${idx + 1}.m4b`,
-              }))
-            : [
-                {
-                  url: `/api/m4b/download?book_id=${encodeURIComponent(
-                    state.book.id
-                  )}`,
-                  name: `${state.book.id}.m4b`,
-                },
-              ];
-
-        downloads.forEach((item, idx) => {
-          const link = document.createElement("a");
-          link.href = item.url;
-          link.download = item.name;
-          document.body.appendChild(link);
-          setTimeout(() => {
-            link.click();
-            link.remove();
-          }, idx * 200);
-        });
-        setStatus(
-          parts.length > 1
-            ? `Downloading ${parts.length} M4B parts...`
-            : "Downloading M4B..."
-        );
+        if (parts.length > 1) {
+          if (downloadMenuPanel && downloadMenuPanel.classList.contains("open")) {
+            closeDownloadMenu();
+          } else {
+            openDownloadMenu();
+          }
+          return;
+        }
+        if (parts.length === 1) {
+          downloadM4bPart(1, parts[0]);
+          return;
+        }
+        const baseUrl = `/api/m4b/download?book_id=${encodeURIComponent(
+          state.book.id
+        )}`;
+        const link = document.createElement("a");
+        link.href = baseUrl;
+        link.download = `${state.book.id}.m4b`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setStatus("Downloading M4B...");
       }
 
       async function sampleSynth() {
@@ -5634,6 +5736,19 @@
           return;
         }
         closeBookMenu();
+      });
+      document.addEventListener("click", (event) => {
+        if (!downloadMenuPanel || !downloadMenuPanel.classList.contains("open")) {
+          return;
+        }
+        const target = event.target;
+        if (
+          target === downloadM4bBtn ||
+          downloadMenuPanel.contains(target)
+        ) {
+          return;
+        }
+        closeDownloadMenu();
       });
       deleteBookBtn.addEventListener("click", deleteBook);
       deleteM4bBtn.addEventListener("click", deleteM4b);
