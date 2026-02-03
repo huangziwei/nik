@@ -138,7 +138,7 @@ def _select_backend(value: Optional[str]) -> str:
         if normalized == "mlx" and not _is_mlx_audio_compatible():
             raise ValueError(
                 f"mlx-audio>={MIN_MLX_AUDIO_VERSION} is required for MLX backend. "
-                "Install it with `uv sync --extra mlx --prerelease=allow`."
+                "Install it with `uv sync --prerelease=allow`."
             )
         return normalized
     if normalized in {"", "auto"}:
@@ -147,7 +147,7 @@ def _select_backend(value: Optional[str]) -> str:
                 return "mlx"
             raise ValueError(
                 "MLX backend requires mlx-audio on Apple Silicon. "
-                "Install it with `uv sync --extra mlx --prerelease=allow`."
+                "Install it with `uv sync --prerelease=allow`."
             )
         return "torch"
     raise ValueError(f"Unsupported backend: {value}")
@@ -170,7 +170,7 @@ def _lazy_import_mlx_audio() -> None:
     if not _is_mlx_audio_compatible():
         raise RuntimeError(
             f"mlx-audio>={MIN_MLX_AUDIO_VERSION} is required for MLX backend. "
-            "Install it with `uv sync --extra mlx --prerelease=allow`."
+            "Install it with `uv sync --prerelease=allow`."
         )
     try:
         import mlx_audio as _mlx_audio
@@ -178,7 +178,7 @@ def _lazy_import_mlx_audio() -> None:
     except Exception as exc:  # pragma: no cover - optional runtime dependency
         raise RuntimeError(
             "mlx-audio is not installed. Install it with "
-            "`uv sync --extra mlx --prerelease=allow`."
+            "`uv sync --prerelease=allow`."
         ) from exc
     mlx_audio = _mlx_audio
     mlx_load_model = _load_model

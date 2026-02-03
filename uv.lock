@@ -548,6 +548,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "jinja2" },
     { name = "lxml" },
+    { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "numpy" },
     { name = "pytest" },
     { name = "python-multipart" },
@@ -557,8 +558,7 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-mlx = [
-    { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+whisper = [
     { name = "openai-whisper" },
 ]
 
@@ -569,16 +569,16 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.110" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "lxml", specifier = ">=5.0" },
-    { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'mlx'", specifier = ">=0.3.1" },
+    { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.3.1" },
     { name = "numpy", specifier = ">=1.24" },
-    { name = "openai-whisper", marker = "extra == 'mlx'", specifier = ">=20231117" },
+    { name = "openai-whisper", marker = "extra == 'whisper'", specifier = ">=20231117" },
     { name = "pytest" },
     { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "rich", specifier = ">=13.7" },
     { name = "soundfile", specifier = ">=0.12" },
     { name = "uvicorn", specifier = ">=0.27" },
 ]
-provides-extras = ["mlx"]
+provides-extras = ["whisper"]
 
 [[package]]
 name = "numba"
