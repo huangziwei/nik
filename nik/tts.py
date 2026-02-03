@@ -405,7 +405,26 @@ def _load_model(
         kwargs["dtype"] = torch_dtype
     if attn_implementation:
         kwargs["attn_implementation"] = attn_implementation
-    return Qwen3TTSModel.from_pretrained(model_name, **kwargs)
+    model = Qwen3TTSModel.from_pretrained(model_name, **kwargs)
+    _ensure_pad_token_id(model)
+    return model
+
+
+def _ensure_pad_token_id(model: "Qwen3TTSModel") -> None:
+    core = getattr(model, "model", None)
+    if core is None:
+        return
+    gen_cfg = getattr(core, "generation_config", None)
+    cfg = getattr(core, "config", None)
+    eos = None
+    if gen_cfg is not None:
+        eos = getattr(gen_cfg, "eos_token_id", None)
+        if getattr(gen_cfg, "pad_token_id", None) is None and eos is not None:
+            gen_cfg.pad_token_id = eos
+    if cfg is not None:
+        eos = eos if eos is not None else getattr(cfg, "eos_token_id", None)
+        if getattr(cfg, "pad_token_id", None) is None and eos is not None:
+            cfg.pad_token_id = eos
 
 
 def _prepare_voice_prompt(

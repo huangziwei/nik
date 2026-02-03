@@ -151,3 +151,29 @@ def test_generate_audio_falls_back_to_generate() -> None:
     assert rate == 24000
     assert model.kwargs["text"] == "こんにちは"
     assert model.kwargs["prompt"] == {"p": 2}
+
+
+def test_ensure_pad_token_id_sets_pad_on_configs() -> None:
+    class GenCfg:
+        def __init__(self) -> None:
+            self.eos_token_id = 2150
+            self.pad_token_id = None
+
+    class Cfg:
+        def __init__(self) -> None:
+            self.eos_token_id = 2150
+            self.pad_token_id = None
+
+    class Core:
+        def __init__(self) -> None:
+            self.generation_config = GenCfg()
+            self.config = Cfg()
+
+    class Model:
+        def __init__(self) -> None:
+            self.model = Core()
+
+    model = Model()
+    tts_util._ensure_pad_token_id(model)
+    assert model.model.generation_config.pad_token_id == 2150
+    assert model.model.config.pad_token_id == 2150
