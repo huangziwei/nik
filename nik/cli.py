@@ -466,14 +466,16 @@ def _debug_dump(label: str, value: str) -> None:
 
 
 def _kana(args: argparse.Namespace) -> int:
-    input_path = Path(args.path)
-    if not input_path.exists():
-        sys.stderr.write(f"Input file not found: {input_path}\n")
-        return 2
-    text = input_path.read_text(encoding="utf-8")
+    raw_input = args.path
+    input_path = Path(raw_input)
+    using_file = input_path.exists()
+    if using_file:
+        text = input_path.read_text(encoding="utf-8")
+    else:
+        text = raw_input
     book_dir = Path(args.book).resolve() if args.book else None
     chapter_id = args.chapter
-    if not book_dir or not chapter_id:
+    if using_file and (not book_dir or not chapter_id):
         inferred_book, inferred_chapter = _infer_book_and_chapter(input_path)
         if book_dir is None:
             book_dir = inferred_book
@@ -493,9 +495,17 @@ def _kana(args: argparse.Namespace) -> int:
             )
         else:
             merged_overrides = global_overrides
+    else:
+        template_path = tts_util._template_reading_overrides_path()
+        if template_path.exists():
+            template_text = template_path.read_text(encoding="utf-8")
+            global_overrides = tts_util._parse_reading_overrides_text(template_text)
+        merged_overrides = global_overrides
 
     if args.debug:
-        _debug_dump("Input", str(input_path))
+        _debug_dump("Input", str(input_path) if using_file else "(inline)")
+        if not using_file:
+            _debug_dump("InputText", text)
         _debug_dump("Book", str(book_dir) if book_dir else "(none)")
         _debug_dump("Chapter", chapter_id or "(none)")
         _debug_dump("Overrides", f"global={len(global_overrides)} chapter={chapter_count}")
@@ -787,7 +797,7 @@ def build_parser() -> argparse.ArgumentParser:
         "kana",
         help="Normalize kanji to kana for a chunk file and print TTS text",
     )
-    kana.add_argument("path", help="Path to a chunk text file")
+    kana.add_argument("path", help="Path to a chunk text file or inline text")
     kana.add_argument("--book", help="Book directory (optional)")
     kana.add_argument("--chapter", help="Chapter id (optional)")
     kana.add_argument(

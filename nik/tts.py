@@ -808,6 +808,8 @@ def _normalize_numbers(text: str) -> str:
         counter = match.group("counter") or ""
         if not num or not counter:
             return match.group(0)
+        if counter == "話" and num == "1":
+            return "いちわ"
         return f"{_to_kanji_number(num)}{counter}"
 
     def _replace_ordinal(match: re.Match) -> str:
