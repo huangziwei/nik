@@ -442,6 +442,111 @@ def _sample(args: argparse.Namespace) -> int:
     )
 
 
+def _infer_book_and_chapter(path: Path) -> tuple[Optional[Path], Optional[str]]:
+    resolved = path.resolve()
+    book_dir = None
+    for parent in [resolved] + list(resolved.parents):
+        if (parent / "tts" / "manifest.json").exists():
+            book_dir = parent
+            break
+    chapter_id = None
+    if book_dir:
+        chunks_root = (book_dir / "tts" / "chunks").resolve()
+        try:
+            rel = resolved.relative_to(chunks_root)
+            if rel.parts:
+                chapter_id = rel.parts[0]
+        except Exception:
+            chapter_id = None
+    return book_dir, chapter_id
+
+
+def _debug_dump(label: str, value: str) -> None:
+    sys.stderr.write(f"{label}: {value}\n")
+
+
+def _kana(args: argparse.Namespace) -> int:
+    input_path = Path(args.path)
+    if not input_path.exists():
+        sys.stderr.write(f"Input file not found: {input_path}\n")
+        return 2
+    text = input_path.read_text(encoding="utf-8")
+    book_dir = Path(args.book).resolve() if args.book else None
+    chapter_id = args.chapter
+    if not book_dir or not chapter_id:
+        inferred_book, inferred_chapter = _infer_book_and_chapter(input_path)
+        if book_dir is None:
+            book_dir = inferred_book
+        if chapter_id is None:
+            chapter_id = inferred_chapter
+
+    global_overrides = []
+    merged_overrides = []
+    chapter_count = 0
+    if book_dir and book_dir.exists():
+        global_overrides, chapter_overrides = tts_util._load_reading_overrides(book_dir)
+        if chapter_id:
+            chapter_entries = chapter_overrides.get(chapter_id, [])
+            chapter_count = len(chapter_entries)
+            merged_overrides = tts_util._merge_reading_overrides(
+                global_overrides, chapter_entries
+            )
+        else:
+            merged_overrides = global_overrides
+
+    if args.debug:
+        _debug_dump("Input", str(input_path))
+        _debug_dump("Book", str(book_dir) if book_dir else "(none)")
+        _debug_dump("Chapter", chapter_id or "(none)")
+        _debug_dump("Overrides", f"global={len(global_overrides)} chapter={chapter_count}")
+        if args.kana_normalize:
+            dict_dir = tts_util._resolve_unidic_dir()
+            dicrc = dict_dir / "dicrc"
+            _debug_dump("UniDic dir", str(dict_dir))
+            _debug_dump("UniDic dicrc", "found" if dicrc.exists() else "missing")
+
+    tts_source = tts_util.apply_reading_overrides(text, merged_overrides)
+    if args.debug:
+        _debug_dump("After overrides", tts_source)
+
+    if args.tokens:
+        try:
+            tagger = tts_util._get_kana_tagger()
+        except RuntimeError as exc:
+            sys.stderr.write(f"{exc}\n")
+            return 2
+        sys.stderr.write("Tokens (kanji only):\n")
+        for token in tagger(tts_source):
+            surface = getattr(token, "surface", "")
+            if not surface or not tts_util._has_kanji(surface):
+                continue
+            feature = getattr(token, "feature", None)
+            kana = getattr(feature, "kana", None) if feature else None
+            pron = getattr(feature, "pron", None) if feature else None
+            reading = getattr(feature, "reading", None) if feature else None
+            sanitized = tts_util._extract_token_reading(token)
+            sys.stderr.write(
+                f"  {surface}\treading={sanitized or ''}\t"
+                f"kana={kana or ''}\tpron={pron or ''}\treading_raw={reading or ''}\n"
+            )
+
+    if args.kana_normalize:
+        try:
+            tts_source = tts_util._normalize_kana_text(tts_source)
+        except RuntimeError as exc:
+            sys.stderr.write(f"{exc}\n")
+            return 2
+        if args.debug:
+            _debug_dump("After kana", tts_source)
+
+    tts_text = tts_util.prepare_tts_text(tts_source)
+    if args.debug:
+        _debug_dump("Prepared", tts_text)
+
+    sys.stdout.write(tts_text + "\n")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="nik")
     subparsers = parser.add_subparsers(dest="command")
@@ -673,6 +778,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="Attention implementation (e.g., flash_attention_2)",
     )
     sample.set_defaults(func=_sample)
+
+    kana = subparsers.add_parser(
+        "kana",
+        help="Normalize kanji to kana for a chunk file and print TTS text",
+    )
+    kana.add_argument("path", help="Path to a chunk text file")
+    kana.add_argument("--book", help="Book directory (optional)")
+    kana.add_argument("--chapter", help="Chapter id (optional)")
+    kana.add_argument(
+        "--kana-normalize",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Apply UniDic kana normalization (default: enabled)",
+    )
+    kana.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print intermediate steps to stderr",
+    )
+    kana.add_argument(
+        "--tokens",
+        action="store_true",
+        help="Print kanji token readings to stderr",
+    )
+    kana.set_defaults(func=_kana)
 
     merge = subparsers.add_parser("merge", help="Merge audio into M4B")
     merge.add_argument("--book", required=True, help="Book output directory")

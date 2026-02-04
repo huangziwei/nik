@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="ja">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>nik player</title>
+    <title>nik</title>
     <style>
       @import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Source+Serif+4:wght@400;600&family=Work+Sans:wght@400;600&display=swap");
 
@@ -865,11 +865,31 @@
         margin-bottom: 8px;
       }
 
+      .library-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
       .btn.theme-toggle {
         width: 36px;
         height: 36px;
         padding: 0;
         border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .btn.lang-toggle {
+        width: 44px;
+        height: 36px;
+        padding: 0;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -1720,30 +1740,33 @@
     <div class="app">
       <aside class="library" id="bookshelf">
         <div class="library-header">
-          <div class="brand">nik player</div>
-          <button class="btn subtle theme-toggle" id="themeToggle" type="button" data-theme-mode="light" aria-label="Theme: Light" title="Theme: Light">
+          <div class="brand" id="brandLabel">nik</div>
+          <div class="library-actions">
+            <button class="btn subtle lang-toggle" id="langToggle" type="button" data-lang="jp" aria-label="言語: 日本語" title="言語: 日本語">JP</button>
+            <button class="btn subtle theme-toggle" id="themeToggle" type="button" data-theme-mode="light" aria-label="テーマ: ライト" title="テーマ: ライト">
             <svg data-icon="dark" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12,22 C17.5228475,22 22,17.5228475 22,12 C22,6.4771525 17.5228475,2 12,2 C6.4771525,2 2,6.4771525 2,12 C2,17.5228475 6.4771525,22 12,22 Z M12,20.5 L12,3.5 C16.6944204,3.5 20.5,7.30557963 20.5,12 C20.5,16.6944204 16.6944204,20.5 12,20.5 Z" fill="currentColor" fill-rule="evenodd"></path>
             </svg>
             <svg data-icon="light" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12,22 C17.5228475,22 22,17.5228475 22,12 C22,6.4771525 17.5228475,2 12,2 C6.4771525,2 2,6.4771525 2,12 C2,17.5228475 6.4771525,22 12,22 Z M12,20.5 L12,3.5 C16.6944204,3.5 20.5,7.30557963 20.5,12 C20.5,16.6944204 16.6944204,20.5 12,20.5 Z" fill="currentColor" fill-rule="evenodd" transform="translate(24 0) scale(-1 1)"></path>
             </svg>
-          </button>
+            </button>
+          </div>
         </div>
-        <div class="root-path">Root: {{ root_dir }}</div>
+        <div class="root-path" id="rootPath" data-root="{{ root_dir }}">ルート: {{ root_dir }}</div>
         <div class="upload-panel">
           <div class="upload-zone" id="uploadZone" role="button" tabindex="0">
-            <strong>Drop EPUB or TXT here</strong>
-            <span>or click to browse</span>
+            <strong id="uploadPrimary">EPUB / TXT をここにドロップ</strong>
+            <span id="uploadSecondary">またはクリックして選択</span>
           </div>
           <input type="file" id="uploadInput" accept=".epub,.txt" hidden />
           <div class="upload-status" id="uploadStatus"></div>
         </div>
-        <div class="library-tabs library-shelf-tabs" role="tablist" aria-label="Bookshelf sections" hidden>
-          <button class="library-tab active" data-shelf="books" data-label="Books" type="button" role="tab" aria-selected="true">Books</button>
-          <button class="library-tab" data-shelf="tsundoku" data-label="Tsundoku" type="button" role="tab" aria-selected="false">Tsundoku</button>
+        <div class="library-tabs library-shelf-tabs" role="tablist" aria-label="本棚のセクション" hidden>
+          <button class="library-tab active" data-shelf="books" data-label="本" type="button" role="tab" aria-selected="true">本</button>
+          <button class="library-tab" data-shelf="tsundoku" data-label="積読" type="button" role="tab" aria-selected="false">積読</button>
         </div>
-        <div class="library-tabs library-type-tabs" role="tablist" aria-label="Bookshelf formats" hidden>
+        <div class="library-tabs library-type-tabs" role="tablist" aria-label="フォーマット" hidden>
           <button class="library-tab active" data-filter="epub" data-label="EPUB" type="button" role="tab" aria-selected="true">EPUB</button>
           <button class="library-tab" data-filter="txt" data-label="TXT" type="button" role="tab" aria-selected="false">TXT</button>
         </div>
@@ -1753,16 +1776,16 @@
         <div class="reader-header">
           <div class="cover-large" id="coverLarge"></div>
           <div>
-            <h1 class="book-title" id="bookTitle">Select a book</h1>
-            <p class="book-subtitle" id="bookMeta">No book loaded.</p>
+            <h1 class="book-title" id="bookTitle">本を選択</h1>
+            <p class="book-subtitle" id="bookMeta">本が読み込まれていません。</p>
             <p class="book-subtitle" id="bookStatus"></p>
             <div class="book-actions">
               <div class="book-menu">
-                <button class="btn circle" id="bookMenuBtn" type="button" aria-haspopup="true" aria-expanded="false" disabled aria-label="More">⋯</button>
+                <button class="btn circle" id="bookMenuBtn" type="button" aria-haspopup="true" aria-expanded="false" disabled aria-label="その他">⋯</button>
                 <div class="menu-panel" id="bookMenuPanel">
-                  <button class="btn" id="editMetaBtn" type="button" disabled>Edit metadata</button>
-                  <button class="btn" id="deleteM4bBtn" type="button" disabled hidden>Delete M4B</button>
-                  <button class="btn danger" id="deleteBookBtn" type="button" disabled>Delete book</button>
+                  <button class="btn" id="editMetaBtn" type="button" disabled>メタデータを編集</button>
+                  <button class="btn" id="deleteM4bBtn" type="button" disabled hidden>M4B を削除</button>
+                  <button class="btn danger" id="deleteBookBtn" type="button" disabled>本を削除</button>
                 </div>
               </div>
             </div>
@@ -1770,40 +1793,40 @@
         </div>
         <section class="tts-panel" id="ttsPanel">
           <div class="tts-header">
-            <h3>Text To Speech</h3>
+            <h3 id="ttsTitle">テキスト読み上げ</h3>
             <div class="tts-header-actions">
-              <button class="tts-toggle" id="advancedToggle" type="button">Multi-Voices</button>
-              <button class="tts-toggle" id="ttsToggle">Collapse</button>
+              <button class="tts-toggle" id="advancedToggle" type="button">マルチボイス</button>
+              <button class="tts-toggle" id="ttsToggle">折りたたむ</button>
             </div>
           </div>
           <div class="tts-grid">
             <div class="tts-field">
               <div class="voice-groups" id="voiceGroup">
-                <div class="voice-empty">Loading voices...</div>
+                <div class="voice-empty">ボイスを読み込み中...</div>
               </div>
             </div>
           </div>
           <div class="advanced-panel" id="advancedPanel">
             <div class="advanced-header">
-              <div class="advanced-title">Per-chapter voices</div>
+              <div class="advanced-title" id="advancedTitle">章ごとのボイス</div>
               <div class="advanced-actions">
                 <label>
                   <input type="checkbox" id="advancedSelectAll" />
-                  Select all
+                  <span id="advancedSelectAllLabel">すべて選択</span>
                 </label>
-                <span id="advancedSelectedCount">0 selected</span>
+                <span id="advancedSelectedCount">0 件選択</span>
                 <select id="advancedBulkVoice"></select>
-                <button class="btn small" id="advancedApplyVoice" type="button">Assign</button>
-                <button class="btn small" id="advancedClearVoice" type="button">Clear</button>
+                <button class="btn small" id="advancedApplyVoice" type="button">割り当て</button>
+                <button class="btn small" id="advancedClearVoice" type="button">クリア</button>
               </div>
             </div>
             <div class="advanced-list" id="advancedList"></div>
           </div>
           <div class="tts-actions">
-            <button class="btn primary" id="startTts">Start TTS</button>
-            <button class="btn" id="sampleTts" type="button">Sample</button>
+            <button class="btn primary" id="startTts">読み上げ開始</button>
+            <button class="btn" id="sampleTts" type="button">サンプル</button>
             <span class="tts-divider" aria-hidden="true"></span>
-            <button class="btn" id="mergeBtn" type="button">Merge M4B</button>
+            <button class="btn" id="mergeBtn" type="button">M4B を結合</button>
             <div class="download-menu" id="downloadMenu">
               <button
                 class="btn"
@@ -1813,16 +1836,16 @@
                 aria-haspopup="true"
                 aria-expanded="false"
               >
-                Download M4B
+                M4B をダウンロード
               </button>
               <div class="menu-panel" id="downloadMenuPanel"></div>
             </div>
-            <button class="btn subtle tts-delete" id="clearTtsBtn" type="button" title="Delete TTS segments for this book.">Delete TTS cache</button>
+            <button class="btn subtle tts-delete" id="clearTtsBtn" type="button" title="この本の TTS セグメントを削除します。">TTS キャッシュを削除</button>
           </div>
           <div class="progress-track">
             <div class="progress-fill" id="progressFill"></div>
           </div>
-          <div class="progress-text" id="progressText">Idle.</div>
+          <div class="progress-text" id="progressText">待機中。</div>
           <div class="progress-detail" id="progressDetail"></div>
           <div class="merge-status" id="ffmpegStatus"></div>
           <div class="merge-status" id="mergeStatus"></div>
@@ -1830,88 +1853,88 @@
         <div class="reader-body">
           <aside class="toc">
             <div class="toc-header">
-              <h3>Chapters</h3>
-              <button class="btn small edit-toggle" id="editToggle" type="button">Edit</button>
+              <h3 id="tocTitle">章</h3>
+              <button class="btn small edit-toggle" id="editToggle" type="button">編集</button>
             </div>
             <div id="chapterList"></div>
           </aside>
           <section class="text-pane" id="textPane">
-            <h2 class="chapter-title" id="chapterTitle">Waiting for a book...</h2>
+            <h2 class="chapter-title" id="chapterTitle">本を待っています...</h2>
             <div class="chapter-text" id="chapterText">
-              <p class="empty-state">Pick a book on the left to start.</p>
+              <p class="empty-state">左の本棚から本を選択してください。</p>
             </div>
           </section>
         </div>
         <section class="edit-panel" id="editPanel">
           <div class="edit-header">
             <div>
-              <h3>Sanitize & Preview</h3>
-              <p class="edit-meta">Rules auto-save. Re-sanitize refreshes clean text and clears TTS cache.</p>
+              <h3 id="editTitle">整形とプレビュー</h3>
+              <p class="edit-meta" id="editSubtitle">ルールは自動保存。再整形でクリーンテキストを更新し、TTS キャッシュを削除します。</p>
             </div>
             <div class="edit-actions">
-              <button class="btn" id="sanitizeBtn" type="button">Re-sanitize</button>
-              <button class="btn" id="editReload" type="button">Reload</button>
+              <button class="btn" id="sanitizeBtn" type="button">再整形</button>
+              <button class="btn" id="editReload" type="button">再読み込み</button>
               <span class="edit-status" id="editStatus"></span>
             </div>
           </div>
           <div class="edit-grid">
             <aside class="edit-sidebar">
               <div class="panel">
-                <div class="edit-section-title">Chapters</div>
+                <div class="edit-section-title" id="editChaptersTitle">章</div>
                 <div class="edit-chapter-list" id="editChapterList"></div>
               </div>
               <div class="panel">
-                <div class="edit-section-title">Dropped</div>
+                <div class="edit-section-title" id="editDroppedTitle">除外</div>
                 <div class="edit-dropped-list" id="editDroppedList"></div>
               </div>
             </aside>
             <div class="edit-main">
               <div class="panel edit-selected">
-                <div class="edit-selected-title" id="editSelectedTitle">Select a chapter</div>
-                <button class="btn small" id="dropChapterBtn" type="button">Drop chapter</button>
+                <div class="edit-selected-title" id="editSelectedTitle">章を選択</div>
+                <button class="btn small" id="dropChapterBtn" type="button">章を除外</button>
               </div>
               <div class="panel edit-split">
                 <div class="edit-block">
                   <div class="edit-block-header">
-                    <h4>Raw</h4>
+                    <h4 id="editRawTitle">生テキスト</h4>
                   </div>
                   <pre id="editRaw"></pre>
                 </div>
                 <div class="edit-block">
                   <div class="edit-block-header">
-                    <h4>Clean</h4>
-                    <button class="btn small" id="editCleanBtn" type="button">Edit</button>
+                    <h4 id="editCleanTitle">クリーン</h4>
+                    <button class="btn small" id="editCleanBtn" type="button">編集</button>
                   </div>
                   <pre id="editClean"></pre>
                   <textarea id="editCleanInput" class="edit-clean-textarea" hidden></textarea>
                   <div class="edit-clean-actions" id="editCleanActions" hidden>
-                    <button class="btn small" id="saveCleanBtn" type="button">Save</button>
-                    <button class="btn small" id="cancelCleanBtn" type="button">Cancel</button>
+                    <button class="btn small" id="saveCleanBtn" type="button">保存</button>
+                    <button class="btn small" id="cancelCleanBtn" type="button">キャンセル</button>
                   </div>
                 </div>
               </div>
               <div class="panel edit-overrides">
-                <div class="edit-section-title">Reading overrides (global)</div>
-                <p class="edit-meta">One per line: 漢字=かな. Applied at TTS time only.</p>
+                <div class="edit-section-title" id="editOverridesTitle">読み上げ置換（全体）</div>
+                <p class="edit-meta" id="editOverridesHelp">1 行 1 件: 漢字=かな。TTS 時のみ適用。</p>
                 <textarea id="readingOverrides"></textarea>
                 <div class="edit-clean-actions">
-                  <button class="btn small" id="saveOverridesBtn" type="button">Save overrides</button>
+                  <button class="btn small" id="saveOverridesBtn" type="button">置換を保存</button>
                 </div>
               </div>
               <div class="panel edit-rules">
-                <div class="edit-section-title">Rules</div>
-                <label for="rulesParagraphs">Paragraph breaks</label>
+                <div class="edit-section-title" id="editRulesTitle">ルール</div>
+                <label for="rulesParagraphs" id="rulesParagraphsLabel">段落区切り</label>
                 <select id="rulesParagraphs">
-                  <option value="double">Double newline (default)</option>
-                  <option value="single">Single newline (treat line breaks as paragraphs)</option>
+                  <option value="double">二重改行（既定）</option>
+                  <option value="single">単一改行（改行を段落として扱う）</option>
                 </select>
-                <label for="rulesDrop">Drop chapter title patterns</label>
+                <label for="rulesDrop" id="rulesDropLabel">章タイトルの除外パターン</label>
                 <textarea id="rulesDrop"></textarea>
-                <label for="rulesCutoff">Section cutoff patterns</label>
+                <label for="rulesCutoff" id="rulesCutoffLabel">セクション打ち切りパターン</label>
                 <textarea id="rulesCutoff"></textarea>
-                <label for="rulesRemove">Remove patterns</label>
+                <label for="rulesRemove" id="rulesRemoveLabel">削除パターン</label>
                 <textarea id="rulesRemove"></textarea>
-                <label><input type="checkbox" id="rulesReplace" /> Replace defaults</label>
+                <label><input type="checkbox" id="rulesReplace" /> <span id="rulesReplaceLabel">既定を置換</span></label>
               </div>
             </div>
           </div>
@@ -1919,21 +1942,21 @@
         <div class="meta-modal" id="metaModal" hidden>
           <div class="meta-card" role="dialog" aria-modal="true" aria-labelledby="metaTitleLabel">
             <div class="meta-header">
-              <h3 id="metaTitleLabel">Edit metadata</h3>
-              <button class="btn circle" id="metaClose" type="button" aria-label="Close">x</button>
+              <h3 id="metaTitleLabel">メタデータを編集</h3>
+              <button class="btn circle" id="metaClose" type="button" aria-label="閉じる">x</button>
             </div>
             <div class="meta-form">
-              <label for="metaTitle">Title</label>
+              <label for="metaTitle" id="metaTitleFieldLabel">タイトル</label>
               <input id="metaTitle" type="text" autocomplete="off" />
-              <label for="metaAuthors">Authors</label>
-              <input id="metaAuthors" type="text" placeholder="Comma-separated" autocomplete="off" />
-              <label for="metaYear">Year</label>
+              <label for="metaAuthors" id="metaAuthorsFieldLabel">著者</label>
+              <input id="metaAuthors" type="text" placeholder="カンマ区切り" autocomplete="off" />
+              <label for="metaYear" id="metaYearFieldLabel">年</label>
               <input id="metaYear" type="text" inputmode="numeric" autocomplete="off" />
             </div>
             <div class="meta-actions">
               <span class="meta-status" id="metaStatus"></span>
-              <button class="btn" id="metaCancel" type="button">Cancel</button>
-              <button class="btn primary" id="metaSave" type="button">Save</button>
+              <button class="btn" id="metaCancel" type="button">キャンセル</button>
+              <button class="btn primary" id="metaSave" type="button">保存</button>
             </div>
           </div>
         </div>
@@ -1942,7 +1965,7 @@
 
     <div class="player-bar">
       <div class="player-left">
-        <button class="btn icon" id="regenChunkBtn" aria-label="Regenerate chunk" title="Regenerate selected chunk">
+        <button class="btn icon" id="regenChunkBtn" aria-label="チャンクを再生成" title="選択中のチャンクを再生成">
           <svg
             viewBox="0 0 24 24"
             aria-hidden="true"
@@ -1951,10 +1974,10 @@
             <path d="M17.65 6.35A7.95 7.95 0 0 0 12 4V1L7 6l5 5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 12.65-5.65z" fill="currentColor"></path>
           </svg>
         </button>
-        <div class="status" id="status">Last: —</div>
+        <div class="status" id="status">最後: —</div>
       </div>
       <div class="player-controls">
-        <button class="btn icon" id="prevBtn" aria-label="Previous" title="Previous">
+        <button class="btn icon" id="prevBtn" aria-label="前へ" title="前へ">
           <svg
             viewBox="0 0 24 24"
             aria-hidden="true"
@@ -1963,7 +1986,7 @@
             <path d="M6 6h2v12H6zM10 12l8-6v12z" fill="currentColor"></path>
           </svg>
         </button>
-        <button class="btn primary play" id="playBtn" aria-label="Play" title="Play">
+        <button class="btn primary play" id="playBtn" aria-label="再生" title="再生">
           <svg
             class="play-icon"
             viewBox="0 0 24 24"
@@ -1981,7 +2004,7 @@
             <path d="M6 5h4v14H6zM14 5h4v14h-4z" fill="currentColor"></path>
           </svg>
         </button>
-        <button class="btn icon" id="nextBtn" aria-label="Next" title="Next">
+        <button class="btn icon" id="nextBtn" aria-label="次へ" title="次へ">
           <svg
             viewBox="0 0 24 24"
             aria-hidden="true"
@@ -1993,7 +2016,7 @@
       </div>
       <div class="player-right">
         <div class="marks">
-          <button class="btn icon" id="bookmarkBtn" aria-label="Bookmarks" title="Bookmarks">
+          <button class="btn icon" id="bookmarkBtn" aria-label="ブックマーク" title="ブックマーク">
             <svg
               viewBox="0 0 24 24"
               aria-hidden="true"
@@ -2003,13 +2026,13 @@
             </svg>
           </button>
           <div class="bookmark-panel" id="bookmarkPanel">
-            <div class="bookmark-title">Bookmarks</div>
+            <div class="bookmark-title" id="bookmarkTitle">ブックマーク</div>
             <div class="bookmark-list" id="bookmarkList"></div>
-            <button class="btn" id="saveBookmarkBtn">Save current</button>
+            <button class="btn" id="saveBookmarkBtn">現在位置を保存</button>
           </div>
         </div>
         <div class="speed">
-          <button class="btn speed" id="speedBtn" type="button" aria-label="Playback speed" title="Playback speed">
+          <button class="btn speed" id="speedBtn" type="button" aria-label="再生速度" title="再生速度">
             <svg
               viewBox="0 0 30 30"
               aria-hidden="true"
@@ -2024,7 +2047,7 @@
           </button>
         </div>
       </div>
-      <button class="jump-btn" id="jumpShelf" type="button" aria-label="Back to bookshelf">↑</button>
+      <button class="jump-btn" id="jumpShelf" type="button" aria-label="本棚に戻る">↑</button>
     </div>
 
     <audio id="audio"></audio>
@@ -2061,6 +2084,7 @@
         synthMode: "tts",
         statusMode: "idle",
         themePreference: "system",
+        language: "jp",
         playbackSaveTimer: null,
         playback: {
           lastPlayed: null,
@@ -2085,6 +2109,8 @@
         mergeOutputExists: false,
         mergeOutputParts: [],
         mergeStage: "idle",
+        lastSynthStatus: null,
+        lastMergeStatus: null,
         editOpen: false,
         previewChapterIndex: null,
         previewSelectedTitle: "",
@@ -2102,9 +2128,13 @@
       };
 
       const bookList = document.getElementById("bookList");
+      const brandLabel = document.getElementById("brandLabel");
+      const rootPath = document.getElementById("rootPath");
       const uploadZone = document.getElementById("uploadZone");
       const uploadInput = document.getElementById("uploadInput");
       const uploadStatus = document.getElementById("uploadStatus");
+      const uploadPrimary = document.getElementById("uploadPrimary");
+      const uploadSecondary = document.getElementById("uploadSecondary");
       const libraryShelfTabs = document.querySelectorAll(
         ".library-shelf-tabs .library-tab"
       );
@@ -2113,6 +2143,7 @@
         ".library-type-tabs .library-tab"
       );
       const libraryTypeTabsWrap = document.querySelector(".library-type-tabs");
+      const tocTitle = document.getElementById("tocTitle");
       const chapterList = document.getElementById("chapterList");
       const chapterTitle = document.getElementById("chapterTitle");
       const chapterText = document.getElementById("chapterText");
@@ -2120,23 +2151,33 @@
       const bookMeta = document.getElementById("bookMeta");
       const bookStatus = document.getElementById("bookStatus");
       const themeToggle = document.getElementById("themeToggle");
+      const langToggle = document.getElementById("langToggle");
+      const ttsTitle = document.getElementById("ttsTitle");
       const coverLarge = document.getElementById("coverLarge");
       const editToggle = document.getElementById("editToggle");
       const editPanel = document.getElementById("editPanel");
+      const editTitle = document.getElementById("editTitle");
+      const editSubtitle = document.getElementById("editSubtitle");
       const sanitizeBtn = document.getElementById("sanitizeBtn");
       const editReload = document.getElementById("editReload");
       const editStatus = document.getElementById("editStatus");
+      const editChaptersTitle = document.getElementById("editChaptersTitle");
+      const editDroppedTitle = document.getElementById("editDroppedTitle");
       const editChapterList = document.getElementById("editChapterList");
       const editDroppedList = document.getElementById("editDroppedList");
       const editSelectedTitle = document.getElementById("editSelectedTitle");
       const dropChapterBtn = document.getElementById("dropChapterBtn");
       const editRaw = document.getElementById("editRaw");
+      const editRawTitle = document.getElementById("editRawTitle");
       const editClean = document.getElementById("editClean");
+      const editCleanTitle = document.getElementById("editCleanTitle");
       const editCleanBtn = document.getElementById("editCleanBtn");
       const editCleanInput = document.getElementById("editCleanInput");
       const editCleanActions = document.getElementById("editCleanActions");
       const saveCleanBtn = document.getElementById("saveCleanBtn");
       const cancelCleanBtn = document.getElementById("cancelCleanBtn");
+      const editOverridesTitle = document.getElementById("editOverridesTitle");
+      const editOverridesHelp = document.getElementById("editOverridesHelp");
       const readingOverrides = document.getElementById("readingOverrides");
       const saveOverridesBtn = document.getElementById("saveOverridesBtn");
       const bookMenuBtn = document.getElementById("bookMenuBtn");
@@ -2150,13 +2191,27 @@
       const metaSave = document.getElementById("metaSave");
       const metaStatus = document.getElementById("metaStatus");
       const metaTitle = document.getElementById("metaTitle");
+      const metaTitleLabel = document.getElementById("metaTitleLabel");
+      const metaTitleFieldLabel = document.getElementById("metaTitleFieldLabel");
       const metaAuthors = document.getElementById("metaAuthors");
+      const metaAuthorsFieldLabel = document.getElementById(
+        "metaAuthorsFieldLabel"
+      );
       const metaYear = document.getElementById("metaYear");
+      const metaYearFieldLabel = document.getElementById("metaYearFieldLabel");
+      const editRulesTitle = document.getElementById("editRulesTitle");
       const rulesDrop = document.getElementById("rulesDrop");
+      const rulesDropLabel = document.getElementById("rulesDropLabel");
       const rulesCutoff = document.getElementById("rulesCutoff");
+      const rulesCutoffLabel = document.getElementById("rulesCutoffLabel");
       const rulesRemove = document.getElementById("rulesRemove");
+      const rulesRemoveLabel = document.getElementById("rulesRemoveLabel");
       const rulesParagraphs = document.getElementById("rulesParagraphs");
+      const rulesParagraphsLabel = document.getElementById(
+        "rulesParagraphsLabel"
+      );
       const rulesReplace = document.getElementById("rulesReplace");
+      const rulesReplaceLabel = document.getElementById("rulesReplaceLabel");
       const status = document.getElementById("status");
       const playBtn = document.getElementById("playBtn");
       const prevBtn = document.getElementById("prevBtn");
@@ -2172,6 +2227,7 @@
       const regenChunkBtn = document.getElementById("regenChunkBtn");
       const bookmarkList = document.getElementById("bookmarkList");
       const bookmarkPanel = document.getElementById("bookmarkPanel");
+      const bookmarkTitle = document.getElementById("bookmarkTitle");
       const saveBookmarkBtn = document.getElementById("saveBookmarkBtn");
       const voiceGroup = document.getElementById("voiceGroup");
       const startTts = document.getElementById("startTts");
@@ -2188,14 +2244,848 @@
       const ttsPanel = document.getElementById("ttsPanel");
       const ttsToggle = document.getElementById("ttsToggle");
       const advancedToggle = document.getElementById("advancedToggle");
+      const advancedTitle = document.getElementById("advancedTitle");
       const advancedPanel = document.getElementById("advancedPanel");
       const advancedList = document.getElementById("advancedList");
       const advancedSelectAll = document.getElementById("advancedSelectAll");
+      const advancedSelectAllLabel = document.getElementById(
+        "advancedSelectAllLabel"
+      );
       const advancedSelectedCount = document.getElementById("advancedSelectedCount");
       const advancedBulkVoice = document.getElementById("advancedBulkVoice");
       const advancedApplyVoice = document.getElementById("advancedApplyVoice");
       const advancedClearVoice = document.getElementById("advancedClearVoice");
       const themeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+      const I18N = {
+        jp: {
+          languageName: "日本語",
+          languageToggle: "言語: {language}",
+          brand: "nik",
+          rootPath: "ルート: {path}",
+          uploadDrop: "EPUB / TXT をここにドロップ",
+          uploadBrowse: "またはクリックして選択",
+          bookshelfSections: "本棚のセクション",
+          bookshelfFormats: "フォーマット",
+          themeLabel: "テーマ: {theme}",
+          themeLight: "ライト",
+          themeDark: "ダーク",
+          more: "その他",
+          regenChunkAria: "チャンクを再生成",
+          regenChunkTitle: "選択中のチャンクを再生成",
+          idleStatus: "最後: {last} · 最遠: {furthest}",
+          previous: "前へ",
+          next: "次へ",
+          play: "再生",
+          pause: "一時停止",
+          bookmarks: "ブックマーク",
+          saveCurrent: "現在位置を保存",
+          playbackSpeed: "再生速度",
+          backToShelf: "本棚に戻る",
+          bookLabel: "本",
+          thisBook: "この本",
+          shelfBooks: "本",
+          shelfTsundoku: "積読",
+          formatEpub: "EPUB",
+          formatTxt: "TXT",
+          selectBook: "本を選択",
+          noBookLoaded: "本が読み込まれていません。",
+          waitingForBook: "本を待っています...",
+          pickBookHint: "左の本棚から本を選択してください。",
+          ttsTitle: "テキスト読み上げ",
+          multiVoices: "マルチボイス",
+          collapse: "折りたたむ",
+          expand: "展開",
+          loadingVoices: "ボイスを読み込み中...",
+          perChapterVoices: "章ごとのボイス",
+          selectAll: "すべて選択",
+          selectedCount: "{count} 件選択",
+          assign: "割り当て",
+          clear: "クリア",
+          startTts: "読み上げ開始",
+          stopTts: "読み上げ停止",
+          ttsComplete: "読み上げ完了",
+          sample: "サンプル",
+          stopSample: "サンプル停止",
+          mergeM4b: "M4B を結合",
+          downloadM4b: "M4B をダウンロード",
+          deleteTtsCache: "TTS キャッシュを削除",
+          deleteTtsCacheTitle: "この本の TTS セグメントを削除します。",
+          idle: "待機中。",
+          localVoices: "ローカルボイス",
+          builtinVoices: "内蔵ボイス",
+          noVoicesFound: "ボイスが見つかりません。",
+          voicesLoadFail: "ボイスを読み込めません。",
+          defaultVoice: "デフォルト",
+          defaultVoiceWithLabel: "デフォルト（{label}）",
+          chapterFallback: "章",
+          chunksLabel: "{count} チャンク",
+          noChaptersYet: "章がありません。",
+          noTextAvailable: "テキストがありません。",
+          loadingText: "テキストを読み込み中...",
+          noBooks: "本がありません。",
+          noTsundoku: "積読がありません。",
+          noFormatBooks: "{format} の本がありません。",
+          untitled: "無題",
+          unknownAuthor: "不明",
+          unknownYear: "年不明",
+          coverAlt: "表紙",
+          noAudioYet: "音声なし",
+          audioComplete: "音声完了",
+          audioProgress: "音声 {done}/{total}",
+          audioPreparing: "音声準備中",
+          finished: "完了",
+          audioManifestLoaded: "音声マニフェストを読み込みました。",
+          waitingForAudio: "音声待機中。",
+          audioReady: "音声準備完了。",
+          noAudioYetTitle: "音声なし",
+          noAudioAvailable: "音声がありません。",
+          runNikSynth: "`nik synth` を実行して音声チャンクを生成してください。",
+          chaptersTitle: "章",
+          edit: "編集",
+          close: "閉じる",
+          editTitle: "整形とプレビュー",
+          editSubtitle:
+            "ルールは自動保存。再整形でクリーンテキストを更新し、TTS キャッシュを削除します。",
+          reSanitize: "再整形",
+          reload: "再読み込み",
+          editChaptersTitle: "章",
+          editDroppedTitle: "除外",
+          selectChapter: "章を選択",
+          dropChapter: "章を除外",
+          raw: "生テキスト",
+          clean: "クリーン",
+          editButton: "編集",
+          save: "保存",
+          cancel: "キャンセル",
+          overridesTitle: "読み上げ置換（全体）",
+          overridesHelp: "1 行 1 件: 漢字=かな。TTS 時のみ適用。",
+          saveOverrides: "置換を保存",
+          rulesTitle: "ルール",
+          rulesParagraphs: "段落区切り",
+          rulesParagraphsDouble: "二重改行（既定）",
+          rulesParagraphsSingle: "単一改行（改行を段落として扱う）",
+          rulesDrop: "章タイトルの除外パターン",
+          rulesCutoff: "セクション打ち切りパターン",
+          rulesRemove: "削除パターン",
+          rulesReplace: "既定を置換",
+          metaTitle: "メタデータを編集",
+          metaClose: "閉じる",
+          metaTitleField: "タイトル",
+          metaAuthorsField: "著者",
+          metaAuthorsPlaceholder: "カンマ区切り",
+          metaYearField: "年",
+          metaCancel: "キャンセル",
+          metaSave: "保存",
+          editMetadata: "メタデータを編集",
+          deleteM4b: "M4B を削除",
+          deleteMergedM4bTitle: "結合済み M4B を削除します。",
+          deleteBook: "本を削除",
+          bookmarkTitle: "ブックマーク",
+          furthestLabelText: "最遠",
+          bookmarkFurthest: "最遠: {label}",
+          bookmarkPlay: "再生",
+          bookmarkRemove: "削除",
+          bookmarkEmpty: "ブックマークがありません。",
+          bookmarkSaved: "ブックマークを保存しました。",
+          bookmarkRemoved: "ブックマークを削除しました。",
+          progressPreparingUniDic: "UniDic を準備中...",
+          progressPreparingUniDicSample: "サンプル用に UniDic を準備中...",
+          progressUniDicDetail:
+            "辞書をダウンロードしてトークナイザーを読み込み中。",
+          progressChunkingText: "テキストを分割中...",
+          progressChunkingSample: "サンプルを分割中...",
+          progressPreparingManifest: "マニフェストと区間を準備中。",
+          progressCloningVoice: "ボイスをクローン中...",
+          progressCloningSample: "サンプル用ボイスをクローン中...",
+          progressPreparingPrompt: "音声プロンプトを準備中。",
+          progressSampleReady: "サンプル準備完了。",
+          progressSampleDone: "{title} · サンプル完了。",
+          progressPrefixSample: "サンプル",
+          progressPrefixProgress: "進捗",
+          progressLine: "{prefix}: {done} / {total} チャンク ({percent}%).",
+          progressCurrentChunk: "{title} · チャンク {index} / {total}",
+          progressCompleted: "完了。",
+          bookStatusPreparingSample: "サンプル準備中...",
+          bookStatusCloningSample: "サンプル用ボイスをクローン中...",
+          bookStatusGeneratingSample: "サンプル生成中...",
+          bookStatusSampleReady: "サンプル準備完了。",
+          bookStatusChunking: "テキストを分割中...",
+          bookStatusSynthesizing: "音声合成中...",
+          bookStatusPreparingUniDic: "UniDic を準備中...",
+          ffmpegInstalling: "ffmpeg をインストール中...",
+          ffmpegInstallFailed: "ffmpeg のインストールに失敗しました。",
+          ffmpegMissing: "ffmpeg がありません: 結合に失敗します。",
+          mergeInstalling: "ffmpeg をインストール中...",
+          mergeMerging: "結合中...",
+          mergeMergingBook: "本を結合中",
+          mergeMergingPart: "パート {part}/{total} を結合中",
+          mergePartsReady: "M4B パート準備完了（{count}）。",
+          mergeReady: "M4B 準備完了。",
+          mergeFailed: "結合に失敗しました。`tts/merge.log` を確認してください。",
+          mergeStarting: "結合を開始します...",
+          mergeStarted: "結合を開始しました。",
+          mergeStartFailed: "結合の開始に失敗しました。",
+          mergeFinishTts: "読み上げ完了後に結合できます。",
+          mergeAlreadyExists: "M4B は既に存在します。",
+          mergeStatusLoadFailed: "結合状態を読み込めません。",
+          mergeBtnInstallTitle: "ffmpeg をインストール中...",
+          mergeBtnMergingTitle: "結合中...",
+          mergeBtnMergeTitle: "M4B を結合",
+          mergeBtnDeleteToReMerge:
+            "本のメニューから M4B を削除すると再結合できます。",
+          mergeBtnFinishTts: "読み上げ完了で結合できます。",
+          downloadPart: "パート {index} をダウンロード",
+          downloadM4bChoose: "ダウンロードする M4B パートを選択してください。",
+          noMergedM4b: "結合済みの M4B がありません。",
+          sampleDisabledAdvanced: "詳細モードではサンプルを無効化しています。",
+          sampleGenerating: "サンプルを生成中...",
+          sampleFailed: "サンプルに失敗しました。",
+          ttsStarted: "読み上げを開始しました。",
+          ttsStartFailed: "読み上げの開始に失敗しました。",
+          ttsStopped: "読み上げを停止しました。",
+          ttsStopFailed: "読み上げの停止に失敗しました。",
+          voiceMapSaveFailed: "ボイス設定の保存に失敗しました。",
+          stopTtsBeforeSampling: "サンプルの前に TTS を停止してください。",
+          stopTtsBeforeDelete: "削除する前に TTS または結合を停止してください。",
+          stopMergeBeforeDelete: "削除する前に結合を停止してください。",
+          deleteBookConfirm:
+            "「{label}」とこの本のフォルダー内のすべてのファイルを削除しますか？",
+          deleteBookDeleting: "本を削除中...",
+          deleteBookDone: "本を削除しました。",
+          deleteBookFailed: "本の削除に失敗しました。",
+          deleteM4bConfirm: "「{label}」の結合済み M4B を削除しますか？",
+          deleteM4bDeleting: "M4B を削除中...",
+          deleteM4bDeleted: "M4B を削除しました。",
+          deleteM4bFailed: "M4B の削除に失敗しました。",
+          clearTtsConfirm: "この本の TTS セグメントをすべて削除しますか？",
+          ttsCacheDeleted: "TTS キャッシュを削除しました。",
+          ttsCacheDeleteFailed: "TTS キャッシュの削除に失敗しました。",
+          metadataSaving: "保存中...",
+          metadataUpdated: "メタデータを更新しました。",
+          metadataUpdateFailed: "メタデータの更新に失敗しました。",
+          bookLoadFailed: "本の読み込みに失敗しました。",
+          booksLoadFailed: "本の読み込みに失敗しました。",
+          ttsStatusLoadFailed: "TTS 状態を読み込めません。",
+          ingestOnlySupported: ".epub または .txt のみ対応しています。",
+          ingestVerbOverride: "上書きして取り込み中",
+          ingestVerbNormal: "取り込み中（整形中）",
+          ingestStatus: "{verb} {name}...",
+          ingestIngested: "{title} を取り込み・整形しました。",
+          ingestConflictConfirm:
+            "本 {label} は既に存在します。上書きしますか？既存の本フォルダーは削除されます。",
+          ingestCanceled: "取り込みをキャンセルしました。",
+          ingestFailed: "取り込みに失敗しました。",
+          regenChunkRunning: "チャンクを再生成中...",
+          regenChunkLoadBook: "本を読み込んでからチャンクを再生成してください。",
+          regenChunkNoChunks: "利用可能なチャンクがありません。",
+          regenChunkSelect: "再生成するチャンクを選択してください。",
+          regenChunkStopSynth: "再生成の前に TTS/結合を停止してください。",
+          regenChunkConfirm: "{label} の音声を再生成しますか？",
+          regenChunkNotFound: "チャンクが見つかりません。",
+          regenChunkRegenerating: "{label} を再生成中...",
+          regenChunkDone: "{label} を再生成しました。",
+          regenChunkFailed: "チャンクの再生成に失敗しました。",
+          endOfBook: "本の末尾です。",
+          chunkNotReady: "チャンクが準備できていません。再生ボタンを押して再試行してください。",
+          pressPlayToStart: "再生ボタンを押して開始してください。",
+          waitingForChunk: "チャンク {index} / {total} を待機中...",
+          playingChunk: "{chapter} {index} / {total} を再生中",
+          selectedChunkLabel: "\"選択中のチャンク\"",
+          chunkNotFound: "チャンクが見つかりません。",
+          manifestMissingChunkSpans:
+            "チャンク範囲がありません。TTS キャッシュを削除して読み上げを開始してください。",
+          downloadM4bStatus: "M4B をダウンロード中...",
+          selectChapterToEdit: "編集する章を選択してください。",
+          editCanceled: "編集をキャンセルしました。",
+          savingCleanText: "クリーンテキストを保存中...",
+          savedCleanText: "クリーンテキストを保存しました。",
+          savedCleanTextCleared:
+            "クリーンテキストを保存しました。TTS キャッシュを削除しました。",
+          saveCleanTextFailed: "クリーンテキストの保存に失敗しました。",
+          cleanEditing: "クリーンテキストを編集中...",
+          savingRules: "ルールを保存中...",
+          rulesSaved: "ルールを保存しました。",
+          rulesSaveFailed: "ルールの保存に失敗しました。",
+          loadingOverrides: "読み上げ置換を読み込み中...",
+          loadOverridesFailed: "読み上げ置換の読み込みに失敗しました。",
+          savingOverrides: "読み上げ置換を保存中...",
+          savedOverrides: "置換を保存しました。",
+          savedOverridesCleared: "置換を保存しました。TTS キャッシュを削除しました。",
+          savingOverridesFailed: "読み上げ置換の保存に失敗しました。",
+          overridesInvalidLines: "無効な行 {count} 件を無視しました。",
+          chapterDropped: "章を除外しました。",
+          chapterAlreadyDropped: "章は既に除外されています。",
+          chapterDropFailed: "章の除外に失敗しました。",
+          chapterRestored: "章を復元しました。",
+          chapterAlreadyRestored: "章は既に復元されています。",
+          chapterRestoreFailed: "章の復元に失敗しました。",
+          sanitizing: "整形中...",
+          sanitized: "整形しました。",
+          sanitizedCleared: "整形しました。TTS キャッシュを削除しました。",
+          sanitizeFailed: "整形に失敗しました。",
+          loadPreviewFailed: "プレビューの読み込みに失敗しました。",
+          discardCleanEditsConfirm: "未保存のクリーンテキスト編集を破棄しますか？",
+          discardOverridesConfirm: "未保存の読み上げ置換を破棄しますか？",
+          chapterListEmpty: "章がありません。",
+          droppedListEmpty: "なし。",
+          restore: "復元",
+          uploadStatusUnsupported: "対応ファイルは .epub または .txt です。",
+          ingestCanceledStatus: "取り込みをキャンセルしました。",
+          statusChunkNotReady: "チャンクが準備できていません。再生ボタンを押して再試行してください。",
+          pressPlayToRetry: "再生ボタンを押して再試行してください。",
+          regenChunkTitleDynamic: "{label} を再生成",
+        },
+        en: {
+          languageName: "English",
+          languageToggle: "Language: {language}",
+          brand: "nik",
+          rootPath: "Root: {path}",
+          uploadDrop: "Drop EPUB or TXT here",
+          uploadBrowse: "or click to browse",
+          bookshelfSections: "Bookshelf sections",
+          bookshelfFormats: "Bookshelf formats",
+          themeLabel: "Theme: {theme}",
+          themeLight: "Light",
+          themeDark: "Dark",
+          more: "More",
+          regenChunkAria: "Regenerate chunk",
+          regenChunkTitle: "Regenerate selected chunk",
+          idleStatus: "Last: {last} · Furthest: {furthest}",
+          previous: "Previous",
+          next: "Next",
+          play: "Play",
+          pause: "Pause",
+          bookmarks: "Bookmarks",
+          saveCurrent: "Save current",
+          playbackSpeed: "Playback speed",
+          backToShelf: "Back to bookshelf",
+          bookLabel: "Book",
+          thisBook: "this book",
+          shelfBooks: "Books",
+          shelfTsundoku: "Tsundoku",
+          formatEpub: "EPUB",
+          formatTxt: "TXT",
+          selectBook: "Select a book",
+          noBookLoaded: "No book loaded.",
+          waitingForBook: "Waiting for a book...",
+          pickBookHint: "Pick a book on the left to start.",
+          ttsTitle: "Text To Speech",
+          multiVoices: "Multi-Voices",
+          collapse: "Collapse",
+          expand: "Expand",
+          loadingVoices: "Loading voices...",
+          perChapterVoices: "Per-chapter voices",
+          selectAll: "Select all",
+          selectedCount: "{count} selected",
+          assign: "Assign",
+          clear: "Clear",
+          startTts: "Start TTS",
+          stopTts: "Stop TTS",
+          ttsComplete: "TTS Complete",
+          sample: "Sample",
+          stopSample: "Stop Sample",
+          mergeM4b: "Merge M4B",
+          downloadM4b: "Download M4B",
+          deleteTtsCache: "Delete TTS cache",
+          deleteTtsCacheTitle: "Delete TTS segments for this book.",
+          idle: "Idle.",
+          localVoices: "Local voices",
+          builtinVoices: "Built-in voices",
+          noVoicesFound: "No voices found.",
+          voicesLoadFail: "Unable to load voices.",
+          defaultVoice: "Default",
+          defaultVoiceWithLabel: "Default ({label})",
+          chapterFallback: "Chapter",
+          chunksLabel: "{count} chunks",
+          noChaptersYet: "No chapters yet.",
+          noTextAvailable: "No text available.",
+          loadingText: "Loading text...",
+          noBooks: "No books found.",
+          noTsundoku: "No Tsundoku items found.",
+          noFormatBooks: "No {format} books found.",
+          untitled: "Untitled",
+          unknownAuthor: "Unknown",
+          unknownYear: "n.d.",
+          coverAlt: "Cover",
+          noAudioYet: "No audio yet",
+          audioComplete: "Audio complete",
+          audioProgress: "Audio {done}/{total}",
+          audioPreparing: "Audio preparing",
+          finished: "Finished",
+          audioManifestLoaded: "Audio manifest loaded.",
+          waitingForAudio: "Waiting for audio.",
+          audioReady: "Audio ready.",
+          noAudioYetTitle: "No audio yet",
+          noAudioAvailable: "No audio available.",
+          runNikSynth: "Run `nik synth` to generate audio chunks.",
+          chaptersTitle: "Chapters",
+          edit: "Edit",
+          close: "Close",
+          editTitle: "Sanitize & Preview",
+          editSubtitle:
+            "Rules auto-save. Re-sanitize refreshes clean text and clears TTS cache.",
+          reSanitize: "Re-sanitize",
+          reload: "Reload",
+          editChaptersTitle: "Chapters",
+          editDroppedTitle: "Dropped",
+          selectChapter: "Select a chapter",
+          dropChapter: "Drop chapter",
+          raw: "Raw",
+          clean: "Clean",
+          editButton: "Edit",
+          save: "Save",
+          cancel: "Cancel",
+          overridesTitle: "Reading overrides (global)",
+          overridesHelp: "One per line: 漢字=かな. Applied at TTS time only.",
+          saveOverrides: "Save overrides",
+          rulesTitle: "Rules",
+          rulesParagraphs: "Paragraph breaks",
+          rulesParagraphsDouble: "Double newline (default)",
+          rulesParagraphsSingle: "Single newline (treat line breaks as paragraphs)",
+          rulesDrop: "Drop chapter title patterns",
+          rulesCutoff: "Section cutoff patterns",
+          rulesRemove: "Remove patterns",
+          rulesReplace: "Replace defaults",
+          metaTitle: "Edit metadata",
+          metaClose: "Close",
+          metaTitleField: "Title",
+          metaAuthorsField: "Authors",
+          metaAuthorsPlaceholder: "Comma-separated",
+          metaYearField: "Year",
+          metaCancel: "Cancel",
+          metaSave: "Save",
+          editMetadata: "Edit metadata",
+          deleteM4b: "Delete M4B",
+          deleteMergedM4bTitle: "Delete merged M4B.",
+          deleteBook: "Delete book",
+          bookmarkTitle: "Bookmarks",
+          furthestLabelText: "Furthest",
+          bookmarkFurthest: "Furthest: {label}",
+          bookmarkPlay: "Play",
+          bookmarkRemove: "Remove",
+          bookmarkEmpty: "No bookmarks yet.",
+          bookmarkSaved: "Bookmark saved.",
+          bookmarkRemoved: "Bookmark removed.",
+          progressPreparingUniDic: "Preparing UniDic...",
+          progressPreparingUniDicSample: "Preparing UniDic for sample...",
+          progressUniDicDetail: "Downloading dictionary and loading tokenizer.",
+          progressChunkingText: "Chunking text...",
+          progressChunkingSample: "Chunking sample...",
+          progressPreparingManifest: "Preparing manifest and spans.",
+          progressCloningVoice: "Cloning voice...",
+          progressCloningSample: "Cloning voice for sample...",
+          progressPreparingPrompt: "Preparing voice prompt.",
+          progressSampleReady: "Sample ready.",
+          progressSampleDone: "{title} · sample done.",
+          progressPrefixSample: "Sample",
+          progressPrefixProgress: "Progress",
+          progressLine: "{prefix}: {done} / {total} chunks ({percent}%).",
+          progressCurrentChunk: "{title} · chunk {index} of {total}",
+          progressCompleted: "Completed.",
+          bookStatusPreparingSample: "Preparing sample...",
+          bookStatusCloningSample: "Cloning sample voice...",
+          bookStatusGeneratingSample: "Generating sample...",
+          bookStatusSampleReady: "Sample ready.",
+          bookStatusChunking: "Chunking text...",
+          bookStatusSynthesizing: "Synthesizing audio...",
+          bookStatusPreparingUniDic: "Preparing UniDic...",
+          ffmpegInstalling: "Installing ffmpeg...",
+          ffmpegInstallFailed: "ffmpeg install failed.",
+          ffmpegMissing: "ffmpeg missing: merge will fail.",
+          mergeInstalling: "Installing ffmpeg...",
+          mergeMerging: "Merging...",
+          mergeMergingBook: "Merging book",
+          mergeMergingPart: "Merging part {part}/{total}",
+          mergePartsReady: "M4B parts ready ({count}).",
+          mergeReady: "M4B ready.",
+          mergeFailed: "Merge failed. Check tts/merge.log.",
+          mergeStarting: "Starting merge...",
+          mergeStarted: "Merge started.",
+          mergeStartFailed: "Merge failed to start.",
+          mergeFinishTts: "Finish TTS before merging.",
+          mergeAlreadyExists: "M4B already exists.",
+          mergeStatusLoadFailed: "Unable to load merge status.",
+          mergeBtnInstallTitle: "Installing ffmpeg...",
+          mergeBtnMergingTitle: "Merging...",
+          mergeBtnMergeTitle: "Merge M4B",
+          mergeBtnDeleteToReMerge:
+            "Delete the merged M4B from the book menu to re-merge.",
+          mergeBtnFinishTts: "Finish TTS to enable merge.",
+          downloadPart: "Download Part {index}",
+          downloadM4bChoose: "Choose an M4B part to download.",
+          noMergedM4b: "No merged M4B available.",
+          sampleDisabledAdvanced: "Sample disabled in Advanced Mode.",
+          sampleGenerating: "Generating sample...",
+          sampleFailed: "Sample failed.",
+          ttsStarted: "TTS started.",
+          ttsStartFailed: "Failed to start TTS.",
+          ttsStopped: "TTS stopped.",
+          ttsStopFailed: "Failed to stop TTS.",
+          voiceMapSaveFailed: "Failed to save voice map.",
+          stopTtsBeforeSampling: "Stop TTS before sampling.",
+          stopTtsBeforeDelete: "Stop TTS or merge before deleting.",
+          stopMergeBeforeDelete: "Stop merge before deleting.",
+          deleteBookConfirm:
+            "Delete \"{label}\" and all files in this book folder?",
+          deleteBookDeleting: "Deleting book...",
+          deleteBookDone: "Book deleted.",
+          deleteBookFailed: "Failed to delete book.",
+          deleteM4bConfirm: "Delete the merged M4B for \"{label}\"?",
+          deleteM4bDeleting: "Deleting M4B...",
+          deleteM4bDeleted: "M4B deleted.",
+          deleteM4bFailed: "Failed to delete M4B.",
+          clearTtsConfirm: "Delete all TTS segments for this book?",
+          ttsCacheDeleted: "TTS cache deleted.",
+          ttsCacheDeleteFailed: "Failed to clear TTS cache.",
+          metadataSaving: "Saving...",
+          metadataUpdated: "Metadata updated.",
+          metadataUpdateFailed: "Failed to update metadata.",
+          bookLoadFailed: "Failed to load book.",
+          booksLoadFailed: "Failed to load books.",
+          ttsStatusLoadFailed: "Unable to load TTS status.",
+          ingestOnlySupported: "Only .epub or .txt files are supported.",
+          ingestVerbOverride: "Overwriting and ingesting",
+          ingestVerbNormal: "Ingesting and sanitizing",
+          ingestStatus: "{verb} {name}...",
+          ingestIngested: "Ingested and sanitized {title}.",
+          ingestConflictConfirm:
+            "Book {label} already exists. Overwrite it? This will delete the existing book folder.",
+          ingestCanceled: "Ingest canceled.",
+          ingestFailed: "Ingest failed.",
+          regenChunkRunning: "Regenerating chunk...",
+          regenChunkLoadBook: "Load a book to regenerate chunks.",
+          regenChunkNoChunks: "No chunks available.",
+          regenChunkSelect: "Select a chunk to regenerate.",
+          regenChunkStopSynth: "Stop TTS/merge before regenerating.",
+          regenChunkConfirm: "Regenerate audio for {label}?",
+          regenChunkNotFound: "Chunk not found.",
+          regenChunkRegenerating: "Regenerating {label}...",
+          regenChunkDone: "Regenerated {label}.",
+          regenChunkFailed: "Failed to regenerate chunk.",
+          endOfBook: "End of book.",
+          chunkNotReady: "Chunk not ready. Press Play to retry.",
+          pressPlayToStart: "Press Play to start audio.",
+          waitingForChunk: "Waiting for chunk {index} / {total}...",
+          playingChunk: "Playing {chapter} {index} / {total}",
+          selectedChunkLabel: "\"selected chunk\"",
+          chunkNotFound: "Chunk not found.",
+          manifestMissingChunkSpans:
+            "Manifest missing chunk spans. Delete TTS cache and start TTS.",
+          downloadM4bStatus: "Downloading M4B...",
+          selectChapterToEdit: "Select a chapter to edit.",
+          editCanceled: "Edit canceled.",
+          savingCleanText: "Saving clean text...",
+          savedCleanText: "Saved clean text.",
+          savedCleanTextCleared: "Saved clean text. TTS cache cleared.",
+          saveCleanTextFailed: "Failed to save clean text.",
+          cleanEditing: "Editing clean text...",
+          savingRules: "Saving rules...",
+          rulesSaved: "Rules saved.",
+          rulesSaveFailed: "Failed to save rules.",
+          loadingOverrides: "Loading reading overrides...",
+          loadOverridesFailed: "Failed to load reading overrides.",
+          savingOverrides: "Saving reading overrides...",
+          savedOverrides: "Saved overrides.",
+          savedOverridesCleared: "Saved overrides. TTS cache cleared.",
+          savingOverridesFailed: "Failed to save reading overrides.",
+          overridesInvalidLines: "Ignored {count} invalid lines.",
+          chapterDropped: "Chapter dropped.",
+          chapterAlreadyDropped: "Chapter already dropped.",
+          chapterDropFailed: "Failed to drop chapter.",
+          chapterRestored: "Chapter restored.",
+          chapterAlreadyRestored: "Chapter already restored.",
+          chapterRestoreFailed: "Failed to restore chapter.",
+          sanitizing: "Sanitizing...",
+          sanitized: "Sanitized.",
+          sanitizedCleared: "Sanitized. TTS cache cleared.",
+          sanitizeFailed: "Sanitize failed.",
+          loadPreviewFailed: "Failed to load preview.",
+          discardCleanEditsConfirm: "Discard unsaved clean text edits?",
+          discardOverridesConfirm: "Discard unsaved reading overrides?",
+          chapterListEmpty: "No chapters.",
+          droppedListEmpty: "None.",
+          restore: "Restore",
+          uploadStatusUnsupported: "Only .epub or .txt files are supported.",
+          ingestCanceledStatus: "Ingest canceled.",
+          statusChunkNotReady: "Chunk not ready. Press Play to retry.",
+          pressPlayToRetry: "Press Play to retry.",
+          regenChunkTitleDynamic: "Regenerate {label}",
+        },
+      };
+
+      function normalizeLanguage(value) {
+        const cleaned = String(value || "").trim().toLowerCase();
+        if (cleaned === "en") {
+          return "en";
+        }
+        if (cleaned === "jp" || cleaned === "ja") {
+          return "jp";
+        }
+        return "jp";
+      }
+
+      function t(key, vars = {}) {
+        const table = I18N[state.language] || I18N.jp;
+        const fallback = I18N.en || {};
+        const template = table[key] || fallback[key] || key;
+        return template.replace(/\{(\w+)\}/g, (_, token) => {
+          const value = vars[token];
+          return value === undefined || value === null ? "" : String(value);
+        });
+      }
+
+      function updateLanguageToggle() {
+        if (!langToggle) {
+          return;
+        }
+        langToggle.textContent = state.language === "jp" ? "JP" : "EN";
+        const title = t("languageToggle", { language: t("languageName") });
+        langToggle.setAttribute("aria-label", title);
+        langToggle.setAttribute("title", title);
+        langToggle.dataset.lang = state.language;
+      }
+
+      function updateTtsToggleLabel() {
+        if (!ttsToggle) {
+          return;
+        }
+        ttsToggle.textContent = ttsPanel.classList.contains("collapsed")
+          ? t("expand")
+          : t("collapse");
+      }
+
+      function applyTranslations() {
+        if (brandLabel) {
+          brandLabel.textContent = t("brand");
+        }
+        document.title = t("brand");
+        if (rootPath) {
+          const path = rootPath.dataset.root || "";
+          rootPath.textContent = t("rootPath", { path });
+        }
+        if (uploadPrimary) {
+          uploadPrimary.textContent = t("uploadDrop");
+        }
+        if (uploadSecondary) {
+          uploadSecondary.textContent = t("uploadBrowse");
+        }
+        if (libraryShelfTabsWrap) {
+          libraryShelfTabsWrap.setAttribute("aria-label", t("bookshelfSections"));
+        }
+        if (libraryTypeTabsWrap) {
+          libraryTypeTabsWrap.setAttribute("aria-label", t("bookshelfFormats"));
+        }
+        if (tocTitle) {
+          tocTitle.textContent = t("chaptersTitle");
+        }
+        if (ttsTitle) {
+          ttsTitle.textContent = t("ttsTitle");
+        }
+        if (advancedTitle) {
+          advancedTitle.textContent = t("perChapterVoices");
+        }
+        if (advancedSelectAllLabel) {
+          advancedSelectAllLabel.textContent = t("selectAll");
+        }
+        if (advancedApplyVoice) {
+          advancedApplyVoice.textContent = t("assign");
+        }
+        if (advancedClearVoice) {
+          advancedClearVoice.textContent = t("clear");
+        }
+        if (editTitle) {
+          editTitle.textContent = t("editTitle");
+        }
+        if (editSubtitle) {
+          editSubtitle.textContent = t("editSubtitle");
+        }
+        if (sanitizeBtn) {
+          sanitizeBtn.textContent = t("reSanitize");
+        }
+        if (editReload) {
+          editReload.textContent = t("reload");
+        }
+        if (editChaptersTitle) {
+          editChaptersTitle.textContent = t("editChaptersTitle");
+        }
+        if (editDroppedTitle) {
+          editDroppedTitle.textContent = t("editDroppedTitle");
+        }
+        if (dropChapterBtn) {
+          dropChapterBtn.textContent = t("dropChapter");
+        }
+        if (editRawTitle) {
+          editRawTitle.textContent = t("raw");
+        }
+        if (editCleanTitle) {
+          editCleanTitle.textContent = t("clean");
+        }
+        if (editCleanBtn) {
+          editCleanBtn.textContent = t("editButton");
+        }
+        if (saveCleanBtn) {
+          saveCleanBtn.textContent = t("save");
+        }
+        if (cancelCleanBtn) {
+          cancelCleanBtn.textContent = t("cancel");
+        }
+        if (editOverridesTitle) {
+          editOverridesTitle.textContent = t("overridesTitle");
+        }
+        if (editOverridesHelp) {
+          editOverridesHelp.textContent = t("overridesHelp");
+        }
+        if (saveOverridesBtn) {
+          saveOverridesBtn.textContent = t("saveOverrides");
+        }
+        if (editRulesTitle) {
+          editRulesTitle.textContent = t("rulesTitle");
+        }
+        if (rulesParagraphsLabel) {
+          rulesParagraphsLabel.textContent = t("rulesParagraphs");
+        }
+        if (rulesParagraphs && rulesParagraphs.options.length >= 2) {
+          rulesParagraphs.options[0].textContent = t("rulesParagraphsDouble");
+          rulesParagraphs.options[1].textContent = t("rulesParagraphsSingle");
+        }
+        if (rulesDropLabel) {
+          rulesDropLabel.textContent = t("rulesDrop");
+        }
+        if (rulesCutoffLabel) {
+          rulesCutoffLabel.textContent = t("rulesCutoff");
+        }
+        if (rulesRemoveLabel) {
+          rulesRemoveLabel.textContent = t("rulesRemove");
+        }
+        if (rulesReplaceLabel) {
+          rulesReplaceLabel.textContent = t("rulesReplace");
+        }
+        if (metaTitleFieldLabel) {
+          metaTitleFieldLabel.textContent = t("metaTitleField");
+        }
+        if (metaAuthorsFieldLabel) {
+          metaAuthorsFieldLabel.textContent = t("metaAuthorsField");
+        }
+        if (metaYearFieldLabel) {
+          metaYearFieldLabel.textContent = t("metaYearField");
+        }
+        if (metaAuthors) {
+          metaAuthors.placeholder = t("metaAuthorsPlaceholder");
+        }
+        if (metaTitleLabel) {
+          metaTitleLabel.textContent = t("metaTitle");
+        }
+        if (metaClose) {
+          metaClose.setAttribute("aria-label", t("metaClose"));
+        }
+        if (metaCancel) {
+          metaCancel.textContent = t("metaCancel");
+        }
+        if (metaSave) {
+          metaSave.textContent = t("metaSave");
+        }
+        if (bookMenuBtn) {
+          bookMenuBtn.setAttribute("aria-label", t("more"));
+          bookMenuBtn.setAttribute("title", t("more"));
+        }
+        if (editMetaBtn) {
+          editMetaBtn.textContent = t("editMetadata");
+        }
+        if (deleteM4bBtn) {
+          deleteM4bBtn.textContent = t("deleteM4b");
+        }
+        if (deleteBookBtn) {
+          deleteBookBtn.textContent = t("deleteBook");
+        }
+        if (startTts) {
+          startTts.textContent = t("startTts");
+        }
+        if (sampleTts) {
+          sampleTts.textContent = t("sample");
+        }
+        if (mergeBtn) {
+          mergeBtn.textContent = t("mergeM4b");
+        }
+        if (downloadM4bBtn) {
+          downloadM4bBtn.textContent = t("downloadM4b");
+        }
+        if (clearTtsBtn) {
+          clearTtsBtn.textContent = t("deleteTtsCache");
+          clearTtsBtn.title = t("deleteTtsCacheTitle");
+        }
+        if (editToggle) {
+          editToggle.textContent = state.editOpen ? t("close") : t("edit");
+        }
+        if (bookmarkTitle) {
+          bookmarkTitle.textContent = t("bookmarkTitle");
+        }
+        if (saveBookmarkBtn) {
+          saveBookmarkBtn.textContent = t("saveCurrent");
+        }
+        if (speedBtn) {
+          speedBtn.setAttribute("aria-label", t("playbackSpeed"));
+          speedBtn.setAttribute("title", t("playbackSpeed"));
+        }
+        if (prevBtn) {
+          prevBtn.setAttribute("aria-label", t("previous"));
+          prevBtn.setAttribute("title", t("previous"));
+        }
+        if (nextBtn) {
+          nextBtn.setAttribute("aria-label", t("next"));
+          nextBtn.setAttribute("title", t("next"));
+        }
+        if (bookmarkBtn) {
+          bookmarkBtn.setAttribute("aria-label", t("bookmarks"));
+          bookmarkBtn.setAttribute("title", t("bookmarks"));
+        }
+        if (jumpShelf) {
+          jumpShelf.setAttribute("aria-label", t("backToShelf"));
+        }
+        if (regenChunkBtn) {
+          regenChunkBtn.setAttribute("aria-label", t("regenChunkAria"));
+        }
+        if (state.lastSynthStatus) {
+          updateSynthUI(state.lastSynthStatus);
+        } else if (progressText) {
+          progressText.textContent = t("idle");
+        }
+        if (state.lastMergeStatus) {
+          updateMergeUI(state.lastMergeStatus);
+        }
+        updateTtsToggleLabel();
+        updateAdvancedMode(false, false);
+        updateLanguageToggle();
+        updateThemeToggle();
+        updateShelfTabs();
+        updateBookTabs();
+        updateMergeButtonState();
+        updateClearButtonState();
+        updateRegenButtonState();
+        updateMarks();
+        renderBooks();
+        if (state.book) {
+          renderBookHeader();
+          renderChapters();
+        } else {
+          bookTitle.textContent = t("selectBook");
+          bookMeta.textContent = t("noBookLoaded");
+          chapterTitle.textContent = t("waitingForBook");
+          chapterText.innerHTML = `<p class="empty-state">${t(
+            "pickBookHint"
+          )}</p>`;
+        }
+      }
+
+      function setLanguage(language, persist = false) {
+        const normalized = normalizeLanguage(language);
+        state.language = normalized;
+        document.documentElement.lang = normalized === "jp" ? "ja" : "en";
+        applyTranslations();
+        if (persist) {
+          localStorage.setItem("nik.lang", normalized);
+        }
+      }
 
       function setStatus(message, mode = "message") {
         status.textContent = message;
@@ -2264,7 +3154,7 @@
       }
 
       function normalizeCoverText(book) {
-        const title = String(book.title || book.id || "Untitled").trim();
+        const title = String(book.title || book.id || t("untitled")).trim();
         let authors = [];
         if (Array.isArray(book.authors)) {
           authors = book.authors;
@@ -2274,8 +3164,8 @@
             .map((item) => item.trim())
             .filter(Boolean);
         }
-        const authorText = authors.length ? authors.join(", ") : "Unknown";
-        const yearText = String(book.year || "n.d.").trim();
+        const authorText = authors.length ? authors.join(", ") : t("unknownAuthor");
+        const yearText = String(book.year || t("unknownYear")).trim();
         return {
           titleText: title,
           authorText,
@@ -2416,7 +3306,7 @@
       function renderCover(book, size) {
         if (book.cover_url) {
           const src = escapeHtml(book.cover_url);
-          return `<img src="${src}" alt="Cover" />`;
+          return `<img src="${src}" alt="${t("coverAlt")}" />`;
         }
         return renderFallbackCover(book, size);
       }
@@ -2561,7 +3451,8 @@
         }
         libraryShelfTabs.forEach((tab) => {
           const shelf = normalizeShelf(tab.dataset.shelf);
-          const baseLabel = tab.dataset.label || tab.textContent.trim();
+          const baseLabel = shelf === "tsundoku" ? t("shelfTsundoku") : t("shelfBooks");
+          tab.dataset.label = baseLabel;
           const count = shelf === "tsundoku" ? counts.tsundoku : counts.books;
           tab.textContent = `${baseLabel} (${count})`;
           const active = state.libraryShelf === shelf;
@@ -2588,7 +3479,8 @@
         }
         libraryTypeTabs.forEach((tab) => {
           const filter = normalizeBookFilter(tab.dataset.filter);
-          const baseLabel = tab.dataset.label || tab.textContent.trim();
+          const baseLabel = filter === "txt" ? t("formatTxt") : t("formatEpub");
+          tab.dataset.label = baseLabel;
           const count = filter === "txt" ? counts.txt : counts.epub;
           tab.textContent = `${baseLabel} (${count})`;
           const active = state.bookFilter === filter;
@@ -2683,9 +3575,8 @@
           return;
         }
         const resolved = resolveTheme(state.themePreference);
-        const prettyResolved =
-          resolved.charAt(0).toUpperCase() + resolved.slice(1);
-        const title = `Theme: ${prettyResolved}`;
+        const themeLabel = resolved === "dark" ? t("themeDark") : t("themeLight");
+        const title = t("themeLabel", { theme: themeLabel });
         themeToggle.setAttribute("aria-label", title);
         themeToggle.setAttribute("title", title);
         themeToggle.dataset.themeMode = resolved;
@@ -2794,7 +3685,7 @@
           !lowerName.endsWith(".epub") &&
           !lowerName.endsWith(".txt")
         ) {
-          setUploadStatus("Only .epub or .txt files are supported.", "error");
+          setUploadStatus(t("ingestOnlySupported"), "error");
           return;
         }
         if (state.ingestRunning) {
@@ -2809,9 +3700,9 @@
         };
         while (true) {
           const verb = override
-            ? "Overwriting and ingesting"
-            : "Ingesting and sanitizing";
-          setUploadStatus(`${verb} ${name}...`);
+            ? t("ingestVerbOverride")
+            : t("ingestVerbNormal");
+          setUploadStatus(t("ingestStatus", { verb, name }));
           try {
             const data = await fetchJson(
               override ? "/api/ingest?override=1" : "/api/ingest",
@@ -2820,8 +3711,8 @@
                 body: makeBody(),
               }
             );
-            const title = data.title || data.book_id || "Book";
-            setUploadStatus(`Ingested and sanitized ${title}.`);
+            const title = data.title || data.book_id || t("bookLabel");
+            setUploadStatus(t("ingestIngested", { title }));
             await loadBooks();
             if (data.book_id) {
               await selectBook(data.book_id);
@@ -2837,18 +3728,18 @@
               detail.startsWith("Book already exists")
             ) {
               const existing = err.payload ? err.payload.book_id : "";
-              const label = existing ? `"${existing}"` : "this book";
+              const label = existing ? `"${existing}"` : t("thisBook");
               const confirmed = window.confirm(
-                `Book ${label} already exists. Overwrite it? This will delete the existing book folder.`
+                t("ingestConflictConfirm", { label })
               );
               if (confirmed) {
                 override = true;
                 continue;
               }
-              setUploadStatus("Ingest canceled.", "error");
+              setUploadStatus(t("ingestCanceled"), "error");
               break;
             }
-            setUploadStatus(detail || "Ingest failed.", "error");
+            setUploadStatus(detail || t("ingestFailed"), "error");
             break;
           }
         }
@@ -2947,12 +3838,14 @@
 
           state.voiceOptions = [...local, ...builtin];
           voiceGroup.innerHTML = "";
-          appendVoiceGroup(voiceGroup, "Local voices", local);
-          appendVoiceGroup(voiceGroup, "Built-in voices", builtin);
+          appendVoiceGroup(voiceGroup, t("localVoices"), local);
+          appendVoiceGroup(voiceGroup, t("builtinVoices"), builtin);
 
           const available = state.voiceOptions.map((item) => item.value);
           if (!available.length) {
-            voiceGroup.innerHTML = "<div class=\"voice-empty\">No voices found.</div>";
+            voiceGroup.innerHTML = `<div class="voice-empty">${t(
+              "noVoicesFound"
+            )}</div>`;
             setSelectedVoice(null, false);
             return;
           }
@@ -2976,7 +3869,9 @@
           }
           renderAdvancedPanel();
         } catch (err) {
-          voiceGroup.innerHTML = "<div class=\"voice-empty\">Unable to load voices.</div>";
+          voiceGroup.innerHTML = `<div class="voice-empty">${t(
+            "voicesLoadFail"
+          )}</div>`;
         }
       }
 
@@ -3045,16 +3940,16 @@
         }
       }
 
-      function updateAdvancedMode(persist = true) {
+      function updateAdvancedMode(persist = true, reload = true) {
         advancedPanel.classList.toggle("open", !!state.advancedMode);
-        advancedToggle.textContent = "Multi-Voices";
+        advancedToggle.textContent = t("multiVoices");
         advancedToggle.classList.toggle("mode-on", state.advancedMode);
         advancedToggle.classList.toggle("mode-off", !state.advancedMode);
         if (persist) {
           saveSettings();
         }
         updateSampleButtonState();
-        if (state.book) {
+        if (reload && state.book) {
           loadVoiceMap().then(() => loadVoices());
         } else {
           renderAdvancedPanel();
@@ -3077,8 +3972,9 @@
         advancedList.innerHTML = "";
         const chapters = state.chapters || [];
         if (!chapters.length) {
-          advancedList.innerHTML =
-            "<p class=\"voice-empty\">No chapters yet.</p>";
+          advancedList.innerHTML = `<p class="voice-empty">${t(
+            "noChaptersYet"
+          )}</p>`;
           updateAdvancedSelectionStats();
           return;
         }
@@ -3109,10 +4005,12 @@
 
           const info = document.createElement("div");
           const title = document.createElement("div");
-          title.textContent = chapter.title || chapterId || "Chapter";
+          title.textContent = chapter.title || chapterId || t("chapterFallback");
           const meta = document.createElement("div");
           meta.className = "advanced-meta";
-          meta.textContent = `${chapter.chunk_count || 0} chunks`;
+          meta.textContent = t("chunksLabel", {
+            count: chapter.chunk_count || 0,
+          });
           info.appendChild(title);
           info.appendChild(meta);
 
@@ -3140,8 +4038,8 @@
         const defaultOption = document.createElement("option");
         defaultOption.value = "default";
         defaultOption.textContent = defaultLabel
-          ? `Default (${defaultLabel})`
-          : "Default";
+          ? t("defaultVoiceWithLabel", { label: defaultLabel })
+          : t("defaultVoice");
         select.appendChild(defaultOption);
         state.voiceOptions.forEach((entry) => {
           const option = document.createElement("option");
@@ -3194,7 +4092,9 @@
       function updateAdvancedSelectionStats() {
         const total = state.chapters.length;
         const selected = state.advancedSelection.size;
-        advancedSelectedCount.textContent = `${selected} selected`;
+        advancedSelectedCount.textContent = t("selectedCount", {
+          count: selected,
+        });
         if (total > 0) {
           advancedSelectAll.checked = selected === total;
           advancedSelectAll.indeterminate = selected > 0 && selected < total;
@@ -3277,6 +4177,8 @@
         state.mergeOutputExists = false;
         state.mergeOutputParts = [];
         state.mergeStage = "idle";
+        state.lastSynthStatus = null;
+        state.lastMergeStatus = null;
         state.synthRunning = false;
         state.synthMode = "tts";
         state.playback = { lastPlayed: null, furthestPlayed: null, bookmarks: [] };
@@ -3287,18 +4189,21 @@
         state.advancedSelection = new Set();
         state.advancedLastIndex = null;
         resetAudioPlayers();
-        bookTitle.textContent = "Select a book";
-        bookMeta.textContent = "No book loaded.";
+        bookTitle.textContent = t("selectBook");
+        bookMeta.textContent = t("noBookLoaded");
         bookStatus.textContent = "";
         coverLarge.innerHTML = "";
         coverLarge.style.removeProperty("--cover-image-bg");
-        chapterTitle.textContent = "Waiting for a book...";
+        chapterTitle.textContent = t("waitingForBook");
         chapterText.innerHTML =
-          "<p class=\"empty-state\">Pick a book on the left to start.</p>";
+          `<p class="empty-state">${t("pickBookHint")}</p>`;
         chapterList.innerHTML = "";
+        progressFill.style.width = "0%";
+        progressText.textContent = t("idle");
+        progressDetail.textContent = "";
         ffmpegStatus.textContent = "";
         editPanel.classList.remove("open");
-        editToggle.textContent = "Edit";
+        editToggle.textContent = t("edit");
         state.editOpen = false;
         state.previewChapterIndex = null;
         state.previewSelectedTitle = "";
@@ -3353,7 +4258,9 @@
             await selectBook(initial, chapter);
           }
         } catch (err) {
-          bookList.innerHTML = "<p class=\"empty-state\">Failed to load books.</p>";
+          bookList.innerHTML = `<p class="empty-state">${t(
+            "booksLoadFailed"
+          )}</p>`;
         }
       }
 
@@ -3366,6 +4273,7 @@
         state.bookFilter = normalizeBookFilter(
           localStorage.getItem("nik.bookFilter")
         );
+        state.language = normalizeLanguage(localStorage.getItem("nik.lang"));
         applyTheme(normalizeTheme(localStorage.getItem("nik.theme")), false);
         themeQuery.addEventListener("change", () => {
           if (normalizeTheme(state.themePreference) === "system") {
@@ -3375,9 +4283,10 @@
         const collapsed = localStorage.getItem("nik.ttsCollapsed") === "1";
         if (collapsed) {
           ttsPanel.classList.add("collapsed");
-          ttsToggle.textContent = "Expand";
         }
-        updateAdvancedMode(false);
+        updateTtsToggleLabel();
+        updateAdvancedMode(false, false);
+        setLanguage(state.language, false);
       }
 
       function saveSettings() {
@@ -3424,17 +4333,19 @@
         }
         updateBookTabs();
         if (!state.books.length) {
-          bookList.innerHTML = "<p class=\"empty-state\">No books found.</p>";
+          bookList.innerHTML = `<p class="empty-state">${t("noBooks")}</p>`;
           return;
         }
         const visible = filterBooksForShelf();
         if (!visible.length) {
           if (normalizeShelf(state.libraryShelf) === "tsundoku") {
             bookList.innerHTML =
-              "<p class=\"empty-state\">No Tsundoku items found.</p>";
+              `<p class="empty-state">${t("noTsundoku")}</p>`;
           } else {
-            const label = state.bookFilter === "txt" ? "TXT" : "EPUB";
-            bookList.innerHTML = `<p class="empty-state">No ${label} books found.</p>`;
+            const label = state.bookFilter === "txt" ? t("formatTxt") : t("formatEpub");
+            bookList.innerHTML = `<p class="empty-state">${t("noFormatBooks", {
+              format: label,
+            })}</p>`;
           }
           return;
         }
@@ -3449,23 +4360,26 @@
           }
           const audioTotal = Number(book.audio_total || 0);
           const audioDone = Number(book.audio_done || 0);
-          let statusText = "No audio yet";
+          let statusText = t("noAudioYet");
           if (book.has_audio) {
             if (audioTotal && audioDone >= audioTotal) {
-              statusText = "Audio complete";
+              statusText = t("audioComplete");
             } else if (audioTotal && audioDone > 0) {
-              statusText = `Audio ${audioDone}/${audioTotal}`;
+              statusText = t("audioProgress", {
+                done: audioDone,
+                total: audioTotal,
+              });
             } else {
-              statusText = "Audio preparing";
+              statusText = t("audioPreparing");
             }
           }
           const finishedBadge = book.playback_complete
-            ? "<span class=\"book-tag finished\">Finished</span>"
+            ? `<span class="book-tag finished">${t("finished")}</span>`
             : "";
           card.innerHTML = `
             <div class="book-cover">${renderCover(book, "small")}</div>
             <div class="book-meta">
-              <h4>${escapeHtml(book.title || book.id || "Untitled")}</h4>
+              <h4>${escapeHtml(book.title || book.id || t("untitled"))}</h4>
               <p>${escapeHtml((book.authors || []).join(", "))}</p>
               <p class="book-status">
                 <span>${statusText}</span>
@@ -3514,6 +4428,8 @@
           state.mergeOutputExists = false;
           state.mergeOutputParts = [];
           state.mergeStage = "idle";
+          state.lastSynthStatus = null;
+          state.lastMergeStatus = null;
           state.synthMode = "tts";
           mergeStatus.textContent = "";
           state.chapterMap = {};
@@ -3587,13 +4503,13 @@
             state.currentQueueIndex = anchorIndex;
             setIdleStatus();
             if (state.needsRechunk) {
-              setStatus("Manifest missing chunk spans. Delete TTS cache and start TTS.");
+              setStatus(t("manifestMissingChunkSpans"));
             }
           } else {
-            chapterTitle.textContent = "No audio yet";
+            chapterTitle.textContent = t("noAudioYetTitle");
             chapterText.innerHTML =
-              "<p class=\"empty-state\">Run `nik synth` to generate audio chunks.</p>";
-            setStatus("No audio available.");
+              `<p class="empty-state">${t("runNikSynth")}</p>`;
+            setStatus(t("noAudioAvailable"));
           }
           updateUrl(state.book.id, state.currentChapterId);
           startSynthPolling();
@@ -3603,7 +4519,7 @@
           }
           scrollToBookSection();
         } catch (err) {
-          setStatus("Failed to load book.");
+          setStatus(t("bookLoadFailed"));
         } finally {
           state.loadingBook = false;
         }
@@ -3618,8 +4534,8 @@
         const year = state.book.year ? ` (${state.book.year})` : "";
         bookMeta.textContent = `${author}${year}`;
         bookStatus.textContent = state.book.has_audio
-          ? "Audio manifest loaded."
-          : "Waiting for audio.";
+          ? t("audioManifestLoaded")
+          : t("waitingForAudio");
         coverLarge.style.removeProperty("--cover-image-bg");
         coverLarge.innerHTML = renderCover(state.book, "large");
         const coverImg = coverLarge.querySelector("img");
@@ -3759,10 +4675,10 @@
         }
         const text = getChunkText(item);
         if (!text) {
-          return "\"selected chunk\"";
+          return t("selectedChunkLabel");
         }
         const cleaned = text.replace(/\s+/g, " ").trim();
-        return cleaned ? `"${cleaned}"` : "\"selected chunk\"";
+        return cleaned ? `"${cleaned}"` : t("selectedChunkLabel");
       }
 
       function describeStatusIndex(index) {
@@ -3786,7 +4702,7 @@
           lastIndex === null ? "—" : describeStatusIndex(lastIndex);
         const furthestLabel =
           furthestIndex === null ? "—" : describeStatusIndex(furthestIndex);
-        return `Last: ${lastLabel} · Furthest: ${furthestLabel}`;
+        return t("idleStatus", { last: lastLabel, furthest: furthestLabel });
       }
 
       function setIdleStatus() {
@@ -3816,7 +4732,9 @@
 
       function updateMarks() {
         if (!state.book) {
-          bookmarkList.innerHTML = "<div class=\"bookmark-empty\">No bookmarks yet.</div>";
+          bookmarkList.innerHTML = `<div class="bookmark-empty">${t(
+            "bookmarkEmpty"
+          )}</div>`;
           saveBookmarkBtn.disabled = true;
           return;
         }
@@ -3828,16 +4746,20 @@
           item.className = "bookmark-item";
           const label = describeIndex(furthestIndex);
           item.innerHTML = `
-            <span>Furthest: ${label}</span>
+            <span>${t("bookmarkFurthest", { label })}</span>
             <div class="bookmark-actions">
-              <button class="btn small" data-action="play-furthest" data-index="${furthestIndex}">Play</button>
+              <button class="btn small" data-action="play-furthest" data-index="${furthestIndex}">${t(
+                "bookmarkPlay"
+              )}</button>
             </div>
           `;
           bookmarkList.appendChild(item);
         }
         if (!bookmarks.length) {
           if (furthestIndex === null) {
-            bookmarkList.innerHTML = "<div class=\"bookmark-empty\">No bookmarks yet.</div>";
+            bookmarkList.innerHTML = `<div class="bookmark-empty">${t(
+              "bookmarkEmpty"
+            )}</div>`;
           }
         } else {
           bookmarks.forEach((entry) => {
@@ -3847,8 +4769,12 @@
             item.innerHTML = `
               <span>${label}</span>
               <div class="bookmark-actions">
-                <button class="btn small" data-action="play" data-index="${entry.index}">Play</button>
-                <button class="btn small" data-action="remove" data-index="${entry.index}">Remove</button>
+                <button class="btn small" data-action="play" data-index="${entry.index}">${t(
+                  "bookmarkPlay"
+                )}</button>
+                <button class="btn small" data-action="remove" data-index="${entry.index}">${t(
+                  "bookmarkRemove"
+                )}</button>
               </div>
             `;
             bookmarkList.appendChild(item);
@@ -3988,18 +4914,18 @@
           state.chunkRegenRunning;
         regenChunkBtn.disabled = disabled;
         if (state.chunkRegenRunning) {
-          regenChunkBtn.title = "Regenerating chunk...";
+          regenChunkBtn.title = t("regenChunkRunning");
         } else if (!state.book) {
-          regenChunkBtn.title = "Load a book to regenerate chunks.";
+          regenChunkBtn.title = t("regenChunkLoadBook");
         } else if (!state.queue.length) {
-          regenChunkBtn.title = "No chunks available.";
+          regenChunkBtn.title = t("regenChunkNoChunks");
         } else if (!hasSelection) {
-          regenChunkBtn.title = "Select a chunk to regenerate.";
+          regenChunkBtn.title = t("regenChunkSelect");
         } else if (state.synthRunning || state.mergeRunning) {
-          regenChunkBtn.title = "Stop TTS/merge before regenerating.";
+          regenChunkBtn.title = t("regenChunkStopSynth");
         } else {
           const label = describeIndex(state.selectedQueueIndex);
-          regenChunkBtn.title = `Regenerate ${label}`;
+          regenChunkBtn.title = t("regenChunkTitleDynamic", { label });
         }
       }
 
@@ -4008,7 +4934,7 @@
           return;
         }
         if (state.synthRunning || state.mergeRunning) {
-          setStatus("Stop TTS/merge before regenerating.");
+          setStatus(t("regenChunkStopSynth"));
           return;
         }
         currentAudio.pause();
@@ -4017,22 +4943,22 @@
         clearPreload();
         setPlayButton(false);
         if (state.selectedQueueIndex === null) {
-          setStatus("Select a chunk to regenerate.");
+          setStatus(t("regenChunkSelect"));
           return;
         }
         const item = state.queue[state.selectedQueueIndex];
         if (!item) {
-          setStatus("Chunk not found.");
+          setStatus(t("regenChunkNotFound"));
           return;
         }
         const label = describeIndex(state.selectedQueueIndex);
-        const ok = confirm(`Regenerate audio for ${label}?`);
+        const ok = confirm(t("regenChunkConfirm", { label }));
         if (!ok) {
           return;
         }
         state.chunkRegenRunning = true;
         updateRegenButtonState();
-        setStatus(`Regenerating ${label}...`);
+        setStatus(t("regenChunkRegenerating", { label }));
         try {
           await fetchJson("/api/synth/chunk", {
             method: "POST",
@@ -4051,9 +4977,9 @@
             currentAudio.load();
             setPlayButton(false);
           }
-          setStatus(`Regenerated ${label}.`);
+          setStatus(t("regenChunkDone", { label }));
         } catch (err) {
-          setStatus(err.message || "Failed to regenerate chunk.");
+          setStatus(err.message || t("regenChunkFailed"));
         } finally {
           state.chunkRegenRunning = false;
           updateRegenButtonState();
@@ -4120,6 +5046,7 @@
           const data = await fetchJson(
             `/api/synth/status?book_id=${encodeURIComponent(state.book.id)}`
           );
+          state.lastSynthStatus = data;
           updateSynthUI(data);
           await loadMergeStatus();
           if (
@@ -4132,7 +5059,7 @@
             state.pendingManifestRefresh = false;
           }
         } catch (err) {
-          progressText.textContent = "Unable to load TTS status.";
+          progressText.textContent = t("ttsStatusLoadFailed");
         }
       }
 
@@ -4148,18 +5075,20 @@
           progress.done >= progress.total;
         startTts.classList.remove("success");
         if (state.synthRunning && sampling) {
-          startTts.textContent = "Start TTS";
+          startTts.textContent = t("startTts");
           startTts.disabled = true;
-          sampleTts.textContent = "Stop Sample";
+          sampleTts.textContent = t("stopSample");
         } else if (complete && !state.synthRunning) {
-          startTts.textContent = "TTS Complete";
+          startTts.textContent = t("ttsComplete");
           startTts.disabled = true;
           startTts.classList.add("success");
-          sampleTts.textContent = "Sample";
+          sampleTts.textContent = t("sample");
         } else {
-          startTts.textContent = state.synthRunning ? "Stop TTS" : "Start TTS";
+          startTts.textContent = state.synthRunning
+            ? t("stopTts")
+            : t("startTts");
           startTts.disabled = false;
-          sampleTts.textContent = "Sample";
+          sampleTts.textContent = t("sample");
         }
         const overall = data.overall_progress || null;
         state.mergeReady =
@@ -4175,42 +5104,44 @@
               ? `${overall.percent}%`
               : "0%";
           progressText.textContent = sampling
-            ? "Preparing UniDic for sample..."
-            : "Preparing UniDic...";
+            ? t("progressPreparingUniDicSample")
+            : t("progressPreparingUniDic");
           progressDetail.textContent =
-            ttsDetail || "Downloading dictionary and loading tokenizer.";
+            ttsDetail || t("progressUniDicDetail");
         } else if (stage === "chunking") {
           progressFill.style.width =
             sampling && overall
               ? `${overall.percent}%`
               : "0%";
           progressText.textContent = sampling
-            ? "Chunking sample..."
-            : "Chunking text...";
-          progressDetail.textContent = "Preparing manifest and spans.";
+            ? t("progressChunkingSample")
+            : t("progressChunkingText");
+          progressDetail.textContent = t("progressPreparingManifest");
         } else if (stage === "cloning") {
           progressFill.style.width =
             sampling && overall
               ? `${overall.percent}%`
               : "0%";
           progressText.textContent = sampling
-            ? "Cloning voice for sample..."
-            : "Cloning voice...";
-          progressDetail.textContent = "Preparing voice prompt.";
+            ? t("progressCloningSample")
+            : t("progressCloningVoice");
+          progressDetail.textContent = t("progressPreparingPrompt");
         } else if (stage === "sampled") {
           progressFill.style.width =
             sampling && overall
               ? `${overall.percent}%`
               : "100%";
-          progressText.textContent = "Sample ready.";
+          progressText.textContent = t("progressSampleReady");
           if (progress && progress.current) {
-            progressDetail.textContent = `${progress.current.chapter_title} · sample done.`;
+            progressDetail.textContent = t("progressSampleDone", {
+              title: progress.current.chapter_title,
+            });
           } else {
             progressDetail.textContent = "";
           }
         } else if (!progress) {
           progressFill.style.width = "0%";
-          progressText.textContent = "Idle.";
+          progressText.textContent = t("idle");
           progressDetail.textContent = "";
         } else {
           const barPercent =
@@ -4218,51 +5149,68 @@
               ? overall.percent
               : progress.percent;
           progressFill.style.width = `${barPercent}%`;
-          const prefix = sampling ? "Sample" : "Progress";
-          progressText.textContent = `${prefix}: ${progress.done} / ${progress.total} chunks (${progress.percent}%).`;
+          const prefix = sampling
+            ? t("progressPrefixSample")
+            : t("progressPrefixProgress");
+          progressText.textContent = t("progressLine", {
+            prefix,
+            done: progress.done,
+            total: progress.total,
+            percent: progress.percent,
+          });
           if (progress.current) {
-            progressDetail.textContent = `${progress.current.chapter_title} · chunk ${progress.current.chunk_index} of ${progress.current.chunk_total}`;
+            progressDetail.textContent = t("progressCurrentChunk", {
+              title: progress.current.chapter_title,
+              index: progress.current.chunk_index,
+              total: progress.current.chunk_total,
+            });
           } else {
-            progressDetail.textContent = progress.total ? "Completed." : "Idle.";
+            progressDetail.textContent = progress.total
+              ? t("progressCompleted")
+              : t("idle");
           }
         }
 
         if (sampling) {
           if (stage === "unidic") {
-            bookStatus.textContent = ttsDetail || "Preparing UniDic...";
+            bookStatus.textContent = ttsDetail || t("bookStatusPreparingUniDic");
           } else if (stage === "chunking") {
-            bookStatus.textContent = "Preparing sample...";
+            bookStatus.textContent = t("bookStatusPreparingSample");
           } else if (stage === "cloning") {
-            bookStatus.textContent = "Cloning sample voice...";
+            bookStatus.textContent = t("bookStatusCloningSample");
           } else if (stage === "sampling") {
-            bookStatus.textContent = "Generating sample...";
+            bookStatus.textContent = t("bookStatusGeneratingSample");
           } else if (stage === "sampled") {
-            bookStatus.textContent = "Sample ready.";
+            bookStatus.textContent = t("bookStatusSampleReady");
           } else {
-            bookStatus.textContent = state.book && state.book.has_audio ? "Audio ready." : "Waiting for audio.";
+            bookStatus.textContent = state.book && state.book.has_audio
+              ? t("audioReady")
+              : t("waitingForAudio");
           }
         } else if (stage === "unidic") {
-          bookStatus.textContent = ttsDetail || "Preparing UniDic...";
+          bookStatus.textContent = ttsDetail || t("bookStatusPreparingUniDic");
         } else if (stage === "chunking") {
-          bookStatus.textContent = "Chunking text...";
+          bookStatus.textContent = t("bookStatusChunking");
         } else if (stage === "synthesizing") {
-          bookStatus.textContent = "Synthesizing audio...";
+          bookStatus.textContent = t("bookStatusSynthesizing");
         } else if (stage === "done") {
-          bookStatus.textContent = "Audio ready.";
+          bookStatus.textContent = t("audioReady");
         } else {
-          bookStatus.textContent = state.book && state.book.has_audio ? "Audio ready." : "Waiting for audio.";
+          bookStatus.textContent = state.book && state.book.has_audio
+            ? t("audioReady")
+            : t("waitingForAudio");
         }
         startTts.disabled =
           startTts.disabled || (state.synthRunning && sampling);
         const ffmpegState = data.ffmpeg_status || "unknown";
         if (ffmpegState === "installing") {
-          ffmpegStatus.textContent = "Installing ffmpeg...";
+          ffmpegStatus.textContent = t("ffmpegInstalling");
         } else if (ffmpegState === "error") {
           ffmpegStatus.textContent =
-            data.ffmpeg_error || "ffmpeg install failed.";
+            data.ffmpeg_error || t("ffmpegInstallFailed");
         } else if (ffmpegState === "missing") {
           ffmpegStatus.textContent =
-            data.ffmpeg_error || "ffmpeg missing: merge will fail.";
+            data.ffmpeg_error || t("ffmpegMissing");
         } else {
           ffmpegStatus.textContent = "";
         }
@@ -4277,9 +5225,10 @@
           const data = await fetchJson(
             `/api/merge/status?book_id=${encodeURIComponent(state.book.id)}`
           );
+          state.lastMergeStatus = data;
           updateMergeUI(data);
         } catch (err) {
-          mergeStatus.textContent = err.message || "Unable to load merge status.";
+          mergeStatus.textContent = err.message || t("mergeStatusLoadFailed");
         }
       }
 
@@ -4290,22 +5239,22 @@
           downloadM4bBtn.hidden = !hasM4b || state.mergeRunning;
         }
         if (state.mergeRunning && state.mergeStage === "installing") {
-          mergeBtn.textContent = "Installing ffmpeg...";
+          mergeBtn.textContent = t("mergeBtnInstallTitle");
           mergeBtn.disabled = true;
-          mergeBtn.title = "Installing ffmpeg...";
+          mergeBtn.title = t("mergeBtnInstallTitle");
         } else if (state.mergeRunning) {
-          mergeBtn.textContent = "Merging...";
+          mergeBtn.textContent = t("mergeBtnMergingTitle");
           mergeBtn.disabled = true;
-          mergeBtn.title = "Merging...";
+          mergeBtn.title = t("mergeBtnMergingTitle");
         } else {
-          mergeBtn.textContent = "Merge M4B";
+          mergeBtn.textContent = t("mergeBtnMergeTitle");
           mergeBtn.disabled = !state.mergeReady || state.mergeOutputExists;
           if (state.mergeOutputExists) {
-            mergeBtn.title = "Delete the merged M4B from the book menu to re-merge.";
+            mergeBtn.title = t("mergeBtnDeleteToReMerge");
           } else if (!state.mergeReady) {
-            mergeBtn.title = "Finish TTS to enable merge.";
+            mergeBtn.title = t("mergeBtnFinishTts");
           } else {
-            mergeBtn.title = "Merge M4B";
+            mergeBtn.title = t("mergeBtnMergeTitle");
           }
         }
         updateDownloadButtonState();
@@ -4323,12 +5272,12 @@
         downloadM4bBtn.hidden = !available;
         downloadM4bBtn.disabled = !available;
         if (!available) {
-          downloadM4bBtn.title = "No merged M4B available.";
+          downloadM4bBtn.title = t("noMergedM4b");
         } else {
           if ((state.mergeOutputParts || []).length > 1) {
-            downloadM4bBtn.title = "Choose an M4B part to download.";
+            downloadM4bBtn.title = t("downloadM4bChoose");
           } else {
-            downloadM4bBtn.title = "Download M4B";
+            downloadM4bBtn.title = t("downloadM4b");
           }
         }
       }
@@ -4347,7 +5296,7 @@
           const btn = document.createElement("button");
           btn.type = "button";
           btn.className = "btn";
-          btn.textContent = `Download Part ${idx + 1}`;
+          btn.textContent = t("downloadPart", { index: idx + 1 });
           btn.addEventListener("click", () => {
             closeDownloadMenu();
             downloadM4bPart(idx + 1, name);
@@ -4364,8 +5313,8 @@
           (state.synthRunning && state.synthMode !== "sample");
         sampleTts.disabled = disabled;
         sampleTts.title = state.advancedMode
-          ? "Sample disabled in Advanced Mode."
-          : "Sample";
+          ? t("sampleDisabledAdvanced")
+          : t("sample");
       }
 
       function updateClearButtonState() {
@@ -4384,14 +5333,14 @@
         deleteM4bBtn.hidden = !hasM4b;
         deleteM4bBtn.disabled = disabled || !hasM4b;
         bookMenuBtn.disabled = disabled;
-        let m4bTitle = "Delete merged M4B.";
+        let m4bTitle = t("deleteMergedM4bTitle");
         if (!hasM4b) {
-          m4bTitle = "No merged M4B available.";
+          m4bTitle = t("noMergedM4b");
         }
         if (state.mergeRunning) {
-          m4bTitle = "Stop merge before deleting.";
+          m4bTitle = t("stopMergeBeforeDelete");
         } else if (state.synthRunning) {
-          m4bTitle = "Stop TTS before deleting.";
+          m4bTitle = t("stopTtsBeforeDelete");
         }
         deleteM4bBtn.title = m4bTitle;
         if (disabled) {
@@ -4473,7 +5422,7 @@
           authors: metaAuthors.value.trim(),
           year: metaYear.value.trim(),
         };
-        setMetaStatus("Saving...");
+        setMetaStatus(t("metadataSaving"));
         metaSave.disabled = true;
         try {
           const data = await fetchJson("/api/books/metadata", {
@@ -4484,12 +5433,12 @@
           updateBookMetadata(data.metadata || {});
           renderBookHeader();
           renderBooks();
-          setStatus("Metadata updated.");
+          setStatus(t("metadataUpdated"));
           closeMetaModal();
         } catch (err) {
           const detail =
             err && typeof err.message === "string" ? err.message : "";
-          setMetaStatus(detail || "Failed to update metadata.", "error");
+          setMetaStatus(detail || t("metadataUpdateFailed"), "error");
         } finally {
           metaSave.disabled = false;
         }
@@ -4519,11 +5468,11 @@
             ? progress.part_total
             : null;
         if (state.mergeStage === "installing") {
-          mergeStatus.textContent = "Installing ffmpeg...";
+          mergeStatus.textContent = t("mergeInstalling");
         } else if (state.mergeStage === "merging") {
-          let label = "Merging book";
+          let label = t("mergeMergingBook");
           if (partIndex && partTotal && partTotal > 1) {
-            label = `Merging part ${partIndex}/${partTotal}`;
+            label = t("mergeMergingPart", { part: partIndex, total: partTotal });
           }
           if (percent !== null) {
             mergeStatus.textContent = `${label}: ${percent.toFixed(1)}%`;
@@ -4532,12 +5481,14 @@
           }
         } else if (state.mergeStage === "done") {
           if (state.mergeOutputParts.length > 1) {
-            mergeStatus.textContent = `M4B parts ready (${state.mergeOutputParts.length}).`;
+            mergeStatus.textContent = t("mergePartsReady", {
+              count: state.mergeOutputParts.length,
+            });
           } else {
-            mergeStatus.textContent = "M4B ready.";
+            mergeStatus.textContent = t("mergeReady");
           }
         } else if (state.mergeStage === "failed") {
-          mergeStatus.textContent = "Merge failed. Check tts/merge.log.";
+          mergeStatus.textContent = t("mergeFailed");
         } else {
           mergeStatus.textContent = "";
         }
@@ -4583,7 +5534,7 @@
         if (state.advancedMode) {
           const saved = await saveVoiceMap();
           if (!saved) {
-            setStatus("Failed to save voice map.");
+            setStatus(t("voiceMapSaveFailed"));
             return;
           }
         }
@@ -4605,10 +5556,10 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
           });
-          setStatus("TTS started.");
+          setStatus(t("ttsStarted"));
           await loadSynthStatus();
         } catch (err) {
-          setStatus("Failed to start TTS.");
+          setStatus(t("ttsStartFailed"));
         }
       }
 
@@ -4617,25 +5568,25 @@
           return;
         }
         if (!state.mergeReady) {
-          setStatus("Finish TTS before merging.");
+          setStatus(t("mergeFinishTts"));
           return;
         }
         if (state.mergeOutputExists) {
-          setStatus("M4B already exists.");
+          setStatus(t("mergeAlreadyExists"));
           return;
         }
-        mergeStatus.textContent = "Starting merge...";
+        mergeStatus.textContent = t("mergeStarting");
         try {
           await fetchJson("/api/merge/start", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ book_id: state.book.id }),
           });
-          setStatus("Merge started.");
+          setStatus(t("mergeStarted"));
           await loadMergeStatus();
         } catch (err) {
-          mergeStatus.textContent = err.message || "Merge failed to start.";
-          setStatus(err.message || "Merge failed to start.");
+          mergeStatus.textContent = err.message || t("mergeStartFailed");
+          setStatus(err.message || t("mergeStartFailed"));
         }
       }
 
@@ -4652,12 +5603,12 @@
         document.body.appendChild(link);
         link.click();
         link.remove();
-        setStatus("Downloading M4B...");
+        setStatus(t("downloadM4bStatus"));
       }
 
       function downloadM4b() {
         if (!state.book || !state.mergeOutputExists) {
-          setStatus("No merged M4B available.");
+          setStatus(t("noMergedM4b"));
           return;
         }
         const parts = state.mergeOutputParts || [];
@@ -4682,7 +5633,7 @@
         document.body.appendChild(link);
         link.click();
         link.remove();
-        setStatus("Downloading M4B...");
+        setStatus(t("downloadM4bStatus"));
       }
 
       async function sampleSynth() {
@@ -4690,11 +5641,11 @@
           return;
         }
         if (state.advancedMode) {
-          setStatus("Sample disabled in Advanced Mode.");
+          setStatus(t("sampleDisabledAdvanced"));
           return;
         }
         if (state.synthRunning) {
-          setStatus("Stop TTS before sampling.");
+          setStatus(t("stopTtsBeforeSampling"));
           return;
         }
         saveSettings();
@@ -4707,10 +5658,10 @@
               voice: getSelectedVoice(),
             }),
           });
-          setStatus("Generating sample...");
+          setStatus(t("sampleGenerating"));
           await loadSynthStatus();
         } catch (err) {
-          setStatus(err.message || "Sample failed.");
+          setStatus(err.message || t("sampleFailed"));
         }
       }
 
@@ -4727,18 +5678,16 @@
           return;
         }
         if (state.synthRunning || state.mergeRunning) {
-          setStatus("Stop TTS or merge before deleting.");
+          setStatus(t("stopTtsBeforeDelete"));
           return;
         }
         const label = state.book.title || state.book.id;
-        const confirmed = window.confirm(
-          `Delete "${label}" and all files in this book folder?`
-        );
+        const confirmed = window.confirm(t("deleteBookConfirm", { label }));
         if (!confirmed) {
           return;
         }
         closeBookMenu();
-        setStatus("Deleting book...");
+        setStatus(t("deleteBookDeleting"));
         try {
           await fetchJson("/api/books/delete", {
             method: "POST",
@@ -4747,9 +5696,9 @@
           });
           clearBookView();
           await loadBooks();
-          setStatus("Book deleted.");
+          setStatus(t("deleteBookDone"));
         } catch (err) {
-          setStatus(err.message || "Failed to delete book.");
+          setStatus(err.message || t("deleteBookFailed"));
         }
       }
 
@@ -4758,22 +5707,20 @@
           return;
         }
         if (state.mergeRunning) {
-          setStatus("Stop merge before deleting.");
+          setStatus(t("stopMergeBeforeDelete"));
           return;
         }
         if (!state.mergeOutputExists) {
-          setStatus("No merged M4B to delete.");
+          setStatus(t("noMergedM4b"));
           return;
         }
         const label = state.book.title || state.book.id;
-        const confirmed = window.confirm(
-          `Delete the merged M4B for \"${label}\"?`
-        );
+        const confirmed = window.confirm(t("deleteM4bConfirm", { label }));
         if (!confirmed) {
           return;
         }
         closeBookMenu();
-        setStatus("Deleting M4B...");
+        setStatus(t("deleteM4bDeleting"));
         try {
           await fetchJson("/api/m4b/delete", {
             method: "POST",
@@ -4787,9 +5734,9 @@
           mergeStatus.textContent = "";
           updateMergeButtonState();
           updateClearButtonState();
-          setStatus("M4B deleted.");
+          setStatus(t("deleteM4bDeleted"));
         } catch (err) {
-          setStatus(err.message || "Failed to delete M4B.");
+          setStatus(err.message || t("deleteM4bFailed"));
         }
       }
 
@@ -4798,10 +5745,10 @@
           return;
         }
         if (state.synthRunning || state.mergeRunning) {
-          setStatus("Stop TTS/merge before clearing cache.");
+          setStatus(t("stopTtsBeforeDelete"));
           return;
         }
-        const ok = confirm("Delete all TTS segments for this book?");
+        const ok = confirm(t("clearTtsConfirm"));
         if (!ok) {
           return;
         }
@@ -4811,7 +5758,7 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ book_id: state.book.id }),
           });
-          setStatus("TTS cache deleted.");
+          setStatus(t("ttsCacheDeleted"));
           state.mergeOutputExists = false;
           state.mergeOutputParts = [];
           state.mergeExitCode = null;
@@ -4823,7 +5770,7 @@
             await loadPreview(state.previewChapterIndex);
           }
         } catch (err) {
-          setStatus(err.message || "Failed to clear TTS cache.");
+          setStatus(err.message || t("ttsCacheDeleteFailed"));
         }
       }
 
@@ -4837,10 +5784,10 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ book_id: state.book.id }),
           });
-          setStatus("TTS stopped.");
+          setStatus(t("ttsStopped"));
           await loadSynthStatus();
         } catch (err) {
-          setStatus("Failed to stop TTS.");
+          setStatus(t("ttsStopFailed"));
         }
       }
 
@@ -4873,7 +5820,9 @@
       function renderChapters() {
         chapterList.innerHTML = "";
         if (!state.chapters.length) {
-          chapterList.innerHTML = "<p class=\"empty-state\">No chapters yet.</p>";
+          chapterList.innerHTML = `<p class="empty-state">${t(
+            "noChaptersYet"
+          )}</p>`;
           return;
         }
         state.chapters.forEach((chapter) => {
@@ -4884,7 +5833,7 @@
           }
           item.innerHTML = `
             <div>${chapter.title}</div>
-            <small>${chapter.chunk_count} chunks</small>
+            <small>${t("chunksLabel", { count: chapter.chunk_count })}</small>
           `;
           item.addEventListener("click", () => {
             renderChapter(chapter.id);
@@ -4911,7 +5860,9 @@
 
         let cleanText = chapter.clean_text || "";
         if (!cleanText) {
-          chapterText.innerHTML = "<p class=\"empty-state\">Loading text...</p>";
+          chapterText.innerHTML = `<p class="empty-state">${t(
+            "loadingText"
+          )}</p>`;
           cleanText = await ensureChapterText(chapter.id);
         }
         if (
@@ -4927,7 +5878,9 @@
         let spanIndex = 0;
 
         if (!paragraphs.length) {
-          chapterText.innerHTML = "<p class=\"empty-state\">No text available.</p>";
+          chapterText.innerHTML = `<p class="empty-state">${t(
+            "noTextAvailable"
+          )}</p>`;
         } else {
           chapterText.innerHTML = "";
           paragraphs.forEach(([paraStart, paraEnd]) => {
@@ -5030,7 +5983,7 @@
           editCleanInput.setSelectionRange(0, 0);
           state.cleanEditOriginal = text;
           state.cleanEditChapter = state.previewChapterIndex;
-          editStatus.textContent = "Editing clean text...";
+          editStatus.textContent = t("cleanEditing");
           setTimeout(() => editCleanInput.focus(), 0);
         } else {
           editCleanInput.value = "";
@@ -5041,7 +5994,7 @@
 
       function startCleanEdit() {
         if (!state.book || state.previewChapterIndex === null) {
-          editStatus.textContent = "Select a chapter to edit.";
+          editStatus.textContent = t("selectChapterToEdit");
           return;
         }
         setCleanEditMode(true);
@@ -5052,13 +6005,13 @@
           return;
         }
         if (hasUnsavedCleanChanges()) {
-          const discard = window.confirm("Discard unsaved clean text edits?");
+          const discard = window.confirm(t("discardCleanEditsConfirm"));
           if (!discard) {
             return;
           }
         }
         setCleanEditMode(false);
-        editStatus.textContent = "Edit canceled.";
+        editStatus.textContent = t("editCanceled");
       }
 
       async function saveCleanText() {
@@ -5066,7 +6019,7 @@
           return;
         }
         const text = editCleanInput.value || "";
-        editStatus.textContent = "Saving clean text...";
+        editStatus.textContent = t("savingCleanText");
         try {
           const data = await fetchJson("/api/sanitize/clean", {
             method: "POST",
@@ -5079,12 +6032,12 @@
           });
           setCleanEditMode(false);
           editStatus.textContent = data.tts_cleared
-            ? "Saved clean text. TTS cache cleared."
-            : "Saved clean text.";
+            ? t("savedCleanTextCleared")
+            : t("savedCleanText");
           await selectBook(state.book.id, state.currentChapterId);
           await loadPreview(state.previewChapterIndex);
         } catch (err) {
-          editStatus.textContent = err.message || "Failed to save clean text.";
+          editStatus.textContent = err.message || t("saveCleanTextFailed");
         }
       }
 
@@ -5171,17 +6124,17 @@
           return;
         }
         const payload = { ...rulesFromForm(), book_id: state.book.id };
-        editStatus.textContent = "Saving rules...";
+        editStatus.textContent = t("savingRules");
         try {
           await fetchJson("/api/sanitize/rules", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
           });
-          editStatus.textContent = "Rules saved.";
+          editStatus.textContent = t("rulesSaved");
           await loadPreview(state.previewChapterIndex);
         } catch (err) {
-          editStatus.textContent = err.message || "Failed to save rules.";
+          editStatus.textContent = err.message || t("rulesSaveFailed");
         }
       }
 
@@ -5190,12 +6143,12 @@
           return;
         }
         if (state.readingOverridesDirty && !force) {
-          const discard = window.confirm("Discard unsaved reading overrides?");
+          const discard = window.confirm(t("discardOverridesConfirm"));
           if (!discard) {
             return;
           }
         }
-        editStatus.textContent = "Loading reading overrides...";
+        editStatus.textContent = t("loadingOverrides");
         try {
           const params = new URLSearchParams();
           params.set("book_id", state.book.id);
@@ -5207,7 +6160,7 @@
           editStatus.textContent = "";
         } catch (err) {
           editStatus.textContent =
-            err.message || "Failed to load reading overrides.";
+            err.message || t("loadOverridesFailed");
         }
       }
 
@@ -5216,7 +6169,7 @@
           return;
         }
         const { entries, invalid } = parseOverrideLines(readingOverrides.value || "");
-        editStatus.textContent = "Saving reading overrides...";
+        editStatus.textContent = t("savingOverrides");
         try {
           const data = await fetchJson("/api/reading-overrides", {
             method: "POST",
@@ -5231,22 +6184,24 @@
           state.readingOverridesOriginal = text;
           state.readingOverridesDirty = false;
           const ignored = invalid.length
-            ? ` Ignored ${invalid.length} invalid line${invalid.length === 1 ? "" : "s"}.`
+            ? ` ${t("overridesInvalidLines", { count: invalid.length })}`
             : "";
           editStatus.textContent = data.tts_cleared
-            ? `Saved overrides. TTS cache cleared.${ignored}`
-            : `Saved overrides.${ignored}`;
+            ? `${t("savedOverridesCleared")}${ignored}`
+            : `${t("savedOverrides")}${ignored}`;
           await selectBook(state.book.id, state.currentChapterId);
         } catch (err) {
           editStatus.textContent =
-            err.message || "Failed to save reading overrides.";
+            err.message || t("savingOverridesFailed");
         }
       }
 
       function renderEditChapterList(chapters, selectedIndex) {
         editChapterList.innerHTML = "";
         if (!chapters.length) {
-          editChapterList.innerHTML = "<p class=\"empty-state\">No chapters.</p>";
+          editChapterList.innerHTML = `<p class="empty-state">${t(
+            "chapterListEmpty"
+          )}</p>`;
           return;
         }
         chapters.forEach((entry) => {
@@ -5256,7 +6211,7 @@
           if (entry.index === selectedIndex) {
             button.classList.add("active");
           }
-          const title = entry.title || "Chapter";
+          const title = entry.title || t("chapterFallback");
           button.textContent = `${entry.index}. ${title}`;
           button.addEventListener("click", () => {
             loadPreview(entry.index);
@@ -5268,16 +6223,18 @@
       function renderDroppedList(items) {
         editDroppedList.innerHTML = "";
         if (!items.length) {
-          editDroppedList.innerHTML = "<p class=\"empty-state\">None.</p>";
+          editDroppedList.innerHTML = `<p class="empty-state">${t(
+            "droppedListEmpty"
+          )}</p>`;
           return;
         }
         items.forEach((entry) => {
           const row = document.createElement("div");
           row.className = "edit-dropped-item";
-          const title = entry.title || "Chapter";
+          const title = entry.title || t("chapterFallback");
           row.innerHTML = `
             <span>${entry.index}. ${title}</span>
-            <button class="btn small" type="button">Restore</button>
+            <button class="btn small" type="button">${t("restore")}</button>
           `;
           const button = row.querySelector("button");
           button.addEventListener("click", () =>
@@ -5298,9 +6255,7 @@
           chapterIndex !== state.cleanEditChapter
         ) {
           if (hasUnsavedCleanChanges()) {
-            const discard = window.confirm(
-              "Discard unsaved clean text edits?"
-            );
+            const discard = window.confirm(t("discardCleanEditsConfirm"));
             if (!discard) {
               return;
             }
@@ -5322,7 +6277,7 @@
             const prefix = selected.index ? `${selected.index}. ` : "";
             editSelectedTitle.textContent = `${prefix}${selected.title}`;
           } else {
-            editSelectedTitle.textContent = "Select a chapter";
+            editSelectedTitle.textContent = t("selectChapter");
           }
           dropChapterBtn.disabled =
             !selected.title || selected.kind === "title" || state.cleanEditing;
@@ -5344,14 +6299,14 @@
           }
           editStatus.textContent = "";
         } catch (err) {
-          editStatus.textContent = err.message || "Failed to load preview.";
+          editStatus.textContent = err.message || t("loadPreviewFailed");
         }
       }
 
       function toggleEditPanel() {
         state.editOpen = !state.editOpen;
         editPanel.classList.toggle("open", state.editOpen);
-        editToggle.textContent = state.editOpen ? "Close" : "Edit";
+        editToggle.textContent = state.editOpen ? t("close") : t("edit");
         if (state.editOpen) {
           loadPreview(state.previewChapterIndex);
           loadReadingOverrides();
@@ -5376,11 +6331,11 @@
             }),
           });
           editStatus.textContent = data.dropped
-            ? "Chapter dropped."
-            : "Chapter already dropped.";
+            ? t("chapterDropped")
+            : t("chapterAlreadyDropped");
           await selectBook(state.book.id);
         } catch (err) {
-          editStatus.textContent = err.message || "Failed to drop chapter.";
+          editStatus.textContent = err.message || t("chapterDropFailed");
         }
       }
 
@@ -5399,11 +6354,11 @@
             }),
           });
           editStatus.textContent = data.restored
-            ? "Chapter restored."
-            : "Chapter already restored.";
+            ? t("chapterRestored")
+            : t("chapterAlreadyRestored");
           await selectBook(state.book.id);
         } catch (err) {
-          editStatus.textContent = err.message || "Failed to restore chapter.";
+          editStatus.textContent = err.message || t("chapterRestoreFailed");
         }
       }
 
@@ -5411,19 +6366,20 @@
         if (!state.book) {
           return;
         }
-        editStatus.textContent = "Sanitizing...";
+        editStatus.textContent = t("sanitizing");
         try {
           const data = await fetchJson("/api/sanitize/run", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ book_id: state.book.id }),
           });
-          const cleared = data.tts_cleared ? " TTS cache cleared." : "";
-          editStatus.textContent = `Sanitized.${cleared}`;
+          editStatus.textContent = data.tts_cleared
+            ? t("sanitizedCleared")
+            : t("sanitized");
           await selectBook(state.book.id);
           await loadPreview(state.previewChapterIndex);
         } catch (err) {
-          editStatus.textContent = err.message || "Sanitize failed.";
+          editStatus.textContent = err.message || t("sanitizeFailed");
         }
       }
 
@@ -5465,8 +6421,8 @@
 
       function setPlayButton(isPlaying) {
         playBtn.classList.toggle("is-playing", isPlaying);
-        playBtn.setAttribute("aria-label", isPlaying ? "Pause" : "Play");
-        playBtn.title = isPlaying ? "Pause" : "Play";
+        playBtn.setAttribute("aria-label", isPlaying ? t("pause") : t("play"));
+        playBtn.title = isPlaying ? t("pause") : t("play");
       }
 
       function setPlaybackRate(rate) {
@@ -5591,7 +6547,7 @@
           return;
         }
         if (index < 0 || index >= state.queue.length) {
-          setStatus("End of book.");
+          setStatus(t("endOfBook"));
           currentAudio.pause();
           clearGapless();
           void persistPlayback();
@@ -5607,7 +6563,10 @@
           setLastPlayed(index);
           setActiveChunk(index, true);
           setStatus(
-            `Waiting for chunk ${item.chunkIndex + 1} of ${chapterTotal}...`
+            t("waitingForChunk", {
+              index: item.chunkIndex + 1,
+              total: chapterTotal,
+            })
           );
           updateMarks();
 
@@ -5622,7 +6581,7 @@
             waitForChunk(index);
             currentAudio.pause();
             setPlayButton(false);
-            setStatus("Chunk not ready. Press Play to retry.");
+            setStatus(t("chunkNotReady"));
             return;
           }
 
@@ -5642,11 +6601,15 @@
           try {
             await currentAudio.play();
             setStatus(
-              `Playing ${item.chapterId} ${item.chunkIndex + 1} / ${chapterTotal}`
+              t("playingChunk", {
+                chapter: item.chapterId,
+                index: item.chunkIndex + 1,
+                total: chapterTotal,
+              })
             );
             setPlayButton(true);
           } catch (err) {
-            setStatus("Press Play to start audio.");
+            setStatus(t("pressPlayToStart"));
             setPlayButton(false);
           }
           armGapless(index);
@@ -5829,7 +6792,7 @@
         if (action === "remove") {
           removeBookmark(index);
           updateMarks();
-          setStatus("Bookmark removed.");
+          setStatus(t("bookmarkRemoved"));
         }
       });
       saveBookmarkBtn.addEventListener("click", () => {
@@ -5838,7 +6801,7 @@
         }
         addBookmark(state.currentQueueIndex);
         updateMarks();
-        setStatus("Bookmark saved.");
+        setStatus(t("bookmarkSaved"));
       });
       advancedToggle.addEventListener("click", () => {
         state.advancedMode = !state.advancedMode;
@@ -5881,9 +6844,7 @@
       });
       ttsToggle.addEventListener("click", () => {
         ttsPanel.classList.toggle("collapsed");
-        ttsToggle.textContent = ttsPanel.classList.contains("collapsed")
-          ? "Expand"
-          : "Collapse";
+        updateTtsToggleLabel();
         localStorage.setItem(
           "nik.ttsCollapsed",
           ttsPanel.classList.contains("collapsed") ? "1" : "0"
@@ -5891,6 +6852,12 @@
       });
       if (themeToggle) {
         themeToggle.addEventListener("click", cycleTheme);
+      }
+      if (langToggle) {
+        langToggle.addEventListener("click", () => {
+          const next = state.language === "jp" ? "en" : "jp";
+          setLanguage(next, true);
+        });
       }
       function handleEnded(event) {
         if (event.target !== currentAudio) {

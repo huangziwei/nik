@@ -174,6 +174,30 @@ def test_normalize_kana_with_stub_tagger() -> None:
     assert out == "かんじととうきょう未知X"
 
 
+def test_normalize_kana_preserves_spaces(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, text: str):
+            if text == "漢字":
+                return [DummyToken("漢字", "カンジ")]
+            if text == "東京":
+                return [DummyToken("東京", "トウキョウ")]
+            return [DummyToken(text, None)]
+
+    monkeypatch.setattr(tts_util, "_get_kana_tagger", lambda: DummyTagger())
+    out = tts_util._normalize_kana_text("漢字 と 東京")
+    assert out == "かんじ と とうきょう"
+
+
 def test_prepare_tts_text_strips_japanese_quotes() -> None:
     assert (
         tts_util.prepare_tts_text("「聖書」『旧約』《新約》“Test” 'OK'〝注〟don't")

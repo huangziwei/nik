@@ -503,6 +503,32 @@ def _katakana_to_hiragana(text: str) -> str:
     return "".join(out)
 
 
+def _is_kana_reading(text: str) -> bool:
+    if not text:
+        return False
+    allowed = {
+        "ー",
+        "・",
+        "ゝ",
+        "ゞ",
+        "ヽ",
+        "ヾ",
+        "ヿ",
+    }
+    for ch in text:
+        code = ord(ch)
+        if ch in allowed:
+            continue
+        if 0x3040 <= code <= 0x309F:  # Hiragana
+            continue
+        if 0x30A0 <= code <= 0x30FF:  # Katakana
+            continue
+        if 0x31F0 <= code <= 0x31FF:  # Katakana Phonetic Extensions
+            continue
+        return False
+    return True
+
+
 def _default_unidic_dir() -> Path:
     return Path.home() / ".cache" / "nik" / UNIDIC_DIRNAME
 
@@ -548,6 +574,17 @@ def _ensure_unidic_dir(path: Path) -> Path:
     return path
 
 
+def _ensure_mecabrc(dict_dir: Path) -> Path:
+    mecabrc_path = dict_dir / "mecabrc"
+    if mecabrc_path.exists():
+        return mecabrc_path
+    try:
+        mecabrc_path.write_text(f"dicdir = {dict_dir}\n", encoding="utf-8")
+        return mecabrc_path
+    except Exception:
+        return Path("/dev/null")
+
+
 def _lazy_import_fugashi() -> None:
     global fugashi
     if fugashi is not None:
@@ -567,7 +604,8 @@ def _get_kana_tagger() -> Any:
     if _KANA_TAGGER is not None and _KANA_TAGGER_DIR == dict_dir:
         return _KANA_TAGGER
     _lazy_import_fugashi()
-    _KANA_TAGGER = fugashi.Tagger(f"-d {dict_dir}")
+    mecabrc = _ensure_mecabrc(dict_dir)
+    _KANA_TAGGER = fugashi.Tagger(f"-r {mecabrc} -d {dict_dir}")
     _KANA_TAGGER_DIR = dict_dir
     return _KANA_TAGGER
 
@@ -577,13 +615,15 @@ def _extract_token_reading(token: Any) -> str:
     for attr in ("kana", "pron", "reading"):
         value = getattr(feature, attr, None)
         if value and value != "*":
-            return str(value)
+            value = str(value)
+            if _is_kana_reading(value):
+                return value
     if feature:
         raw = str(feature)
         if "," in raw:
             parts = [p.strip() for p in raw.split(",")]
             for candidate in reversed(parts):
-                if candidate and candidate != "*":
+                if candidate and candidate != "*" and _is_kana_reading(candidate):
                     return candidate
     return ""
 
@@ -611,7 +651,19 @@ def _normalize_kana_text(text: str) -> str:
     if not _has_kanji(text):
         return text
     tagger = _get_kana_tagger()
-    return _normalize_kana_with_tagger(text, tagger)
+    parts = re.split(r"(\s+)", text)
+    out: List[str] = []
+    for part in parts:
+        if not part:
+            continue
+        if part.isspace():
+            out.append(part)
+            continue
+        if _has_kanji(part):
+            out.append(_normalize_kana_with_tagger(part, tagger))
+        else:
+            out.append(part)
+    return "".join(out)
 
 
 def prepare_tts_text(text: str) -> str:
