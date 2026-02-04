@@ -911,6 +911,14 @@
         position: relative;
       }
 
+      .tts-menu {
+        position: relative;
+      }
+
+      .regen-menu {
+        position: relative;
+      }
+
       .download-menu {
         position: relative;
       }
@@ -941,6 +949,12 @@
         border-radius: 10px;
         padding: 8px 12px;
         text-align: left;
+      }
+
+      .menu-panel .btn.is-active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--accent-ink);
       }
 
       .meta-modal {
@@ -1823,7 +1837,18 @@
             <div class="advanced-list" id="advancedList"></div>
           </div>
           <div class="tts-actions">
-            <button class="btn primary" id="startTts">読み上げ開始</button>
+            <div class="tts-menu" id="ttsMenu">
+              <button
+                class="btn primary"
+                id="startTts"
+                type="button"
+                aria-haspopup="true"
+                aria-expanded="false"
+              >
+                読み上げ開始
+              </button>
+              <div class="menu-panel" id="ttsMenuPanel"></div>
+            </div>
             <button class="btn" id="sampleTts" type="button">サンプル</button>
             <span class="tts-divider" aria-hidden="true"></span>
             <button class="btn" id="mergeBtn" type="button">M4B を結合</button>
@@ -1965,15 +1990,25 @@
 
     <div class="player-bar">
       <div class="player-left">
-        <button class="btn icon" id="regenChunkBtn" aria-label="チャンクを再生成" title="選択中のチャンクを再生成">
-          <svg
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-            focusable="false"
+        <div class="regen-menu" id="regenMenu">
+          <button
+            class="btn icon"
+            id="regenChunkBtn"
+            aria-label="チャンクを再生成"
+            title="選択中のチャンクを再生成"
+            aria-haspopup="true"
+            aria-expanded="false"
           >
-            <path d="M17.65 6.35A7.95 7.95 0 0 0 12 4V1L7 6l5 5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 12.65-5.65z" fill="currentColor"></path>
-          </svg>
-        </button>
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M17.65 6.35A7.95 7.95 0 0 0 12 4V1L7 6l5 5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 12.65-5.65z" fill="currentColor"></path>
+            </svg>
+          </button>
+          <div class="menu-panel" id="regenMenuPanel"></div>
+        </div>
         <div class="status" id="status">最後: —</div>
       </div>
       <div class="player-controls">
@@ -2093,6 +2128,7 @@
         },
         voicePreference: null,
         selectedVoice: null,
+        kanaStyle: "mixed",
         advancedMode: false,
         voiceMap: { default: null, chapters: {} },
         voiceOptions: [],
@@ -2225,6 +2261,7 @@
       let nextAudio = audioNext;
       const bookmarkBtn = document.getElementById("bookmarkBtn");
       const regenChunkBtn = document.getElementById("regenChunkBtn");
+      const regenMenuPanel = document.getElementById("regenMenuPanel");
       const bookmarkList = document.getElementById("bookmarkList");
       const bookmarkPanel = document.getElementById("bookmarkPanel");
       const bookmarkTitle = document.getElementById("bookmarkTitle");
@@ -2235,6 +2272,7 @@
       const mergeBtn = document.getElementById("mergeBtn");
       const downloadM4bBtn = document.getElementById("downloadM4bBtn");
       const downloadMenuPanel = document.getElementById("downloadMenuPanel");
+      const ttsMenuPanel = document.getElementById("ttsMenuPanel");
       const clearTtsBtn = document.getElementById("clearTtsBtn");
       const progressFill = document.getElementById("progressFill");
       const progressText = document.getElementById("progressText");
@@ -2311,6 +2349,10 @@
           downloadM4b: "M4B をダウンロード",
           deleteTtsCache: "TTS キャッシュを削除",
           deleteTtsCacheTitle: "この本の TTS セグメントを削除します。",
+          kanaStyleLabel: "かな表記",
+          kanaStyleMixed: "混在 (ハジまる)",
+          kanaStyleKatakana: "カタカナ (ハジマル)",
+          kanaStyleHiragana: "ひらがな (はじまる)",
           idle: "待機中。",
           localVoices: "ローカルボイス",
           builtinVoices: "内蔵ボイス",
@@ -2589,6 +2631,10 @@
           downloadM4b: "Download M4B",
           deleteTtsCache: "Delete TTS cache",
           deleteTtsCacheTitle: "Delete TTS segments for this book.",
+          kanaStyleLabel: "Kana Style",
+          kanaStyleMixed: "Mixed (ハジまる)",
+          kanaStyleKatakana: "Katakana (ハジマル)",
+          kanaStyleHiragana: "Hiragana (はじまる)",
           idle: "Idle.",
           localVoices: "Local voices",
           builtinVoices: "Built-in voices",
@@ -2823,6 +2869,27 @@
           return "jp";
         }
         return "jp";
+      }
+
+      function normalizeKanaStyle(value) {
+        const cleaned = String(value || "").trim().toLowerCase();
+        if (cleaned === "hiragana" || cleaned === "hira" || cleaned === "h") {
+          return "hiragana";
+        }
+        if (cleaned === "katakana" || cleaned === "kata" || cleaned === "k") {
+          return "katakana";
+        }
+        if (cleaned === "mixed" || cleaned === "mix" || cleaned === "m") {
+          return "mixed";
+        }
+        return "mixed";
+      }
+
+      function setKanaStyle(value, persist = true) {
+        state.kanaStyle = normalizeKanaStyle(value);
+        if (persist) {
+          localStorage.setItem("nik.kanaStyle", state.kanaStyle);
+        }
       }
 
       function t(key, vars = {}) {
@@ -4266,6 +4333,7 @@
 
       function loadSettings() {
         state.voicePreference = localStorage.getItem("nik.voice");
+        setKanaStyle(localStorage.getItem("nik.kanaStyle"), false);
         state.advancedMode = localStorage.getItem("nik.advancedMode") === "1";
         state.libraryShelf = normalizeShelf(
           localStorage.getItem("nik.libraryShelf")
@@ -4292,6 +4360,9 @@
       function saveSettings() {
         if (state.voicePreference) {
           localStorage.setItem("nik.voice", state.voicePreference);
+        }
+        if (state.kanaStyle) {
+          localStorage.setItem("nik.kanaStyle", state.kanaStyle);
         }
         localStorage.setItem("nik.advancedMode", state.advancedMode ? "1" : "0");
       }
@@ -4908,11 +4979,13 @@
         const disabled =
           !state.book ||
           !state.queue.length ||
-          !hasSelection ||
           state.synthRunning ||
           state.mergeRunning ||
           state.chunkRegenRunning;
         regenChunkBtn.disabled = disabled;
+        if (disabled && regenMenuPanel && regenMenuPanel.classList.contains("open")) {
+          closeRegenMenu();
+        }
         if (state.chunkRegenRunning) {
           regenChunkBtn.title = t("regenChunkRunning");
         } else if (!state.book) {
@@ -4929,13 +5002,17 @@
         }
       }
 
-      async function regenerateChunk() {
+      async function regenerateChunk(kanaStyle = null) {
         if (!state.book || state.chunkRegenRunning) {
           return;
         }
         if (state.synthRunning || state.mergeRunning) {
           setStatus(t("regenChunkStopSynth"));
           return;
+        }
+        if (kanaStyle) {
+          setKanaStyle(kanaStyle);
+          saveSettings();
         }
         currentAudio.pause();
         nextAudio.pause();
@@ -4967,6 +5044,7 @@
               book_id: state.book.id,
               chapter_id: item.chapterId,
               chunk_index: item.chunkIndex,
+              kana_style: state.kanaStyle,
             }),
           });
           state.chunkCacheBust[chunkCacheKey(item)] = Date.now();
@@ -5006,6 +5084,201 @@
         requestAnimationFrame(positionDownloadMenuPanel);
         window.addEventListener("resize", positionDownloadMenuPanel);
         window.addEventListener("scroll", positionDownloadMenuPanel, { passive: true });
+      }
+
+      function renderTtsMenu() {
+        if (!ttsMenuPanel) {
+          return;
+        }
+        ttsMenuPanel.innerHTML = "";
+        const options = [
+          { value: "mixed", label: t("kanaStyleMixed") },
+          { value: "katakana", label: t("kanaStyleKatakana") },
+          { value: "hiragana", label: t("kanaStyleHiragana") },
+        ];
+        options.forEach((option) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "btn";
+          if (option.value === state.kanaStyle) {
+            btn.classList.add("is-active");
+          }
+          btn.textContent = option.label;
+          btn.addEventListener("click", () => {
+            closeTtsMenu();
+            startSynth(option.value);
+          });
+          ttsMenuPanel.appendChild(btn);
+        });
+      }
+
+      function positionTtsMenuPanel() {
+        if (!ttsMenuPanel || !ttsMenuPanel.classList.contains("open")) {
+          return;
+        }
+        const panelRect = ttsMenuPanel.getBoundingClientRect();
+        const anchorRect = startTts.getBoundingClientRect();
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+        const margin = 16;
+        const anchorCenter = anchorRect.left + anchorRect.width / 2;
+        const idealLeft = anchorCenter - panelRect.width / 2;
+        const maxLeft = viewportWidth - panelRect.width - margin;
+        const left = Math.max(margin, Math.min(idealLeft, maxLeft));
+        let top = anchorRect.bottom + 8;
+        if (top + panelRect.height + margin > viewportHeight) {
+          const above = anchorRect.top - panelRect.height - 8;
+          if (above >= margin) {
+            top = above;
+          } else {
+            top = Math.max(margin, viewportHeight - panelRect.height - margin);
+          }
+        }
+        ttsMenuPanel.style.left = `${left}px`;
+        ttsMenuPanel.style.top = `${top}px`;
+        ttsMenuPanel.style.right = "auto";
+        ttsMenuPanel.style.bottom = "auto";
+        ttsMenuPanel.style.transform = "none";
+      }
+
+      function openTtsMenu() {
+        if (
+          !ttsMenuPanel ||
+          startTts.disabled ||
+          state.synthRunning ||
+          ttsMenuPanel.classList.contains("open")
+        ) {
+          return;
+        }
+        renderTtsMenu();
+        ttsMenuPanel.classList.add("open");
+        startTts.setAttribute("aria-expanded", "true");
+        requestAnimationFrame(positionTtsMenuPanel);
+        window.addEventListener("resize", positionTtsMenuPanel);
+        window.addEventListener("scroll", positionTtsMenuPanel, { passive: true });
+      }
+
+      function closeTtsMenu() {
+        if (!ttsMenuPanel) {
+          return;
+        }
+        ttsMenuPanel.classList.remove("open");
+        startTts.setAttribute("aria-expanded", "false");
+        window.removeEventListener("resize", positionTtsMenuPanel);
+        window.removeEventListener("scroll", positionTtsMenuPanel);
+      }
+
+      function toggleTtsMenu() {
+        if (!ttsMenuPanel) {
+          return;
+        }
+        if (state.synthRunning) {
+          closeTtsMenu();
+          stopSynth();
+          return;
+        }
+        if (ttsMenuPanel.classList.contains("open")) {
+          closeTtsMenu();
+        } else {
+          openTtsMenu();
+        }
+      }
+
+      function renderRegenMenu() {
+        if (!regenMenuPanel) {
+          return;
+        }
+        regenMenuPanel.innerHTML = "";
+        const options = [
+          { value: "mixed", label: t("kanaStyleMixed") },
+          { value: "katakana", label: t("kanaStyleKatakana") },
+          { value: "hiragana", label: t("kanaStyleHiragana") },
+        ];
+        options.forEach((option) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "btn";
+          if (option.value === state.kanaStyle) {
+            btn.classList.add("is-active");
+          }
+          btn.textContent = option.label;
+          btn.addEventListener("click", () => {
+            closeRegenMenu();
+            regenerateChunk(option.value);
+          });
+          regenMenuPanel.appendChild(btn);
+        });
+      }
+
+      function positionRegenMenuPanel() {
+        if (!regenMenuPanel || !regenMenuPanel.classList.contains("open")) {
+          return;
+        }
+        const panelRect = regenMenuPanel.getBoundingClientRect();
+        const anchorRect = regenChunkBtn.getBoundingClientRect();
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+        const margin = 16;
+        const anchorCenter = anchorRect.left + anchorRect.width / 2;
+        const idealLeft = anchorCenter - panelRect.width / 2;
+        const maxLeft = viewportWidth - panelRect.width - margin;
+        const left = Math.max(margin, Math.min(idealLeft, maxLeft));
+        let top = anchorRect.bottom + 8;
+        if (top + panelRect.height + margin > viewportHeight) {
+          const above = anchorRect.top - panelRect.height - 8;
+          if (above >= margin) {
+            top = above;
+          } else {
+            top = Math.max(margin, viewportHeight - panelRect.height - margin);
+          }
+        }
+        regenMenuPanel.style.left = `${left}px`;
+        regenMenuPanel.style.top = `${top}px`;
+        regenMenuPanel.style.right = "auto";
+        regenMenuPanel.style.bottom = "auto";
+        regenMenuPanel.style.transform = "none";
+      }
+
+      function openRegenMenu() {
+        if (
+          !regenMenuPanel ||
+          regenChunkBtn.disabled ||
+          regenMenuPanel.classList.contains("open")
+        ) {
+          return;
+        }
+        renderRegenMenu();
+        regenMenuPanel.classList.add("open");
+        regenChunkBtn.setAttribute("aria-expanded", "true");
+        requestAnimationFrame(positionRegenMenuPanel);
+        window.addEventListener("resize", positionRegenMenuPanel);
+        window.addEventListener("scroll", positionRegenMenuPanel, { passive: true });
+      }
+
+      function closeRegenMenu() {
+        if (!regenMenuPanel) {
+          return;
+        }
+        regenMenuPanel.classList.remove("open");
+        regenChunkBtn.setAttribute("aria-expanded", "false");
+        window.removeEventListener("resize", positionRegenMenuPanel);
+        window.removeEventListener("scroll", positionRegenMenuPanel);
+      }
+
+      function toggleRegenMenu() {
+        if (!regenMenuPanel) {
+          return;
+        }
+        currentAudio.pause();
+        nextAudio.pause();
+        clearGapless();
+        clearPreload();
+        setPlayButton(false);
+        if (regenMenuPanel.classList.contains("open")) {
+          closeRegenMenu();
+        } else {
+          openRegenMenu();
+        }
       }
 
       function addBookmark(index) {
@@ -5089,6 +5362,11 @@
             : t("startTts");
           startTts.disabled = false;
           sampleTts.textContent = t("sample");
+        }
+        if (state.synthRunning) {
+          closeTtsMenu();
+        } else if (ttsMenuPanel && ttsMenuPanel.classList.contains("open")) {
+          renderTtsMenu();
         }
         const overall = data.overall_progress || null;
         state.mergeReady =
@@ -5526,9 +5804,12 @@
         window.removeEventListener("scroll", positionBookMenuPanel);
       }
 
-      async function startSynth() {
+      async function startSynth(kanaStyle = null) {
         if (!state.book) {
           return;
+        }
+        if (kanaStyle) {
+          setKanaStyle(kanaStyle);
         }
         saveSettings();
         if (state.advancedMode) {
@@ -5548,6 +5829,7 @@
           book_id: state.book.id,
           voice: getSelectedVoice(),
           use_voice_map: state.advancedMode,
+          kana_style: state.kanaStyle,
         };
         state.pendingManifestRefresh = !state.chapters.length;
         try {
@@ -5656,6 +5938,7 @@
             body: JSON.stringify({
               book_id: state.book.id,
               voice: getSelectedVoice(),
+              kana_style: state.kanaStyle,
             }),
           });
           setStatus(t("sampleGenerating"));
@@ -5788,14 +6071,6 @@
           await loadSynthStatus();
         } catch (err) {
           setStatus(t("ttsStopFailed"));
-        }
-      }
-
-      function toggleSynth() {
-        if (state.synthRunning) {
-          stopSynth();
-        } else {
-          startSynth();
         }
       }
 
@@ -6691,7 +6966,7 @@
         const file = uploadInput.files ? uploadInput.files[0] : null;
         ingestFile(file);
       });
-      startTts.addEventListener("click", toggleSynth);
+      startTts.addEventListener("click", toggleTtsMenu);
       sampleTts.addEventListener("click", toggleSample);
       mergeBtn.addEventListener("click", () => {
         startMerge();
@@ -6728,6 +7003,30 @@
           return;
         }
         closeDownloadMenu();
+      });
+      document.addEventListener("click", (event) => {
+        if (!ttsMenuPanel || !ttsMenuPanel.classList.contains("open")) {
+          return;
+        }
+        const target = event.target;
+        if (target === startTts || ttsMenuPanel.contains(target)) {
+          return;
+        }
+        closeTtsMenu();
+      });
+      document.addEventListener("click", (event) => {
+        if (!regenMenuPanel || !regenMenuPanel.classList.contains("open")) {
+          return;
+        }
+        const target = event.target;
+        if (
+          target === regenChunkBtn ||
+          (regenChunkBtn && regenChunkBtn.contains(target)) ||
+          regenMenuPanel.contains(target)
+        ) {
+          return;
+        }
+        closeRegenMenu();
       });
       deleteBookBtn.addEventListener("click", deleteBook);
       deleteM4bBtn.addEventListener("click", deleteM4b);
@@ -6772,7 +7071,7 @@
         }
       });
       if (regenChunkBtn) {
-        regenChunkBtn.addEventListener("click", regenerateChunk);
+        regenChunkBtn.addEventListener("click", toggleRegenMenu);
       }
       bookmarkList.addEventListener("click", (event) => {
         const target = event.target;

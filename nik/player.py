@@ -868,6 +868,7 @@ class ChunkSynthRequest(BaseModel):
     book_id: str
     chapter_id: str
     chunk_index: int
+    kana_style: Optional[str] = None
 
 
 class MergeRequest(BaseModel):
@@ -1833,6 +1834,7 @@ def create_app(root_dir: Path) -> FastAPI:
                 voice=None,
                 voice_map_path=voice_map_path,
                 base_dir=repo_root,
+                kana_style=payload.kana_style,
             )
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
