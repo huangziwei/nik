@@ -15,6 +15,11 @@ Apple Silicon (MLX backend):
 uv sync --prerelease=allow
 ```
 
+### UniDic setup (kana normalization)
+- The first TTS run will download the UniDic dictionary to `~/.cache/nik/unidic-cwj-202512_full`.
+- Override the dictionary path with `NIK_UNIDIC_DIR=/path/to/unidic`.
+- Override the download URL with `NIK_UNIDIC_URL=...` if you maintain a custom mirror.
+
 ## Usage
 
 ### Play in web UI

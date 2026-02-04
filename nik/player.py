@@ -860,6 +860,7 @@ class SynthRequest(BaseModel):
     chunk_mode: str = "japanese"
     rechunk: bool = False
     use_voice_map: bool = False
+    kana_normalize: bool = True
 
 
 class ChunkSynthRequest(BaseModel):
@@ -1659,6 +1660,8 @@ def create_app(root_dir: Path) -> FastAPI:
             cmd += ["--voice-map", str(voice_map_path)]
         if payload.rechunk:
             cmd.append("--rechunk")
+        if not payload.kana_normalize:
+            cmd.append("--no-kana-normalize")
 
         env = os.environ.copy()
         process = subprocess.Popen(
@@ -1763,6 +1766,8 @@ def create_app(root_dir: Path) -> FastAPI:
         ]
         if payload.rechunk:
             cmd.append("--rechunk")
+        if not payload.kana_normalize:
+            cmd.append("--no-kana-normalize")
 
         env = os.environ.copy()
         process = subprocess.Popen(

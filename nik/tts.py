@@ -5,12 +5,17 @@ import importlib.metadata
 import importlib.util
 import inspect
 import json
+import os
 import platform
 import re
 import shutil
 import sys
+import tempfile
 import time
 import unicodedata
+import urllib.parse
+import urllib.request
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -34,6 +39,10 @@ torch = None
 Qwen3TTSModel = None
 mlx_audio = None
 mlx_load_model = None
+fugashi = None
+
+_KANA_TAGGER = None
+_KANA_TAGGER_DIR: Optional[Path] = None
 
 _END_PUNCT = set("。！？?!…")
 _MID_PUNCT = set("、，,;；:：")
@@ -79,6 +88,10 @@ MIN_MLX_AUDIO_VERSION = "0.3.1"
 FORCED_LANGUAGE = "Japanese"
 FORCED_LANG_CODE = "ja"
 READING_TEMPLATE_FILENAME = "global-reading-overrides.md"
+UNIDIC_URL = "https://clrd.ninjal.ac.jp/unidic_archive/2512/unidic-cwj-202512_full.zip"
+UNIDIC_DIR_ENV = "NIK_UNIDIC_DIR"
+UNIDIC_URL_ENV = "NIK_UNIDIC_URL"
+UNIDIC_DIRNAME = "unidic-cwj-202512_full"
 
 
 @dataclass(frozen=True)
@@ -453,6 +466,152 @@ def _strip_format_chars(text: str) -> str:
     if not text:
         return text
     return "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+
+
+def _has_kanji(text: str) -> bool:
+    if not text:
+        return False
+    ranges = (
+        (0x3400, 0x4DBF),  # CJK Unified Ideographs Extension A
+        (0x4E00, 0x9FFF),  # CJK Unified Ideographs
+        (0xF900, 0xFAFF),  # CJK Compatibility Ideographs
+        (0x20000, 0x2A6DF),  # CJK Unified Ideographs Extension B
+        (0x2A700, 0x2B73F),  # Extension C
+        (0x2B740, 0x2B81F),  # Extension D
+        (0x2B820, 0x2CEAF),  # Extension E
+        (0x2CEB0, 0x2EBEF),  # Extension F
+        (0x30000, 0x3134F),  # Extension G
+    )
+    for ch in text:
+        code = ord(ch)
+        for start, end in ranges:
+            if start <= code <= end:
+                return True
+    return False
+
+
+def _katakana_to_hiragana(text: str) -> str:
+    if not text:
+        return text
+    out: List[str] = []
+    for ch in text:
+        code = ord(ch)
+        if 0x30A1 <= code <= 0x30F6:
+            out.append(chr(code - 0x60))
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _default_unidic_dir() -> Path:
+    return Path.home() / ".cache" / "nik" / UNIDIC_DIRNAME
+
+
+def _resolve_unidic_dir() -> Path:
+    env = os.environ.get(UNIDIC_DIR_ENV)
+    if env:
+        return Path(env).expanduser()
+    return _default_unidic_dir()
+
+
+def _download_unidic_archive(url: str, target_dir: Path) -> None:
+    target_dir.parent.mkdir(parents=True, exist_ok=True)
+    archive_name = Path(urllib.parse.urlparse(url).path).name or "unidic.zip"
+    archive_path = target_dir.parent / archive_name
+    if not archive_path.exists():
+        sys.stderr.write(f"Downloading UniDic from {url}\n")
+        with urllib.request.urlopen(url) as response, archive_path.open("wb") as handle:
+            shutil.copyfileobj(response, handle)
+
+    with tempfile.TemporaryDirectory(dir=str(target_dir.parent)) as tmp_dir:
+        with zipfile.ZipFile(archive_path) as zf:
+            zf.extractall(tmp_dir)
+        candidates = [p.parent for p in Path(tmp_dir).rglob("dicrc")]
+        if not candidates:
+            raise RuntimeError("UniDic archive missing dicrc.")
+        source_dir = candidates[0]
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+        shutil.move(str(source_dir), str(target_dir))
+
+
+def _ensure_unidic_dir(path: Path) -> Path:
+    dicrc_path = path / "dicrc"
+    if dicrc_path.exists():
+        return path
+    if os.environ.get(UNIDIC_DIR_ENV):
+        raise RuntimeError(f"UniDic directory missing dicrc: {path}")
+    url = os.environ.get(UNIDIC_URL_ENV) or UNIDIC_URL
+    _download_unidic_archive(url, path)
+    if not dicrc_path.exists():
+        raise RuntimeError(f"UniDic download failed to produce dicrc at {path}")
+    return path
+
+
+def _lazy_import_fugashi() -> None:
+    global fugashi
+    if fugashi is not None:
+        return
+    try:
+        import fugashi as _fugashi
+    except Exception as exc:  # pragma: no cover - optional runtime dependency
+        raise RuntimeError(
+            "Kana normalization requires fugashi. Install it with `uv sync`."
+        ) from exc
+    fugashi = _fugashi
+
+
+def _get_kana_tagger() -> Any:
+    global _KANA_TAGGER, _KANA_TAGGER_DIR
+    dict_dir = _ensure_unidic_dir(_resolve_unidic_dir())
+    if _KANA_TAGGER is not None and _KANA_TAGGER_DIR == dict_dir:
+        return _KANA_TAGGER
+    _lazy_import_fugashi()
+    _KANA_TAGGER = fugashi.Tagger(f"-d {dict_dir}")
+    _KANA_TAGGER_DIR = dict_dir
+    return _KANA_TAGGER
+
+
+def _extract_token_reading(token: Any) -> str:
+    feature = getattr(token, "feature", None)
+    for attr in ("kana", "pron", "reading"):
+        value = getattr(feature, attr, None)
+        if value and value != "*":
+            return str(value)
+    if feature:
+        raw = str(feature)
+        if "," in raw:
+            parts = [p.strip() for p in raw.split(",")]
+            for candidate in reversed(parts):
+                if candidate and candidate != "*":
+                    return candidate
+    return ""
+
+
+def _normalize_kana_with_tagger(text: str, tagger: Any) -> str:
+    if not text:
+        return text
+    out: List[str] = []
+    for token in tagger(text):
+        surface = getattr(token, "surface", "")
+        if not surface:
+            continue
+        if not _has_kanji(surface):
+            out.append(surface)
+            continue
+        reading = _extract_token_reading(token)
+        if not reading or reading == "*":
+            out.append(surface)
+            continue
+        out.append(_katakana_to_hiragana(reading))
+    return "".join(out)
+
+
+def _normalize_kana_text(text: str) -> str:
+    if not _has_kanji(text):
+        return text
+    tagger = _get_kana_tagger()
+    return _normalize_kana_with_tagger(text, tagger)
 
 
 def prepare_tts_text(text: str) -> str:
@@ -1010,11 +1169,20 @@ def synthesize_book(
     attn_implementation: Optional[str] = None,
     only_chapter_ids: Optional[set[str]] = None,
     backend: Optional[str] = None,
+    kana_normalize: bool = True,
 ) -> int:
     chapters = load_book_chapters(book_dir)
     backend_name = _select_backend(backend)
     model_name = _resolve_model_name(model_name, backend_name)
     global_overrides, reading_overrides = _load_reading_overrides(book_dir)
+    kana_normalize = bool(kana_normalize)
+    kana_tagger = None
+    if kana_normalize:
+        try:
+            kana_tagger = _get_kana_tagger()
+        except RuntimeError as exc:
+            sys.stderr.write(f"{exc}\n")
+            return 2
     if out_dir is None:
         out_dir = book_dir / "tts"
     if base_dir is None:
@@ -1065,6 +1233,7 @@ def synthesize_book(
     if voice_map:
         manifest["voice_overrides"] = voice_overrides
     manifest["pad_ms"] = int(pad_ms)
+    manifest["kana_normalize"] = kana_normalize
     atomic_write_json(manifest_path, manifest)
 
     voice_configs: Dict[str, VoiceConfig] = {}
@@ -1175,6 +1344,13 @@ def synthesize_book(
                     continue
 
                 tts_source = apply_reading_overrides(chunk_text, merged_overrides)
+                if kana_normalize and kana_tagger and _has_kanji(tts_source):
+                    try:
+                        tts_source = _normalize_kana_with_tagger(
+                            tts_source, kana_tagger
+                        )
+                    except Exception as exc:
+                        sys.stderr.write(f"Failed kana normalization: {exc}\n")
                 tts_text = prepare_tts_text(tts_source)
                 if not tts_text:
                     ch_entry["durations_ms"][chunk_idx - 1] = 0
@@ -1257,6 +1433,7 @@ def synthesize_book_sample(
     dtype: Optional[str] = None,
     attn_implementation: Optional[str] = None,
     backend: Optional[str] = None,
+    kana_normalize: bool = True,
 ) -> int:
     chapters = load_book_chapters(book_dir)
     if not chapters:
@@ -1301,6 +1478,7 @@ def synthesize_book_sample(
         attn_implementation=attn_implementation,
         only_chapter_ids={sample_id},
         backend=backend,
+        kana_normalize=kana_normalize,
     )
 
 
@@ -1316,6 +1494,7 @@ def synthesize_chunk(
     dtype: Optional[str] = None,
     attn_implementation: Optional[str] = None,
     backend: Optional[str] = None,
+    kana_normalize: Optional[bool] = None,
 ) -> dict:
     if base_dir is None:
         base_dir = Path.cwd()
@@ -1375,6 +1554,9 @@ def synthesize_chunk(
     if not default_voice:
         raise ValueError("Voice is required for synthesis.")
 
+    if kana_normalize is None:
+        kana_normalize = bool(manifest.get("kana_normalize"))
+
     voice_id = default_voice
     if voice_map_path:
         voice_map = _load_voice_map(voice_map_path)
@@ -1413,9 +1595,13 @@ def synthesize_chunk(
     global_overrides, reading_overrides = _load_reading_overrides(override_dir)
     chapter_overrides = reading_overrides.get(chapter_id, [])
     merged_overrides = _merge_reading_overrides(global_overrides, chapter_overrides)
-    tts_text = prepare_tts_text(
-        apply_reading_overrides(chunk_text, merged_overrides)
-    )
+    tts_source = apply_reading_overrides(chunk_text, merged_overrides)
+    if kana_normalize:
+        try:
+            tts_source = _normalize_kana_text(tts_source)
+        except RuntimeError as exc:
+            raise ValueError(str(exc)) from exc
+    tts_text = prepare_tts_text(tts_source)
     seg_path = out_dir / "segments" / chapter_id / f"{chunk_index + 1:06d}.wav"
     seg_path.parent.mkdir(parents=True, exist_ok=True)
 

@@ -208,6 +208,20 @@ wheels = [
 ]
 
 [[package]]
+name = "fugashi"
+version = "1.5.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ee/ec/b2e5aeba9438551ee4ae5275e95da506a279f53432e618daa1d4bd14c7d5/fugashi-1.5.2.tar.gz", hash = "sha256:a7959eab95bb37a6a934fc2314d3ff888664d11b88d0e1c596260a5785d5880e", size = 339768, upload-time = "2025-10-24T07:24:27.581Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f8/83/8674714722862cf7cbdc351ecacf0e0714daa1ae3afc48755d1349f92632/fugashi-1.5.2-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:4ed199a931c1d9f7d55c606d90a06323d1a60164ec222ea70af74c0c9d236faa", size = 513185, upload-time = "2025-10-24T07:27:08.134Z" },
+    { url = "https://files.pythonhosted.org/packages/65/e2/d8fbb71b3e04fe8e99bd7b2653ac638484d8ab46b22cab6ea64250a020ce/fugashi-1.5.2-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:3d2bb28cc6c6eec1c50729bb2dda44007a45599f0471b14c8fda57b0dde36d50", size = 457118, upload-time = "2025-10-24T07:27:09.185Z" },
+    { url = "https://files.pythonhosted.org/packages/42/63/e5e02d885d3ea3eeba7f3be371164eb35f618155faa473f0950cbba2d276/fugashi-1.5.2-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:8c1f64345a7a13b229fb755b567cbc993adb43b5b617ad4089521e5dd4d27b91", size = 455098, upload-time = "2025-10-24T07:27:10.139Z" },
+    { url = "https://files.pythonhosted.org/packages/6b/5f/549fdaa359e1983927cf1febd8d6b4b31e2312475048a73138b53af8cb6c/fugashi-1.5.2-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:ffe760c93e21896cc74066bc5e7dbee6e41a26199807c850b486e2e29b8a3131", size = 677940, upload-time = "2025-10-24T07:48:53.995Z" },
+    { url = "https://files.pythonhosted.org/packages/cd/30/436dd468ac8e08940f0414384a5808596c2ed8cbfd721dde09d5b78e8ec5/fugashi-1.5.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:83bc7bf08f81a3c3992bf10b8c681720898a826c6c3dffa80e1296e005f4bfb8", size = 694924, upload-time = "2025-10-24T07:25:39.112Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/ce/b18879c94c6267981a65792045321a1d71b849893b40d7e8356e0b55542c/fugashi-1.5.2-cp312-cp312-win_amd64.whl", hash = "sha256:936d710166c5b05064ec2ce0eb347fff7a0cf102c33989012fad205346943402", size = 508407, upload-time = "2025-10-24T07:24:25.409Z" },
+]
+
+[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -428,6 +442,20 @@ wheels = [
 ]
 
 [[package]]
+name = "mecab-python3"
+version = "1.0.12"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fe/54/d52aebc1a1836778a9a97600304821f3c57d384ef1e5c8787a0c6f2a292d/mecab_python3-1.0.12.tar.gz", hash = "sha256:9aba1e56ef80dd97147dcbf8e3508147af129fb46cec0e432b85f96a9bdaa4b9", size = 78841, upload-time = "2025-11-25T11:21:25.68Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/32/ca/0f1fff8b2ee98c9a2441da4e52761bb55fdf8cea88e40e72236ce74c5e79/mecab_python3-1.0.12-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:641ad39ecd1cd565019fb5b78e471e7b6baff03958b2c05db5c2f7226cb17750", size = 474643, upload-time = "2025-11-25T11:27:15.931Z" },
+    { url = "https://files.pythonhosted.org/packages/5e/60/e6a717cefe9d8051081b5a4b9bdaac1e0022bd9dabad12bc58d202446f7c/mecab_python3-1.0.12-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:477d22faac294d7d4acc52966221fc63785f050ce1ca94cc74de42c8b1bbde2e", size = 438321, upload-time = "2025-11-25T11:27:16.906Z" },
+    { url = "https://files.pythonhosted.org/packages/e5/22/25aa0467edb84b9285a0620e32407195d56f206610057f93f73dd21be740/mecab_python3-1.0.12-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:3ca8591fbb30253df8f283f3c5b7c9fc593c6e290e985a453e9a7b8345f04d0f", size = 435262, upload-time = "2025-11-25T11:27:18.204Z" },
+    { url = "https://files.pythonhosted.org/packages/55/d4/b2b9faaa87bd219369a5df9296a5711439e6e204428abfbcab69d046905a/mecab_python3-1.0.12-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:2429b3977e62b65cd36f098b6814da427c54afe11da97ca39e85dbad2c0f1342", size = 569306, upload-time = "2025-11-25T11:45:54.333Z" },
+    { url = "https://files.pythonhosted.org/packages/22/36/d49e077cf95ade987fa72b9afcc84ec5e907d15f1c6b02ec5ba14c7a9cb3/mecab_python3-1.0.12-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:dae0605065e9eda6f3aa74dd08c781de7371a447aec3fa6d3e31d7340bd6e5f0", size = 591444, upload-time = "2025-11-25T11:23:40.145Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/07/c0699f4952e4423a0d192f1709c731202f36de1c86b637738f0c5b0b48fb/mecab_python3-1.0.12-cp312-cp312-win_amd64.whl", hash = "sha256:ef10b35d580e90a776e2e672fe516f371c48cd0ebeaa4f1e0bcb902e216724ba", size = 502652, upload-time = "2025-11-25T11:22:48.324Z" },
+]
+
+[[package]]
 name = "miniaudio"
 version = "1.61"
 source = { registry = "https://pypi.org/simple" }
@@ -546,10 +574,13 @@ dependencies = [
     { name = "beautifulsoup4" },
     { name = "ebooklib" },
     { name = "fastapi" },
+    { name = "fugashi" },
     { name = "jinja2" },
     { name = "lxml" },
+    { name = "mecab-python3" },
     { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "numpy" },
+    { name = "openai-whisper" },
     { name = "pytest" },
     { name = "python-multipart" },
     { name = "rich" },
@@ -557,28 +588,24 @@ dependencies = [
     { name = "uvicorn" },
 ]
 
-[package.optional-dependencies]
-whisper = [
-    { name = "openai-whisper" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "ebooklib", specifier = ">=0.18" },
     { name = "fastapi", specifier = ">=0.110" },
+    { name = "fugashi", specifier = ">=1.3.0" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "lxml", specifier = ">=5.0" },
+    { name = "mecab-python3", specifier = ">=1.0.6" },
     { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=0.3.1" },
     { name = "numpy", specifier = ">=1.24" },
-    { name = "openai-whisper", marker = "extra == 'whisper'", specifier = ">=20231117" },
+    { name = "openai-whisper", specifier = ">=20231117" },
     { name = "pytest" },
     { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "rich", specifier = ">=13.7" },
     { name = "soundfile", specifier = ">=0.12" },
     { name = "uvicorn", specifier = ">=0.27" },
 ]
-provides-extras = ["whisper"]
 
 [[package]]
 name = "numba"

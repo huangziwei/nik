@@ -149,6 +149,31 @@ def test_apply_reading_overrides() -> None:
     )
 
 
+def test_normalize_kana_with_stub_tagger() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("漢字", "カンジ"),
+                DummyToken("と", None),
+                DummyToken("東京", "トウキョウ"),
+                DummyToken("未知", "*"),
+                DummyToken("X", None),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger("漢字と東京未知X", DummyTagger())
+    assert out == "かんじととうきょう未知X"
+
+
 def test_prepare_tts_text_strips_japanese_quotes() -> None:
     assert (
         tts_util.prepare_tts_text("「聖書」『旧約』《新約》“Test” 'OK'〝注〟don't")

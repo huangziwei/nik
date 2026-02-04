@@ -401,6 +401,7 @@ def _synth(args: argparse.Namespace) -> int:
         dtype=args.dtype,
         attn_implementation=args.attn,
         backend=args.backend,
+        kana_normalize=args.kana_normalize,
     )
 
 
@@ -437,6 +438,7 @@ def _sample(args: argparse.Namespace) -> int:
         dtype=args.dtype,
         attn_implementation=args.attn,
         backend=args.backend,
+        kana_normalize=args.kana_normalize,
     )
 
 
@@ -567,6 +569,12 @@ def build_parser() -> argparse.ArgumentParser:
     synth.add_argument("--pad-ms", type=int, default=120)
     synth.add_argument("--rechunk", action="store_true")
     synth.add_argument(
+        "--kana-normalize",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Normalize kanji to kana with UniDic (default: enabled)",
+    )
+    synth.add_argument(
         "--model",
         default=None,
         help="Model id/path (defaults depend on backend)",
@@ -632,6 +640,12 @@ def build_parser() -> argparse.ArgumentParser:
     sample.add_argument("--max-chars", type=int, default=220)
     sample.add_argument("--pad-ms", type=int, default=120)
     sample.add_argument("--rechunk", action="store_true")
+    sample.add_argument(
+        "--kana-normalize",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Normalize kanji to kana with UniDic (default: enabled)",
+    )
     sample.add_argument(
         "--model",
         default=None,
