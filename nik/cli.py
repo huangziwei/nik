@@ -553,7 +553,7 @@ def _kana(args: argparse.Namespace) -> int:
         if args.debug:
             _debug_dump("After kana", tts_source)
 
-    tts_text = tts_util.prepare_tts_text(tts_source)
+    tts_text = tts_util.prepare_tts_text(tts_source, add_short_punct=True)
     if args.debug:
         _debug_dump("Prepared", tts_text)
 

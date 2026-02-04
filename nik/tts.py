@@ -82,6 +82,9 @@ _JP_QUOTE_CHARS = {
     "〟",
 }
 
+_SHORT_TAIL_PUNCT = "。"
+_SHORT_TAIL_MAX_CHARS = 12
+
 DEFAULT_TORCH_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 DEFAULT_MLX_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"
 MIN_MLX_AUDIO_VERSION = "0.3.1"
@@ -597,6 +600,30 @@ def _strip_format_chars(text: str) -> str:
     return "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
 
 
+def _append_short_tail_punct(text: str) -> str:
+    if not text:
+        return text
+    if len(text) > _SHORT_TAIL_MAX_CHARS:
+        return text
+    if not _has_japanese(text):
+        return text
+    idx = len(text) - 1
+    while idx >= 0 and text[idx].isspace():
+        idx -= 1
+    if idx < 0:
+        return text
+    last = text[idx]
+    if last in _END_PUNCT or last in _MID_PUNCT:
+        return text
+    if last in _CLOSE_PUNCT:
+        j = idx - 1
+        while j >= 0 and text[j] in _CLOSE_PUNCT:
+            j -= 1
+        if j >= 0 and (text[j] in _END_PUNCT or text[j] in _MID_PUNCT):
+            return text
+    return text + _SHORT_TAIL_PUNCT
+
+
 def _has_kanji(text: str) -> bool:
     if not text:
         return False
@@ -617,6 +644,22 @@ def _has_kanji(text: str) -> bool:
             if start <= code <= end:
                 return True
     return False
+
+
+def _has_japanese(text: str) -> bool:
+    if not text:
+        return False
+    for ch in text:
+        code = ord(ch)
+        if 0x3040 <= code <= 0x309F:  # Hiragana
+            return True
+        if 0x30A0 <= code <= 0x30FF:  # Katakana
+            return True
+        if 0x31F0 <= code <= 0x31FF:  # Katakana Phonetic Extensions
+            return True
+        if 0xFF66 <= code <= 0xFF9D:  # Halfwidth Katakana
+            return True
+    return _has_kanji(text)
 
 
 def _katakana_to_hiragana(text: str) -> str:
@@ -1065,7 +1108,7 @@ def _normalize_kana_text(text: str) -> str:
     return "".join(out)
 
 
-def prepare_tts_text(text: str) -> str:
+def prepare_tts_text(text: str, *, add_short_punct: bool = False) -> str:
     if not text:
         return ""
     text = unicodedata.normalize("NFKC", text)
@@ -1073,7 +1116,10 @@ def prepare_tts_text(text: str) -> str:
     text = "".join(ch for ch in text if ch not in _JP_QUOTE_CHARS)
     text = _strip_double_quotes(text)
     text = _strip_single_quotes(text)
-    return re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s+", " ", text).strip()
+    if add_short_punct:
+        text = _append_short_tail_punct(text)
+    return text
 
 
 def load_book_chapters(book_dir: Path) -> List[ChapterInput]:
@@ -1809,7 +1855,7 @@ def synthesize_book(
                         )
                     except Exception as exc:
                         sys.stderr.write(f"Failed kana normalization: {exc}\n")
-                tts_text = prepare_tts_text(tts_source)
+                tts_text = prepare_tts_text(tts_source, add_short_punct=True)
                 if not tts_text:
                     ch_entry["durations_ms"][chunk_idx - 1] = 0
                     atomic_write_json(manifest_path, manifest)
@@ -2060,7 +2106,7 @@ def synthesize_chunk(
             tts_source = _normalize_kana_text(tts_source)
         except RuntimeError as exc:
             raise ValueError(str(exc)) from exc
-    tts_text = prepare_tts_text(tts_source)
+    tts_text = prepare_tts_text(tts_source, add_short_punct=True)
     seg_path = out_dir / "segments" / chapter_id / f"{chunk_index + 1:06d}.wav"
     seg_path.parent.mkdir(parents=True, exist_ok=True)
 

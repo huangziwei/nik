@@ -235,6 +235,14 @@ def test_prepare_tts_text_normalizes_width_and_format_chars() -> None:
     assert tts_util.prepare_tts_text("a\u200bb") == "ab"
 
 
+def test_prepare_tts_text_adds_short_tail_punct() -> None:
+    assert tts_util.prepare_tts_text("まえがき", add_short_punct=True) == "まえがき。"
+    assert tts_util.prepare_tts_text("前書き。", add_short_punct=True) == "前書き。"
+    assert tts_util.prepare_tts_text("Prologue", add_short_punct=True) == "Prologue"
+    long_text = "あ" * (tts_util._SHORT_TAIL_MAX_CHARS + 1)
+    assert tts_util.prepare_tts_text(long_text, add_short_punct=True) == long_text
+
+
 def test_load_reading_overrides(tmp_path: Path) -> None:
     payload = {
         "global": [{"base": "妻子", "reading": "さいし"}],
