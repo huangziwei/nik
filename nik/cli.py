@@ -558,13 +558,11 @@ def _kana(args: argparse.Namespace) -> int:
     merged_overrides = []
     chapter_count = 0
     ruby_data = {}
-    ruby_bases = set()
     chapter_ruby_spans: list[dict] = []
     chunk_span = None
     if book_dir and book_dir.exists():
         global_overrides, chapter_overrides = tts_util._load_reading_overrides(book_dir)
         ruby_data = tts_util._load_ruby_data(book_dir)
-        ruby_bases = tts_util._ruby_bases_set(ruby_data)
         if ruby_data and chapter_id and chunk_index is not None:
             manifest_path = book_dir / "tts" / "manifest.json"
             manifest: dict = {}
@@ -594,32 +592,11 @@ def _kana(args: argparse.Namespace) -> int:
         if chapter_id:
             chapter_entries = chapter_overrides.get(chapter_id, [])
             chapter_count = len(chapter_entries)
-            if ruby_bases:
-                chapter_entries = [
-                    item
-                    for item in chapter_entries
-                    if str(item.get("base") or "").strip() not in ruby_bases
-                ]
-                filtered_global = [
-                    item
-                    for item in global_overrides
-                    if str(item.get("base") or "").strip() not in ruby_bases
-                ]
-            else:
-                filtered_global = global_overrides
             merged_overrides = tts_util._merge_reading_overrides(
-                filtered_global, chapter_entries
+                global_overrides, chapter_entries
             )
         else:
-            merged_overrides = (
-                [
-                    item
-                    for item in global_overrides
-                    if str(item.get("base") or "").strip() not in ruby_bases
-                ]
-                if ruby_bases
-                else global_overrides
-            )
+            merged_overrides = global_overrides
     else:
         template_path = tts_util._template_reading_overrides_path()
         if template_path.exists():
@@ -640,6 +617,11 @@ def _kana(args: argparse.Namespace) -> int:
             _debug_dump("UniDic dir", str(dict_dir))
             _debug_dump("UniDic dicrc", "found" if dicrc.exists() else "missing")
 
+    override_bases = {
+        str(item.get("base") or "").strip()
+        for item in merged_overrides
+        if isinstance(item, dict) and str(item.get("base") or "").strip()
+    }
     if ruby_data:
         if chunk_span is not None and chapter_ruby_spans:
             text = tts_util._apply_ruby_evidence_to_chunk(
@@ -647,9 +629,15 @@ def _kana(args: argparse.Namespace) -> int:
                 chunk_span,
                 chapter_ruby_spans,
                 ruby_data,
+                skip_bases=override_bases,
             )
         else:
-            text = tts_util._apply_ruby_evidence(text, chapter_id, ruby_data)
+            text = tts_util._apply_ruby_evidence(
+                text,
+                chapter_id,
+                ruby_data,
+                skip_bases=override_bases,
+            )
     tts_source = tts_util.apply_reading_overrides(text, merged_overrides)
     if args.debug:
         _debug_dump("After overrides", tts_source)

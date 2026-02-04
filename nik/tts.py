@@ -1279,6 +1279,7 @@ def _apply_ruby_evidence(
     text: str,
     chapter_id: Optional[str],
     ruby_data: dict,
+    skip_bases: Optional[set[str]] = None,
 ) -> str:
     if not ruby_data:
         return text
@@ -1287,7 +1288,14 @@ def _apply_ruby_evidence(
         text = apply_ruby_spans(text, spans)
     ruby_global = _ruby_global_overrides(ruby_data)
     if ruby_global:
-        text = apply_reading_overrides(text, ruby_global)
+        if skip_bases:
+            ruby_global = [
+                item
+                for item in ruby_global
+                if str(item.get("base") or "").strip() not in skip_bases
+            ]
+        if ruby_global:
+            text = apply_reading_overrides(text, ruby_global)
     return text
 
 
@@ -1335,6 +1343,7 @@ def _apply_ruby_evidence_to_chunk(
     chunk_span: Optional[Sequence[int]],
     chapter_spans: Sequence[dict],
     ruby_data: dict,
+    skip_bases: Optional[set[str]] = None,
 ) -> str:
     text = chunk_text
     spans = _chunk_ruby_spans(chunk_span, chapter_spans)
@@ -1342,7 +1351,14 @@ def _apply_ruby_evidence_to_chunk(
         text = apply_ruby_spans(text, spans)
     ruby_global = _ruby_global_overrides(ruby_data)
     if ruby_global:
-        text = apply_reading_overrides(text, ruby_global)
+        if skip_bases:
+            ruby_global = [
+                item
+                for item in ruby_global
+                if str(item.get("base") or "").strip() not in skip_bases
+            ]
+        if ruby_global:
+            text = apply_reading_overrides(text, ruby_global)
     return text
 
 
@@ -1571,25 +1587,6 @@ def _ruby_global_overrides(ruby_data: dict) -> List[dict[str, str]]:
             if base and reading:
                 overrides.append({"base": base, "reading": reading})
     return overrides
-
-
-def _ruby_bases_set(ruby_data: dict) -> set[str]:
-    bases: set[str] = set()
-    items = ruby_data.get("global") if isinstance(ruby_data, dict) else None
-    if isinstance(items, list):
-        for item in items:
-            if isinstance(item, dict):
-                base = str(item.get("base") or "").strip()
-                if base:
-                    bases.add(base)
-    conflicts = ruby_data.get("conflicts") if isinstance(ruby_data, dict) else None
-    if isinstance(conflicts, list):
-        for item in conflicts:
-            if isinstance(item, dict):
-                base = str(item.get("base") or "").strip()
-                if base:
-                    bases.add(base)
-    return bases
 
 
 def _merge_reading_overrides(
@@ -2002,7 +1999,6 @@ def synthesize_book(
     model_name = _resolve_model_name(model_name, backend_name)
     global_overrides, reading_overrides = _load_reading_overrides(book_dir)
     ruby_data = _load_ruby_data(book_dir)
-    ruby_bases = _ruby_bases_set(ruby_data)
     chapter_ruby_spans: Dict[str, List[dict]] = {}
     if ruby_data:
         for chapter in chapters:
@@ -2164,22 +2160,14 @@ def synthesize_book(
             language = voice_languages.get(voice_id)
             voice_config = voice_configs.get(voice_id)
             chapter_overrides = reading_overrides.get(chapter_id, [])
-            if ruby_bases:
-                chapter_overrides = [
-                    item
-                    for item in chapter_overrides
-                    if str(item.get("base") or "").strip() not in ruby_bases
-                ]
-                filtered_global = [
-                    item
-                    for item in global_overrides
-                    if str(item.get("base") or "").strip() not in ruby_bases
-                ]
-            else:
-                filtered_global = global_overrides
             merged_overrides = _merge_reading_overrides(
-                filtered_global, chapter_overrides
+                global_overrides, chapter_overrides
             )
+            override_bases = {
+                str(item.get("base") or "").strip()
+                for item in merged_overrides
+                if isinstance(item, dict) and str(item.get("base") or "").strip()
+            }
 
             for chunk_idx, chunk_text in enumerate(chunks, start=1):
                 seg_path = chapter_seg_dir / f"{chunk_idx:06d}.wav"
@@ -2209,6 +2197,7 @@ def synthesize_book(
                         chunk_span,
                         ruby_spans,
                         ruby_data,
+                        skip_bases=override_bases,
                     )
                 else:
                     tts_source = chunk_text
@@ -2482,29 +2471,22 @@ def synthesize_chunk(
         span_list = entry.get("chunk_spans")
         if isinstance(span_list, list) and len(span_list) > chunk_index:
             chunk_span = span_list[chunk_index]
+    global_overrides, reading_overrides = _load_reading_overrides(override_dir)
+    chapter_overrides = reading_overrides.get(chapter_id, [])
+    merged_overrides = _merge_reading_overrides(global_overrides, chapter_overrides)
+    override_bases = {
+        str(item.get("base") or "").strip()
+        for item in merged_overrides
+        if isinstance(item, dict) and str(item.get("base") or "").strip()
+    }
+    if ruby_data:
         chunk_text = _apply_ruby_evidence_to_chunk(
             chunk_text,
             chunk_span,
             ruby_spans,
             ruby_data,
+            skip_bases=override_bases,
         )
-    ruby_bases = _ruby_bases_set(ruby_data)
-    global_overrides, reading_overrides = _load_reading_overrides(override_dir)
-    chapter_overrides = reading_overrides.get(chapter_id, [])
-    if ruby_bases:
-        chapter_overrides = [
-            item
-            for item in chapter_overrides
-            if str(item.get("base") or "").strip() not in ruby_bases
-        ]
-        filtered_global = [
-            item
-            for item in global_overrides
-            if str(item.get("base") or "").strip() not in ruby_bases
-        ]
-    else:
-        filtered_global = global_overrides
-    merged_overrides = _merge_reading_overrides(filtered_global, chapter_overrides)
     tts_source = apply_reading_overrides(chunk_text, merged_overrides)
     tts_source = _normalize_numbers(tts_source)
     if kana_normalize:
