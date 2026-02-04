@@ -349,12 +349,17 @@ def test_prepare_tts_text_normalizes_width_and_format_chars() -> None:
 def test_prepare_tts_text_japanese_space_pause() -> None:
     assert (
         tts_util.prepare_tts_text("ウブメのナツ キョウゴクナツヒコ")
-        == "ウブメのナツ、キョウゴクナツヒコ"
+        == "ウブメのナツ。キョウゴクナツヒコ"
     )
     assert (
         tts_util.prepare_tts_text("Hello world 日本語 テスト")
         == "Hello world 日本語、テスト"
     )
+
+
+def test_prepare_tts_text_normalizes_dash_runs() -> None:
+    assert tts_util.prepare_tts_text("姑獲烏────") == "姑獲烏"
+    assert tts_util.prepare_tts_text("前──後") == "前、後"
 
 
 def test_prepare_tts_text_adds_short_tail_punct() -> None:

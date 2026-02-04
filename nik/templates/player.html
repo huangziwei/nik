@@ -6334,6 +6334,7 @@
       function parseOverrideLines(text) {
         const entries = [];
         const invalid = [];
+        const separators = ["＝", "=", "\t"];
         (text || "")
           .split("\n")
           .map((line) => line.trim())
@@ -6341,16 +6342,21 @@
             if (!line) {
               return;
             }
-            let sepIndex = line.indexOf("=");
-            if (sepIndex === -1) {
-              sepIndex = line.indexOf("\t");
-            }
+            let sepIndex = -1;
+            let sepLen = 1;
+            separators.forEach((sep) => {
+              const idx = line.indexOf(sep);
+              if (idx !== -1 && (sepIndex === -1 || idx < sepIndex)) {
+                sepIndex = idx;
+                sepLen = sep.length;
+              }
+            });
             if (sepIndex === -1) {
               invalid.push(line);
               return;
             }
             const base = line.slice(0, sepIndex).trim();
-            const reading = line.slice(sepIndex + 1).trim();
+            const reading = line.slice(sepIndex + sepLen).trim();
             if (!base || !reading) {
               invalid.push(line);
               return;

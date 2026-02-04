@@ -81,6 +81,7 @@ _JP_QUOTE_CHARS = {
     "〞",
     "〟",
 }
+_DASH_RUN_RE = re.compile(r"[‐‑‒–—―─━]{2,}")
 
 _SHORT_TAIL_PUNCT = "。"
 _SHORT_TAIL_MAX_CHARS = 12
@@ -775,11 +776,29 @@ def _apply_surface_kana(reading_kata: str, surface: str) -> str:
     return "".join(out)
 
 
-def _japanese_space_to_pause(text: str) -> str:
+def _japanese_space_to_pause(text: str, *, allow_full_stop: bool = True) -> str:
     if not text or " " not in text:
         return text
-    out: List[str] = []
     length = len(text)
+    japanese_spaces: List[int] = []
+    for idx, ch in enumerate(text):
+        if ch != " ":
+            continue
+        prev = text[idx - 1] if idx > 0 else ""
+        next_ch = text[idx + 1] if idx + 1 < length else ""
+        if _is_japanese_char(prev) and _is_japanese_char(next_ch):
+            japanese_spaces.append(idx)
+    if not japanese_spaces:
+        return text
+    has_punct = any(ch in _END_PUNCT or ch in _MID_PUNCT for ch in text)
+    has_ascii = any(ch.isascii() and ch.isalnum() for ch in text)
+    use_full_stop = (
+        allow_full_stop
+        and len(japanese_spaces) == 1
+        and not has_punct
+        and not has_ascii
+    )
+    out: List[str] = []
     for idx, ch in enumerate(text):
         if ch != " ":
             out.append(ch)
@@ -787,7 +806,7 @@ def _japanese_space_to_pause(text: str) -> str:
         prev = text[idx - 1] if idx > 0 else ""
         next_ch = text[idx + 1] if idx + 1 < length else ""
         if _is_japanese_char(prev) and _is_japanese_char(next_ch):
-            out.append("、")
+            out.append("。" if use_full_stop else "、")
         else:
             out.append(ch)
     return "".join(out)
@@ -1239,12 +1258,14 @@ def prepare_tts_text(text: str, *, add_short_punct: bool = False) -> str:
     if not text:
         return ""
     text = unicodedata.normalize("NFKC", text)
+    has_dash_run = bool(_DASH_RUN_RE.search(text))
+    text = _DASH_RUN_RE.sub(" ", text)
     text = _strip_format_chars(text)
     text = "".join(ch for ch in text if ch not in _JP_QUOTE_CHARS)
     text = _strip_double_quotes(text)
     text = _strip_single_quotes(text)
     text = re.sub(r"\s+", " ", text).strip()
-    text = _japanese_space_to_pause(text)
+    text = _japanese_space_to_pause(text, allow_full_stop=not has_dash_run)
     if add_short_punct:
         text = _append_short_tail_punct(text)
     return text
