@@ -198,6 +198,26 @@ def test_normalize_kana_preserves_spaces(monkeypatch: pytest.MonkeyPatch) -> Non
     assert out == "かんじ と とうきょう"
 
 
+def test_normalize_numbers_standalone_digits() -> None:
+    text = "全7冊 合本版"
+    assert tts_util._normalize_numbers(text) == "全七冊 合本版"
+
+
+def test_normalize_numbers_date() -> None:
+    text = "2024年7月1日"
+    assert tts_util._normalize_numbers(text) == "二千二十四年しちがつついたち"
+
+
+def test_normalize_numbers_decimal() -> None:
+    text = "3.14"
+    assert tts_util._normalize_numbers(text) == "三てんいちよん"
+
+
+def test_normalize_numbers_fallback_cardinal() -> None:
+    text = "合計13です"
+    assert tts_util._normalize_numbers(text) == "合計十三です"
+
+
 def test_prepare_tts_text_strips_japanese_quotes() -> None:
     assert (
         tts_util.prepare_tts_text("「聖書」『旧約』《新約》“Test” 'OK'〝注〟don't")

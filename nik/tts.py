@@ -93,6 +93,135 @@ UNIDIC_DIR_ENV = "NIK_UNIDIC_DIR"
 UNIDIC_URL_ENV = "NIK_UNIDIC_URL"
 UNIDIC_DIRNAME = "unidic-cwj-202512_full"
 
+_DIGIT_KANA = {
+    "0": "ゼロ",
+    "1": "いち",
+    "2": "に",
+    "3": "さん",
+    "4": "よん",
+    "5": "ご",
+    "6": "ろく",
+    "7": "なな",
+    "8": "はち",
+    "9": "きゅう",
+}
+
+_KANJI_DIGITS = {
+    1: "一",
+    2: "二",
+    3: "三",
+    4: "四",
+    5: "五",
+    6: "六",
+    7: "七",
+    8: "八",
+    9: "九",
+}
+
+_KANJI_UNITS = ["", "十", "百", "千"]
+_KANJI_BIG_UNITS = ["", "万", "億", "兆", "京"]
+
+_MONTH_READINGS = {
+    1: "いちがつ",
+    2: "にがつ",
+    3: "さんがつ",
+    4: "しがつ",
+    5: "ごがつ",
+    6: "ろくがつ",
+    7: "しちがつ",
+    8: "はちがつ",
+    9: "くがつ",
+    10: "じゅうがつ",
+    11: "じゅういちがつ",
+    12: "じゅうにがつ",
+}
+
+_DAY_READINGS = {
+    1: "ついたち",
+    2: "ふつか",
+    3: "みっか",
+    4: "よっか",
+    5: "いつか",
+    6: "むいか",
+    7: "なのか",
+    8: "ようか",
+    9: "ここのか",
+    10: "とおか",
+    11: "じゅういちにち",
+    12: "じゅうににち",
+    13: "じゅうさんにち",
+    14: "じゅうよっか",
+    15: "じゅうごにち",
+    16: "じゅうろくにち",
+    17: "じゅうしちにち",
+    18: "じゅうはちにち",
+    19: "じゅうきゅうにち",
+    20: "はつか",
+    21: "にじゅういちにち",
+    22: "にじゅうににち",
+    23: "にじゅうさんにち",
+    24: "にじゅうよっか",
+    25: "にじゅうごにち",
+    26: "にじゅうろくにち",
+    27: "にじゅうしちにち",
+    28: "にじゅうはちにち",
+    29: "にじゅうきゅうにち",
+    30: "さんじゅうにち",
+    31: "さんじゅういちにち",
+}
+
+_COUNTERS = [
+    "番目",
+    "回目",
+    "人目",
+    "冊目",
+    "巻目",
+    "章",
+    "話",
+    "巻",
+    "頁",
+    "ページ",
+    "行",
+    "列",
+    "文字",
+    "時間",
+    "分間",
+    "秒間",
+    "年間",
+    "ヶ月間",
+    "か月間",
+    "カ月間",
+    "ヵ月間",
+    "週間",
+    "日間",
+    "年",
+    "月",
+    "日",
+    "時",
+    "分",
+    "秒",
+    "人",
+    "名",
+    "匹",
+    "羽",
+    "頭",
+    "本",
+    "枚",
+    "個",
+    "台",
+    "回",
+    "度",
+    "階",
+    "着",
+    "件",
+    "社",
+    "歳",
+    "才",
+    "円",
+    "丁目",
+    "番",
+]
+
 
 @dataclass(frozen=True)
 class ChapterInput:
@@ -501,6 +630,274 @@ def _katakana_to_hiragana(text: str) -> str:
         else:
             out.append(ch)
     return "".join(out)
+
+
+def _digit_seq_to_kana(seq: str) -> str:
+    if not seq:
+        return seq
+    return "".join(_DIGIT_KANA.get(ch, ch) for ch in seq)
+
+
+def _group_to_kanji(value: int) -> str:
+    if value <= 0:
+        return ""
+    out = []
+    thousands = value // 1000
+    hundreds = (value // 100) % 10
+    tens = (value // 10) % 10
+    ones = value % 10
+    digits = [thousands, hundreds, tens, ones]
+    for idx, digit in enumerate(digits):
+        if digit == 0:
+            continue
+        unit = _KANJI_UNITS[len(digits) - idx - 1]
+        if digit == 1 and unit:
+            out.append(unit)
+        else:
+            out.append(f"{_KANJI_DIGITS.get(digit, '')}{unit}")
+    return "".join(out)
+
+
+def _int_to_kanji(value: int) -> str:
+    if value == 0:
+        return "零"
+    out = []
+    group_index = 0
+    n = value
+    while n > 0 and group_index < len(_KANJI_BIG_UNITS):
+        group = n % 10000
+        if group:
+            part = _group_to_kanji(group)
+            unit = _KANJI_BIG_UNITS[group_index]
+            out.append(f"{part}{unit}")
+        n //= 10000
+        group_index += 1
+    if n > 0:
+        return _digit_seq_to_kana(str(value))
+    return "".join(reversed(out))
+
+
+def _month_reading(value: int) -> str:
+    return _MONTH_READINGS.get(value, "")
+
+
+def _day_reading(value: int) -> str:
+    return _DAY_READINGS.get(value, "")
+
+
+def _normalize_numbers(text: str) -> str:
+    if not text:
+        return text
+    text = unicodedata.normalize("NFKC", text)
+
+    def _safe_int(raw: str) -> Optional[int]:
+        cleaned = raw.replace(",", "")
+        if not cleaned.isdigit():
+            return None
+        try:
+            return int(cleaned)
+        except ValueError:
+            return None
+
+    def _to_kanji_number(raw: str) -> str:
+        cleaned = raw.replace(",", "")
+        if not cleaned.isdigit():
+            return raw
+        if len(cleaned) > 16:
+            return _digit_seq_to_kana(cleaned)
+        if len(cleaned) > 1 and cleaned.startswith("0"):
+            return _digit_seq_to_kana(cleaned)
+        return _int_to_kanji(int(cleaned))
+
+    def _replace_ymd(match: re.Match) -> str:
+        year = _safe_int(match.group("year") or "")
+        month = _safe_int(match.group("month") or "")
+        day = _safe_int(match.group("day") or "")
+        if year is None or month is None or day is None:
+            return match.group(0)
+        year_part = f"{_int_to_kanji(year)}年"
+        month_part = _month_reading(month)
+        day_part = _day_reading(day)
+        if not month_part or not day_part:
+            month_part = f"{_int_to_kanji(month)}月"
+            day_part = f"{_int_to_kanji(day)}日"
+        return f"{year_part}{month_part}{day_part}"
+
+    def _replace_ym(match: re.Match) -> str:
+        year = _safe_int(match.group("year") or "")
+        month = _safe_int(match.group("month") or "")
+        if year is None or month is None:
+            return match.group(0)
+        year_part = f"{_int_to_kanji(year)}年"
+        month_part = _month_reading(month) or f"{_int_to_kanji(month)}月"
+        return f"{year_part}{month_part}"
+
+    def _replace_md(match: re.Match) -> str:
+        month = _safe_int(match.group("month") or "")
+        day = _safe_int(match.group("day") or "")
+        if month is None or day is None:
+            return match.group(0)
+        month_part = _month_reading(month)
+        day_part = _day_reading(day)
+        if not month_part or not day_part:
+            month_part = f"{_int_to_kanji(month)}月"
+            day_part = f"{_int_to_kanji(day)}日"
+        return f"{month_part}{day_part}"
+
+    def _replace_slash_date(match: re.Match) -> str:
+        a = match.group("a") or ""
+        b = match.group("b") or ""
+        c = match.group("c") or ""
+        ai = _safe_int(a)
+        bi = _safe_int(b)
+        ci = _safe_int(c) if c else None
+        if ai is None or bi is None:
+            return match.group(0)
+        if ci is not None:
+            if len(a) == 4:
+                year, month, day = ai, bi, ci
+            elif len(c) == 4:
+                year, month, day = ci, ai, bi
+            else:
+                year, month, day = ai, bi, ci
+            year_part = f"{_int_to_kanji(year)}年"
+            month_part = _month_reading(month) or f"{_int_to_kanji(month)}月"
+            day_part = _day_reading(day) or f"{_int_to_kanji(day)}日"
+            return f"{year_part}{month_part}{day_part}"
+        if 1 <= ai <= 12 and 1 <= bi <= 31:
+            month_part = _month_reading(ai) or f"{_int_to_kanji(ai)}月"
+            day_part = _day_reading(bi) or f"{_int_to_kanji(bi)}日"
+            return f"{month_part}{day_part}"
+        return match.group(0)
+
+    def _replace_time(match: re.Match) -> str:
+        h = _safe_int(match.group("h") or "")
+        m = _safe_int(match.group("m") or "")
+        s = _safe_int(match.group("s") or "") if match.group("s") else None
+        if h is None or m is None:
+            return match.group(0)
+        out = f"{_int_to_kanji(h)}時{_int_to_kanji(m)}分"
+        if s is not None:
+            out = f"{out}{_int_to_kanji(s)}秒"
+        return out
+
+    def _replace_decimal(match: re.Match) -> str:
+        left = match.group("left") or ""
+        right = match.group("right") or ""
+        if not left.isdigit() or not right.isdigit():
+            return match.group(0)
+        left_part = _to_kanji_number(left)
+        right_part = _digit_seq_to_kana(right)
+        return f"{left_part}てん{right_part}"
+
+    def _replace_percent(match: re.Match) -> str:
+        num = match.group("num") or ""
+        if not num:
+            return match.group(0)
+        parts = num.split(".")
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            left = _to_kanji_number(parts[0])
+            right = _digit_seq_to_kana(parts[1])
+            value = f"{left}てん{right}"
+        else:
+            value = _to_kanji_number(num)
+        return f"{value}パーセント"
+
+    def _replace_counter(match: re.Match) -> str:
+        num = match.group("num") or ""
+        counter = match.group("counter") or ""
+        if not num or not counter:
+            return match.group(0)
+        return f"{_to_kanji_number(num)}{counter}"
+
+    def _replace_ordinal(match: re.Match) -> str:
+        num = match.group("num") or ""
+        suffix = match.group("suffix") or ""
+        if not num:
+            return match.group(0)
+        return f"第{_to_kanji_number(num)}{suffix}"
+
+    def _replace_alnum(match: re.Match) -> str:
+        prefix = match.group("prefix") or ""
+        num = match.group("num") or ""
+        suffix = match.group("suffix") or ""
+        if not num:
+            return match.group(0)
+        return f"{prefix}{_digit_seq_to_kana(num)}{suffix}"
+
+    def _replace_standalone(match: re.Match) -> str:
+        num = match.group("num") or ""
+        if not num:
+            return match.group(0)
+        return _digit_seq_to_kana(num)
+
+    def _replace_fallback(match: re.Match) -> str:
+        num = match.group("num") or ""
+        if not num:
+            return match.group(0)
+        if len(num) > 1 and num.startswith("0"):
+            return _digit_seq_to_kana(num)
+        return _to_kanji_number(num)
+
+    text = re.sub(
+        r"(?<!\d)(?P<year>\d{2,4})年(?P<month>\d{1,2})月(?P<day>\d{1,2})日",
+        _replace_ymd,
+        text,
+    )
+    text = re.sub(
+        r"(?<!\d)(?P<year>\d{2,4})年(?P<month>\d{1,2})月",
+        _replace_ym,
+        text,
+    )
+    text = re.sub(
+        r"(?<!\d)(?P<month>\d{1,2})月(?P<day>\d{1,2})日",
+        _replace_md,
+        text,
+    )
+    text = re.sub(
+        r"(?<!\d)(?P<a>\d{1,4})[/-](?P<b>\d{1,2})(?:[/-](?P<c>\d{1,2}))?(?!\d)",
+        _replace_slash_date,
+        text,
+    )
+    text = re.sub(
+        r"(?<!\d)(?P<h>\d{1,2}):(?P<m>\d{2})(?::(?P<s>\d{2}))?(?!\d)",
+        _replace_time,
+        text,
+    )
+    text = re.sub(
+        r"(?<!\d)(?P<num>\d+(?:\.\d+)?)%",
+        _replace_percent,
+        text,
+    )
+    text = re.sub(
+        r"(?<!\d)(?P<left>\d+)\.(?P<right>\d+)(?!\d)",
+        _replace_decimal,
+        text,
+    )
+    counters = "|".join(sorted({re.escape(c) for c in _COUNTERS}, key=len, reverse=True))
+    if counters:
+        text = re.sub(
+            rf"(?P<num>\d+)(?P<counter>{counters})",
+            _replace_counter,
+            text,
+        )
+        text = re.sub(
+            rf"第(?P<num>\d+)(?P<suffix>{counters})?",
+            _replace_ordinal,
+            text,
+        )
+    text = re.sub(
+        r"(?P<prefix>[A-Za-z]+)(?P<num>\d+)(?P<suffix>[A-Za-z]*)",
+        _replace_alnum,
+        text,
+    )
+    text = re.sub(
+        r"(?<![0-9A-Za-z一-龯ぁ-んァ-ヶ々〆〤])(?P<num>\d+)(?![0-9A-Za-z一-龯ぁ-んァ-ヶ々〆〤])",
+        _replace_standalone,
+        text,
+    )
+    text = re.sub(r"(?P<num>\d+)", _replace_fallback, text)
+    return text
 
 
 def _is_kana_reading(text: str) -> bool:
@@ -1402,6 +1799,7 @@ def synthesize_book(
                     continue
 
                 tts_source = apply_reading_overrides(chunk_text, merged_overrides)
+                tts_source = _normalize_numbers(tts_source)
                 if kana_normalize and kana_tagger and _has_kanji(tts_source):
                     try:
                         tts_source = _normalize_kana_with_tagger(
@@ -1654,6 +2052,7 @@ def synthesize_chunk(
     chapter_overrides = reading_overrides.get(chapter_id, [])
     merged_overrides = _merge_reading_overrides(global_overrides, chapter_overrides)
     tts_source = apply_reading_overrides(chunk_text, merged_overrides)
+    tts_source = _normalize_numbers(tts_source)
     if kana_normalize:
         try:
             tts_source = _normalize_kana_text(tts_source)

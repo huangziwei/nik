@@ -509,6 +509,10 @@ def _kana(args: argparse.Namespace) -> int:
     if args.debug:
         _debug_dump("After overrides", tts_source)
 
+    tts_source = tts_util._normalize_numbers(tts_source)
+    if args.debug:
+        _debug_dump("After numbers", tts_source)
+
     if args.tokens:
         try:
             tagger = tts_util._get_kana_tagger()
