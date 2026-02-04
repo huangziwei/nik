@@ -19,6 +19,7 @@ from . import merge as merge_util
 from . import sanitize as sanitize_util
 from . import tts as tts_util
 from . import voice as voice_util
+from .text import read_clean_text
 
 
 def _summarize_ruby_pairs(
@@ -72,6 +73,9 @@ def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
 
     toc_items = []
     ruby_overrides: dict[str, dict] = {}
+    ruby_chapters: dict[str, dict] = {}
+    ruby_counts: dict[str, dict[str, int]] = {}
+    ruby_order: dict[str, list[str]] = {}
     for idx, chapter in enumerate(chapters, start=1):
         title = chapter.title or f"Chapter {idx}"
         slug = epub_util.slugify(title)
@@ -83,6 +87,24 @@ def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
         summary = _summarize_ruby_pairs(chapter.ruby_pairs)
         if summary:
             ruby_overrides[chapter_id] = summary
+        if chapter.ruby_spans:
+            raw_for_hash = tts_util._normalize_text(read_clean_text(out_path))
+            ruby_chapters[chapter_id] = {
+                "raw_sha256": tts_util.sha256_str(raw_for_hash),
+                "raw_spans": chapter.ruby_spans,
+            }
+        for base, reading in chapter.ruby_pairs:
+            base_text = str(base).strip()
+            reading_text = str(reading).strip()
+            if not base_text or not reading_text:
+                continue
+            ruby_counts.setdefault(base_text, {})
+            ruby_counts[base_text][reading_text] = (
+                ruby_counts[base_text].get(reading_text, 0) + 1
+            )
+            ruby_order.setdefault(base_text, [])
+            if reading_text not in ruby_order[base_text]:
+                ruby_order[base_text].append(reading_text)
         toc_items.append(
             {
                 "index": idx,
@@ -108,10 +130,53 @@ def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
 
     if ruby_overrides:
         overrides_path = out_dir / "reading-overrides.json"
+        ruby_global: list[dict] = []
+        ruby_conflicts: list[dict] = []
+        for base, counts in sorted(ruby_counts.items(), key=lambda item: item[0]):
+            total = sum(counts.values())
+            order = {reading: idx for idx, reading in enumerate(ruby_order.get(base, []))}
+            majority_reading = ""
+            majority_count = -1
+            for reading, count in counts.items():
+                rank = order.get(reading, len(order))
+                if (count > majority_count) or (
+                    count == majority_count and rank < order.get(majority_reading, 1 << 30)
+                ):
+                    majority_reading = reading
+                    majority_count = count
+            if majority_reading:
+                ruby_global.append(
+                    {
+                        "base": base,
+                        "reading": majority_reading,
+                        "count": majority_count,
+                        "total": total,
+                    }
+                )
+            if len(counts) > 1:
+                readings = [
+                    {"reading": reading, "count": count}
+                    for reading, count in sorted(
+                        counts.items(),
+                        key=lambda item: (-item[1], order.get(item[0], 1 << 30)),
+                    )
+                ]
+                ruby_conflicts.append(
+                    {
+                        "base": base,
+                        "majority": majority_reading,
+                        "readings": readings,
+                    }
+                )
         overrides_payload = {
             "created_unix": int(time.time()),
             "source_epub": str(input_path),
             "chapters": ruby_overrides,
+            "ruby": {
+                "global": ruby_global,
+                "conflicts": ruby_conflicts,
+                "chapters": ruby_chapters,
+            },
         }
         overrides_path.write_text(
             json.dumps(overrides_payload, ensure_ascii=False, indent=2) + "\n",
@@ -477,26 +542,84 @@ def _kana(args: argparse.Namespace) -> int:
         text = raw_input
     book_dir = Path(args.book).resolve() if args.book else None
     chapter_id = args.chapter
+    chunk_index = None
     if using_file and (not book_dir or not chapter_id):
         inferred_book, inferred_chapter = _infer_book_and_chapter(input_path)
         if book_dir is None:
             book_dir = inferred_book
         if chapter_id is None:
             chapter_id = inferred_chapter
+    if using_file:
+        stem = input_path.stem
+        if stem.isdigit():
+            chunk_index = int(stem) - 1
 
     global_overrides = []
     merged_overrides = []
     chapter_count = 0
+    ruby_data = {}
+    ruby_bases = set()
+    chapter_ruby_spans: list[dict] = []
+    chunk_span = None
     if book_dir and book_dir.exists():
         global_overrides, chapter_overrides = tts_util._load_reading_overrides(book_dir)
+        ruby_data = tts_util._load_ruby_data(book_dir)
+        ruby_bases = tts_util._ruby_bases_set(ruby_data)
+        if ruby_data and chapter_id and chunk_index is not None:
+            manifest_path = book_dir / "tts" / "manifest.json"
+            manifest: dict = {}
+            if manifest_path.exists():
+                try:
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    manifest = {}
+            chapters_meta = manifest.get("chapters") if isinstance(manifest, dict) else []
+            if isinstance(chapters_meta, list):
+                for entry in chapters_meta:
+                    if isinstance(entry, dict) and (entry.get("id") or "") == chapter_id:
+                        rel_path = entry.get("path")
+                        if rel_path:
+                            chapter_path = (book_dir / rel_path).resolve()
+                            if chapter_path.exists():
+                                chapter_text = tts_util._normalize_text(
+                                    read_clean_text(chapter_path)
+                                )
+                                chapter_ruby_spans = tts_util._select_ruby_spans(
+                                    chapter_id, chapter_text, ruby_data
+                                )
+                        span_list = entry.get("chunk_spans")
+                        if isinstance(span_list, list) and len(span_list) > chunk_index:
+                            chunk_span = span_list[chunk_index]
+                        break
         if chapter_id:
             chapter_entries = chapter_overrides.get(chapter_id, [])
             chapter_count = len(chapter_entries)
+            if ruby_bases:
+                chapter_entries = [
+                    item
+                    for item in chapter_entries
+                    if str(item.get("base") or "").strip() not in ruby_bases
+                ]
+                filtered_global = [
+                    item
+                    for item in global_overrides
+                    if str(item.get("base") or "").strip() not in ruby_bases
+                ]
+            else:
+                filtered_global = global_overrides
             merged_overrides = tts_util._merge_reading_overrides(
-                global_overrides, chapter_entries
+                filtered_global, chapter_entries
             )
         else:
-            merged_overrides = global_overrides
+            merged_overrides = (
+                [
+                    item
+                    for item in global_overrides
+                    if str(item.get("base") or "").strip() not in ruby_bases
+                ]
+                if ruby_bases
+                else global_overrides
+            )
     else:
         template_path = tts_util._template_reading_overrides_path()
         if template_path.exists():
@@ -517,6 +640,16 @@ def _kana(args: argparse.Namespace) -> int:
             _debug_dump("UniDic dir", str(dict_dir))
             _debug_dump("UniDic dicrc", "found" if dicrc.exists() else "missing")
 
+    if ruby_data:
+        if chunk_span is not None and chapter_ruby_spans:
+            text = tts_util._apply_ruby_evidence_to_chunk(
+                text,
+                chunk_span,
+                chapter_ruby_spans,
+                ruby_data,
+            )
+        else:
+            text = tts_util._apply_ruby_evidence(text, chapter_id, ruby_data)
     tts_source = tts_util.apply_reading_overrides(text, merged_overrides)
     if args.debug:
         _debug_dump("After overrides", tts_source)

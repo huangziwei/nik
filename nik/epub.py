@@ -24,6 +24,7 @@ class Chapter:
     source: str
     text: str
     ruby_pairs: List[tuple[str, str]] = field(default_factory=list)
+    ruby_spans: List[dict] = field(default_factory=list)
 
 
 def read_epub(path: Path) -> epub.EpubBook:
@@ -263,25 +264,33 @@ def _join_item_text(
 def _join_item_text_and_ruby(
     items: Iterable[object],
     footnote_index: dict[str, set[str]] | None = None,
-) -> tuple[str, List[tuple[str, str]]]:
+) -> tuple[str, List[tuple[str, str]], List[dict]]:
     parts: List[str] = []
     ruby_pairs: List[tuple[str, str]] = []
+    ruby_spans: List[dict] = []
     for item in items:
         content = item.get_content()
-        text = html_to_text(
+        token_text = _html_to_text_with_ruby_tokens(
             content,
             footnote_index=footnote_index,
             source_href=_item_name(item),
         )
-        if text:
-            parts.append(text)
-        ruby_pairs.extend(extract_ruby_pairs(content))
+        if token_text:
+            parts.append(token_text)
     if not parts:
-        return "", ruby_pairs
-    return normalize_text("\n\n".join(parts)), ruby_pairs
+        return "", ruby_pairs, ruby_spans
+    joined = normalize_text("\n\n".join(parts))
+    text, ruby_spans = _strip_ruby_tokens(joined)
+    ruby_pairs = [
+        (span.get("base", ""), span.get("reading", "")) for span in ruby_spans
+    ]
+    return text, ruby_pairs, ruby_spans
 
 
 _NOTE_MARKER_RE = re.compile(r"^\d{1,4}[a-z]?[.)]?$", re.IGNORECASE)
+_RUBY_TOKEN_START = "[[[RUBY_START]]]"
+_RUBY_TOKEN_MID = "[[[RUBY_MID]]]"
+_RUBY_TOKEN_END = "[[[RUBY_END]]]"
 
 
 def _normalize_id(value: str) -> str:
@@ -364,14 +373,45 @@ def _collect_footnote_index(
     return {"note_ids": note_ids, "backref_ids": backref_ids}
 
 
-def html_to_text(
-    html: bytes,
+def _parse_html_soup(html: bytes | str) -> BeautifulSoup:
+    if isinstance(html, bytes):
+        head = html.lstrip()[:512].lower()
+        parser = (
+            "lxml-xml"
+            if (head.startswith(b"<?xml") or b"xmlns=" in head)
+            else "lxml"
+        )
+    else:
+        head = str(html).lstrip()[:512].lower()
+        parser = "lxml-xml" if (head.startswith("<?xml") or "xmlns=" in head) else "lxml"
+    return BeautifulSoup(html, parser)
+
+
+def _ruby_base_reading(ruby: object) -> tuple[str, str]:
+    base_parts: List[str] = []
+    reading_parts: List[str] = []
+    contents = getattr(ruby, "contents", [])
+    for child in contents:
+        name = getattr(child, "name", None)
+        if name in {"rt", "rp"}:
+            continue
+        if isinstance(child, str):
+            base_parts.append(child)
+        else:
+            base_parts.append(child.get_text(separator="", strip=False))
+    for rt in getattr(ruby, "find_all", lambda *_args, **_kwargs: [])("rt"):
+        reading_parts.append(rt.get_text(separator="", strip=False))
+    base = "".join(base_parts).strip()
+    reading = "".join(reading_parts).strip()
+    return base, reading
+
+
+def _soup_to_text(
+    soup: BeautifulSoup,
     footnote_index: dict[str, set[str]] | None = None,
     source_href: str = "",
 ) -> str:
-    head = html.lstrip()[:512].lower()
-    parser = "lxml-xml" if (head.startswith(b"<?xml") or b"xmlns=" in head) else "lxml"
-    soup = BeautifulSoup(html, parser)
+    _ = source_href
     for tag in soup.find_all(["rt", "rp"]):
         tag.decompose()
     for tag in soup(["script", "style", "nav", "header", "footer", "aside", "noscript"]):
@@ -463,37 +503,96 @@ def html_to_text(
     return normalize_text(text)
 
 
+def _strip_ruby_tokens(text: str) -> tuple[str, List[dict]]:
+    spans: List[dict] = []
+    out_parts: List[str] = []
+    idx = 0
+    out_len = 0
+    while True:
+        start = text.find(_RUBY_TOKEN_START, idx)
+        if start == -1:
+            tail = text[idx:]
+            if tail:
+                out_parts.append(tail)
+                out_len += len(tail)
+            break
+        if start > idx:
+            segment = text[idx:start]
+            out_parts.append(segment)
+            out_len += len(segment)
+        mid = text.find(_RUBY_TOKEN_MID, start + len(_RUBY_TOKEN_START))
+        end = -1
+        if mid != -1:
+            end = text.find(_RUBY_TOKEN_END, mid + len(_RUBY_TOKEN_MID))
+        if mid == -1 or end == -1:
+            token_text = text[start : start + len(_RUBY_TOKEN_START)]
+            out_parts.append(token_text)
+            out_len += len(token_text)
+            idx = start + len(_RUBY_TOKEN_START)
+            continue
+        base = text[start + len(_RUBY_TOKEN_START) : mid]
+        reading = text[mid + len(_RUBY_TOKEN_MID) : end]
+        out_parts.append(base)
+        span_start = out_len
+        span_end = span_start + len(base)
+        out_len = span_end
+        if base and reading:
+            spans.append(
+                {
+                    "start": span_start,
+                    "end": span_end,
+                    "base": base,
+                    "reading": reading,
+                }
+            )
+        idx = end + len(_RUBY_TOKEN_END)
+    return "".join(out_parts), spans
+
+
+def _html_to_text_with_ruby_tokens(
+    html: bytes | str,
+    footnote_index: dict[str, set[str]] | None = None,
+    source_href: str = "",
+) -> str:
+    soup = _parse_html_soup(html)
+    for ruby in soup.find_all("ruby"):
+        base, reading = _ruby_base_reading(ruby)
+        if base and reading:
+            token = f"{_RUBY_TOKEN_START}{base}{_RUBY_TOKEN_MID}{reading}{_RUBY_TOKEN_END}"
+            ruby.replace_with(token)
+        elif base:
+            ruby.replace_with(base)
+        else:
+            ruby.replace_with("")
+    return _soup_to_text(soup, footnote_index=footnote_index, source_href=source_href)
+
+
+def html_to_text_with_ruby(
+    html: bytes | str,
+    footnote_index: dict[str, set[str]] | None = None,
+    source_href: str = "",
+) -> tuple[str, List[dict]]:
+    token_text = _html_to_text_with_ruby_tokens(
+        html, footnote_index=footnote_index, source_href=source_href
+    )
+    return _strip_ruby_tokens(token_text)
+
+
+def html_to_text(
+    html: bytes,
+    footnote_index: dict[str, set[str]] | None = None,
+    source_href: str = "",
+) -> str:
+    soup = _parse_html_soup(html)
+    return _soup_to_text(soup, footnote_index=footnote_index, source_href=source_href)
+
+
 def extract_ruby_pairs(html: bytes | str) -> List[tuple[str, str]]:
-    if isinstance(html, bytes):
-        head = html.lstrip()[:512].lower()
-        parser = (
-            "lxml-xml"
-            if (head.startswith(b"<?xml") or b"xmlns=" in head)
-            else "lxml"
-        )
-    else:
-        head = str(html).lstrip()[:512].lower()
-        parser = "lxml-xml" if (head.startswith("<?xml") or "xmlns=" in head) else "lxml"
-    soup = BeautifulSoup(html, parser)
+    soup = _parse_html_soup(html)
     pairs: List[tuple[str, str]] = []
     for ruby in soup.find_all("ruby"):
-        base_parts: List[str] = []
-        for child in ruby.contents:
-            name = getattr(child, "name", None)
-            if name in {"rt", "rp"}:
-                continue
-            if isinstance(child, str):
-                base_parts.append(child)
-            else:
-                base_parts.append(child.get_text(separator="", strip=False))
-        base = "".join(base_parts).strip()
-        if not base:
-            continue
-        reading_parts = [
-            rt.get_text(separator="", strip=False) for rt in ruby.find_all("rt")
-        ]
-        reading = "".join(reading_parts).strip()
-        if not reading:
+        base, reading = _ruby_base_reading(ruby)
+        if not base or not reading:
             continue
         pairs.append((base, reading))
     return pairs
@@ -599,14 +698,16 @@ def _chapters_from_entries(
             continue
 
         content = item.get_content()
-        text = html_to_text(
+        text, ruby_spans = html_to_text_with_ruby(
             content,
             footnote_index=footnote_index,
             source_href=_item_name(item),
         )
         if not text:
             continue
-        ruby_pairs = extract_ruby_pairs(content)
+        ruby_pairs = [
+            (span.get("base", ""), span.get("reading", "")) for span in ruby_spans
+        ]
 
         title = ""
         if title_overrides and base_href in title_overrides:
@@ -630,6 +731,7 @@ def _chapters_from_entries(
                 source=base_href,
                 text=text,
                 ruby_pairs=ruby_pairs,
+                ruby_spans=ruby_spans,
             )
         )
 
@@ -659,6 +761,7 @@ def _chapters_from_toc_entries(
         if not base_href or base_href in seen:
             continue
         seen.add(base_href)
+        ruby_spans: List[dict] = []
 
         start_idx = spine_index.get(base_href)
         merged_items: List[object] = []
@@ -683,7 +786,7 @@ def _chapters_from_toc_entries(
                     idx += 1
 
         if merged_items:
-            text, ruby_pairs = _join_item_text_and_ruby(
+            text, ruby_pairs, ruby_spans = _join_item_text_and_ruby(
                 merged_items, footnote_index=footnote_index
             )
             item_for_title = merged_items[0]
@@ -698,12 +801,15 @@ def _chapters_from_toc_entries(
             if not item_for_title or item_for_title.get_type() != ITEM_DOCUMENT:
                 continue
             content = item_for_title.get_content()
-            text = html_to_text(
+            text, ruby_spans = html_to_text_with_ruby(
                 content,
                 footnote_index=footnote_index,
                 source_href=_item_name(item_for_title),
             )
-            ruby_pairs = extract_ruby_pairs(content)
+            ruby_pairs = [
+                (span.get("base", ""), span.get("reading", ""))
+                for span in ruby_spans
+            ]
 
         if not text:
             continue
@@ -716,6 +822,7 @@ def _chapters_from_toc_entries(
                 source=base_href,
                 text=text,
                 ruby_pairs=ruby_pairs,
+                ruby_spans=ruby_spans,
             )
         )
 

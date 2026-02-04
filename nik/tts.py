@@ -1250,6 +1250,102 @@ def prepare_tts_text(text: str, *, add_short_punct: bool = False) -> str:
     return text
 
 
+def _select_ruby_spans(
+    chapter_id: Optional[str],
+    text: str,
+    ruby_data: dict,
+) -> List[dict]:
+    if not chapter_id:
+        return []
+    chapters = ruby_data.get("chapters") if isinstance(ruby_data, dict) else None
+    if not isinstance(chapters, dict):
+        return []
+    entry = chapters.get(chapter_id)
+    if not isinstance(entry, dict):
+        return []
+    text_hash = sha256_str(text)
+    clean_hash = entry.get("clean_sha256")
+    if isinstance(clean_hash, str) and clean_hash == text_hash:
+        spans = entry.get("clean_spans")
+        return spans if isinstance(spans, list) else []
+    raw_hash = entry.get("raw_sha256")
+    if isinstance(raw_hash, str) and raw_hash == text_hash:
+        spans = entry.get("raw_spans")
+        return spans if isinstance(spans, list) else []
+    return []
+
+
+def _apply_ruby_evidence(
+    text: str,
+    chapter_id: Optional[str],
+    ruby_data: dict,
+) -> str:
+    if not ruby_data:
+        return text
+    spans = _select_ruby_spans(chapter_id, text, ruby_data)
+    if spans:
+        text = apply_ruby_spans(text, spans)
+    ruby_global = _ruby_global_overrides(ruby_data)
+    if ruby_global:
+        text = apply_reading_overrides(text, ruby_global)
+    return text
+
+
+def _chunk_ruby_spans(
+    chunk_span: Optional[Sequence[int]],
+    chapter_spans: Sequence[dict],
+) -> List[dict]:
+    if not chunk_span or not chapter_spans:
+        return []
+    try:
+        chunk_start = int(chunk_span[0])
+        chunk_end = int(chunk_span[1])
+    except (TypeError, ValueError, IndexError):
+        return []
+    if chunk_end <= chunk_start:
+        return []
+    spans: List[dict] = []
+    for span in chapter_spans:
+        if not isinstance(span, dict):
+            continue
+        try:
+            start = int(span.get("start"))
+            end = int(span.get("end"))
+        except (TypeError, ValueError):
+            continue
+        if start < chunk_start or end > chunk_end:
+            continue
+        reading = str(span.get("reading") or "")
+        base = str(span.get("base") or "")
+        if not reading:
+            continue
+        spans.append(
+            {
+                "start": start - chunk_start,
+                "end": end - chunk_start,
+                "base": base,
+                "reading": reading,
+            }
+        )
+    return spans
+
+
+def _apply_ruby_evidence_to_chunk(
+    chunk_text: str,
+    chunk_span: Optional[Sequence[int]],
+    chapter_spans: Sequence[dict],
+    ruby_data: dict,
+) -> str:
+    text = chunk_text
+    spans = _chunk_ruby_spans(chunk_span, chapter_spans)
+    if spans:
+        text = apply_ruby_spans(text, spans)
+    ruby_global = _ruby_global_overrides(ruby_data)
+    if ruby_global:
+        text = apply_reading_overrides(text, ruby_global)
+    return text
+
+
 def load_book_chapters(book_dir: Path) -> List[ChapterInput]:
     toc_path = book_dir / "clean" / "toc.json"
     if not toc_path.exists():
@@ -1328,6 +1424,17 @@ def _load_voice_map(path: Optional[Path]) -> dict:
     }
 
 
+def _normalize_reading_mode(value: object) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip().lower()
+    if not cleaned or cleaned in {"all", "default"}:
+        return None
+    if cleaned in {"first", "once", "single", "one"}:
+        return "first"
+    return None
+
+
 def _parse_reading_entries(raw: object) -> List[dict[str, str]]:
     replacements: list[dict[str, str]] = []
     if isinstance(raw, dict):
@@ -1340,14 +1447,19 @@ def _parse_reading_entries(raw: object) -> List[dict[str, str]]:
         if isinstance(item, dict):
             base = str(item.get("base") or "").strip()
             reading = str(item.get("reading") or item.get("kana") or "").strip()
+            mode = _normalize_reading_mode(item.get("mode") or item.get("scope"))
         elif isinstance(item, (list, tuple)) and len(item) >= 2:
             base = str(item[0] or "").strip()
             reading = str(item[1] or "").strip()
+            mode = None
         else:
             continue
         if not base or not reading:
             continue
-        replacements.append({"base": base, "reading": reading})
+        entry = {"base": base, "reading": reading}
+        if mode:
+            entry["mode"] = mode
+        replacements.append(entry)
     return replacements
 
 
@@ -1433,24 +1545,79 @@ def _load_reading_overrides(
     return global_entries, overrides
 
 
+def _load_ruby_data(book_dir: Path) -> dict:
+    path = book_dir / "reading-overrides.json"
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    ruby_data = data.get("ruby") or {}
+    return ruby_data if isinstance(ruby_data, dict) else {}
+
+
+def _ruby_global_overrides(ruby_data: dict) -> List[dict[str, str]]:
+    overrides: List[dict[str, str]] = []
+    items = ruby_data.get("global") if isinstance(ruby_data, dict) else None
+    if isinstance(items, list):
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            base = str(item.get("base") or "").strip()
+            reading = str(item.get("reading") or "").strip()
+            if base and reading:
+                overrides.append({"base": base, "reading": reading})
+    return overrides
+
+
+def _ruby_bases_set(ruby_data: dict) -> set[str]:
+    bases: set[str] = set()
+    items = ruby_data.get("global") if isinstance(ruby_data, dict) else None
+    if isinstance(items, list):
+        for item in items:
+            if isinstance(item, dict):
+                base = str(item.get("base") or "").strip()
+                if base:
+                    bases.add(base)
+    conflicts = ruby_data.get("conflicts") if isinstance(ruby_data, dict) else None
+    if isinstance(conflicts, list):
+        for item in conflicts:
+            if isinstance(item, dict):
+                base = str(item.get("base") or "").strip()
+                if base:
+                    bases.add(base)
+    return bases
+
+
 def _merge_reading_overrides(
     global_overrides: Sequence[dict[str, str]],
     chapter_overrides: Sequence[dict[str, str]],
 ) -> List[dict[str, str]]:
     if not global_overrides and not chapter_overrides:
         return []
-    merged: dict[str, str] = {}
+    merged: dict[str, dict[str, str]] = {}
     for item in global_overrides:
         base = item.get("base", "")
         reading = item.get("reading", "")
+        mode = _normalize_reading_mode(item.get("mode"))
         if base and reading:
-            merged[base] = reading
+            entry = {"base": base, "reading": reading}
+            if mode:
+                entry["mode"] = mode
+            merged[base] = entry
     for item in chapter_overrides:
         base = item.get("base", "")
         reading = item.get("reading", "")
+        mode = _normalize_reading_mode(item.get("mode"))
         if base and reading:
-            merged[base] = reading
-    return [{"base": base, "reading": reading} for base, reading in merged.items()]
+            entry = {"base": base, "reading": reading}
+            if mode:
+                entry["mode"] = mode
+            merged[base] = entry
+    return list(merged.values())
 
 
 def apply_reading_overrides(
@@ -1467,9 +1634,42 @@ def apply_reading_overrides(
     for item in ordered:
         base = item.get("base", "")
         reading = item.get("reading", "")
+        mode = _normalize_reading_mode(item.get("mode"))
         if not base or not reading:
             continue
-        out = out.replace(base, reading)
+        if mode == "first":
+            out = out.replace(base, reading, 1)
+        else:
+            out = out.replace(base, reading)
+    return out
+
+
+def apply_ruby_spans(text: str, spans: Sequence[dict]) -> str:
+    if not spans:
+        return text
+    out = text
+    ordered = sorted(
+        (span for span in spans if isinstance(span, dict)),
+        key=lambda item: int(item.get("start", 0)),
+        reverse=True,
+    )
+    for span in ordered:
+        try:
+            start = int(span.get("start"))
+            end = int(span.get("end"))
+        except (TypeError, ValueError):
+            continue
+        reading = str(span.get("reading") or "")
+        base = str(span.get("base") or "")
+        if start < 0 or end < 0 or end < start:
+            continue
+        if not reading:
+            continue
+        if end > len(out):
+            continue
+        if base and out[start:end] != base:
+            continue
+        out = out[:start] + reading + out[end:]
     return out
 
 
@@ -1801,6 +2001,14 @@ def synthesize_book(
     backend_name = _select_backend(backend)
     model_name = _resolve_model_name(model_name, backend_name)
     global_overrides, reading_overrides = _load_reading_overrides(book_dir)
+    ruby_data = _load_ruby_data(book_dir)
+    ruby_bases = _ruby_bases_set(ruby_data)
+    chapter_ruby_spans: Dict[str, List[dict]] = {}
+    if ruby_data:
+        for chapter in chapters:
+            chapter_ruby_spans[chapter.id] = _select_ruby_spans(
+                chapter.id, chapter.text, ruby_data
+            )
     kana_normalize = bool(kana_normalize)
     kana_style = _normalize_kana_style(kana_style)
     if out_dir is None:
@@ -1956,8 +2164,21 @@ def synthesize_book(
             language = voice_languages.get(voice_id)
             voice_config = voice_configs.get(voice_id)
             chapter_overrides = reading_overrides.get(chapter_id, [])
+            if ruby_bases:
+                chapter_overrides = [
+                    item
+                    for item in chapter_overrides
+                    if str(item.get("base") or "").strip() not in ruby_bases
+                ]
+                filtered_global = [
+                    item
+                    for item in global_overrides
+                    if str(item.get("base") or "").strip() not in ruby_bases
+                ]
+            else:
+                filtered_global = global_overrides
             merged_overrides = _merge_reading_overrides(
-                global_overrides, chapter_overrides
+                filtered_global, chapter_overrides
             )
 
             for chunk_idx, chunk_text in enumerate(chunks, start=1):
@@ -1977,7 +2198,21 @@ def synthesize_book(
                     progress.advance(overall_task, 1)
                     continue
 
-                tts_source = apply_reading_overrides(chunk_text, merged_overrides)
+                if ruby_data:
+                    chunk_span = None
+                    span_list = ch_entry.get("chunk_spans")
+                    if isinstance(span_list, list) and len(span_list) >= chunk_idx:
+                        chunk_span = span_list[chunk_idx - 1]
+                    ruby_spans = chapter_ruby_spans.get(chapter_id, [])
+                    tts_source = _apply_ruby_evidence_to_chunk(
+                        chunk_text,
+                        chunk_span,
+                        ruby_spans,
+                        ruby_data,
+                    )
+                else:
+                    tts_source = chunk_text
+                tts_source = apply_reading_overrides(tts_source, merged_overrides)
                 tts_source = _normalize_numbers(tts_source)
                 if kana_normalize and kana_tagger and _has_kanji(tts_source):
                     try:
@@ -2230,12 +2465,46 @@ def synthesize_chunk(
         prompt = None
         language = None
 
-    override_dir = out_dir.parent
+    book_dir = out_dir.parent
+    override_dir = book_dir
     if (out_dir / "reading-overrides.json").exists():
         override_dir = out_dir
+    ruby_data = _load_ruby_data(override_dir)
+    if ruby_data:
+        ruby_spans: List[dict] = []
+        rel_path = entry.get("path")
+        if rel_path:
+            chapter_path = (book_dir / rel_path).resolve()
+            if chapter_path.exists():
+                chapter_text = _normalize_text(read_clean_text(chapter_path))
+                ruby_spans = _select_ruby_spans(chapter_id, chapter_text, ruby_data)
+        chunk_span = None
+        span_list = entry.get("chunk_spans")
+        if isinstance(span_list, list) and len(span_list) > chunk_index:
+            chunk_span = span_list[chunk_index]
+        chunk_text = _apply_ruby_evidence_to_chunk(
+            chunk_text,
+            chunk_span,
+            ruby_spans,
+            ruby_data,
+        )
+    ruby_bases = _ruby_bases_set(ruby_data)
     global_overrides, reading_overrides = _load_reading_overrides(override_dir)
     chapter_overrides = reading_overrides.get(chapter_id, [])
-    merged_overrides = _merge_reading_overrides(global_overrides, chapter_overrides)
+    if ruby_bases:
+        chapter_overrides = [
+            item
+            for item in chapter_overrides
+            if str(item.get("base") or "").strip() not in ruby_bases
+        ]
+        filtered_global = [
+            item
+            for item in global_overrides
+            if str(item.get("base") or "").strip() not in ruby_bases
+        ]
+    else:
+        filtered_global = global_overrides
+    merged_overrides = _merge_reading_overrides(filtered_global, chapter_overrides)
     tts_source = apply_reading_overrides(chunk_text, merged_overrides)
     tts_source = _normalize_numbers(tts_source)
     if kana_normalize:

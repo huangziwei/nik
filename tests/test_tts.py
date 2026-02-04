@@ -149,6 +149,18 @@ def test_apply_reading_overrides() -> None:
     )
 
 
+def test_apply_reading_overrides_first_only() -> None:
+    text = "山田山田"
+    overrides = [{"base": "山田", "reading": "やまだ", "mode": "first"}]
+    assert tts_util.apply_reading_overrides(text, overrides) == "やまだ山田"
+
+
+def test_apply_ruby_spans() -> None:
+    text = "前漢字後"
+    spans = [{"start": 1, "end": 3, "base": "漢字", "reading": "かんじ"}]
+    assert tts_util.apply_ruby_spans(text, spans) == "前かんじ後"
+
+
 def test_normalize_kana_with_stub_tagger() -> None:
     class DummyFeature:
         def __init__(self, kana: str | None) -> None:

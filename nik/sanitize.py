@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import difflib
 import re
 import shutil
 import time
@@ -634,6 +635,20 @@ def apply_remove_patterns(
     return text, stats
 
 
+def _diff_ruby_spans(plain: str, ruby: str) -> List[dict]:
+    spans: List[dict] = []
+    matcher = difflib.SequenceMatcher(None, plain, ruby)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag != "replace":
+            continue
+        base = plain[i1:i2]
+        reading = ruby[j1:j2]
+        if not base or not reading:
+            continue
+        spans.append({"start": i1, "end": i2, "base": base, "reading": reading})
+    return spans
+
+
 def should_drop_title(
     title: str, patterns: List[re.Pattern]
 ) -> str:
@@ -652,6 +667,7 @@ def sanitize_book(
     raw_dir = book_dir / "raw" / "chapters"
     clean_dir = book_dir / "clean" / "chapters"
     report_path = book_dir / "clean" / "report.json"
+    overrides_path = book_dir / "reading-overrides.json"
 
     if not toc_path.exists():
         raise FileNotFoundError(f"Missing toc.json at {toc_path}")
@@ -682,6 +698,22 @@ def sanitize_book(
     chapters = toc.get("chapters", [])
     if not isinstance(chapters, list):
         raise ValueError("Invalid toc.json: chapters must be a list.")
+
+    overrides_data: dict = {}
+    ruby_data: dict = {}
+    ruby_chapters: dict = {}
+    ruby_updated = False
+    if overrides_path.exists():
+        try:
+            overrides_data = json.loads(overrides_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            overrides_data = {}
+        if isinstance(overrides_data, dict):
+            ruby_data = overrides_data.get("ruby") or {}
+            if isinstance(ruby_data, dict):
+                ruby_chapters = ruby_data.get("chapters") or {}
+                if not isinstance(ruby_chapters, dict):
+                    ruby_chapters = {}
 
     clean_dir.mkdir(parents=True, exist_ok=True)
     report_entries: List[ChapterResult] = []
@@ -733,9 +765,9 @@ def sanitize_book(
             dropped += 1
             continue
 
-        raw_text = raw_path.read_text(encoding="utf-8")
+        raw_text_original = raw_path.read_text(encoding="utf-8")
         raw_text = normalize_text(
-            raw_text,
+            raw_text_original,
             unwrap_lines=rules.paragraph_breaks != "single",
             paragraph_breaks=rules.paragraph_breaks,
         )
@@ -752,7 +784,52 @@ def sanitize_book(
         cleaned = normalize_small_caps(cleaned, extra_words=case_words)
         cleaned = normalize_all_caps(cleaned, extra_words=case_words)
 
+        ruby_entry_to_hash = None
+        if ruby_chapters:
+            chapter_id = tts_util.chapter_id_from_path(
+                int(entry.get("index", len(report_entries) + 1)),
+                title,
+                raw_rel,
+            )
+            ruby_entry = ruby_chapters.get(chapter_id)
+            if isinstance(ruby_entry, dict):
+                raw_spans = ruby_entry.get("raw_spans")
+                if isinstance(raw_spans, list) and raw_spans:
+                    ruby_text = tts_util.apply_ruby_spans(
+                        raw_text_original, raw_spans
+                    )
+                    ruby_text = normalize_text(
+                        ruby_text,
+                        unwrap_lines=rules.paragraph_breaks != "single",
+                        paragraph_breaks=rules.paragraph_breaks,
+                    )
+                    ruby_cutoff, _ruby_cutoff_reason = apply_section_cutoff(
+                        ruby_text, cutoff_patterns
+                    )
+                    ruby_cleaned, _ruby_stats = apply_remove_patterns(
+                        ruby_cutoff, remove_patterns
+                    )
+                    ruby_cleaned = normalize_text(
+                        ruby_cleaned,
+                        unwrap_lines=rules.paragraph_breaks != "single",
+                        paragraph_breaks=rules.paragraph_breaks,
+                    )
+                    ruby_cleaned = normalize_small_caps(
+                        ruby_cleaned, extra_words=case_words
+                    )
+                    ruby_cleaned = normalize_all_caps(
+                        ruby_cleaned, extra_words=case_words
+                    )
+                    ruby_entry["clean_spans"] = _diff_ruby_spans(
+                        cleaned, ruby_cleaned
+                    )
+                    ruby_entry_to_hash = ruby_entry
+                    ruby_updated = True
+
         clean_path.write_text(cleaned + "\n", encoding="utf-8")
+        if ruby_entry_to_hash is not None:
+            clean_for_hash = tts_util._normalize_text(read_clean_text(clean_path))
+            ruby_entry_to_hash["clean_sha256"] = tts_util.sha256_str(clean_for_hash)
 
         for pattern, count in stats.items():
             if count:
@@ -830,6 +907,13 @@ def sanitize_book(
         json.dumps(clean_toc, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+    if ruby_updated and isinstance(overrides_data, dict):
+        overrides_data["ruby"] = ruby_data
+        overrides_path.write_text(
+            json.dumps(overrides_data, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
     return len(clean_entries)
 

@@ -30,3 +30,12 @@ def test_extract_ruby_pairs_and_strip_rt() -> None:
     html = "<p><ruby>漢字<rt>かんじ</rt></ruby>です。</p>".encode("utf-8")
     assert epub_util.html_to_text(html) == "漢字です。"
     assert epub_util.extract_ruby_pairs(html) == [("漢字", "かんじ")]
+
+
+def test_html_to_text_with_ruby_spans() -> None:
+    html = "<p>前<ruby>漢字<rt>かんじ</rt></ruby>後</p>".encode("utf-8")
+    text, spans = epub_util.html_to_text_with_ruby(html)
+    assert text == "前漢字後"
+    assert spans == [
+        {"start": 1, "end": 3, "base": "漢字", "reading": "かんじ"}
+    ]
