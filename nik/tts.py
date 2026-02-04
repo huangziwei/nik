@@ -1176,17 +1176,23 @@ def synthesize_book(
     model_name = _resolve_model_name(model_name, backend_name)
     global_overrides, reading_overrides = _load_reading_overrides(book_dir)
     kana_normalize = bool(kana_normalize)
+    if out_dir is None:
+        out_dir = book_dir / "tts"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if base_dir is None:
+        base_dir = Path.cwd()
     kana_tagger = None
     if kana_normalize:
+        dict_dir = _resolve_unidic_dir()
+        if not (dict_dir / "dicrc").exists():
+            write_status(out_dir, "unidic", "Downloading UniDic dictionary...")
+        else:
+            write_status(out_dir, "unidic", "Loading UniDic dictionary...")
         try:
             kana_tagger = _get_kana_tagger()
         except RuntimeError as exc:
             sys.stderr.write(f"{exc}\n")
             return 2
-    if out_dir is None:
-        out_dir = book_dir / "tts"
-    if base_dir is None:
-        base_dir = Path.cwd()
 
     try:
         voice_map = _load_voice_map(voice_map_path)

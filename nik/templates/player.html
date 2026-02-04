@@ -4167,7 +4167,19 @@
           !state.synthRunning;
         updateMergeButtonState();
         const stage = data.stage || "idle";
-        if (stage === "chunking") {
+        const ttsDetail =
+          data.tts_status && data.tts_status.detail ? data.tts_status.detail : "";
+        if (stage === "unidic") {
+          progressFill.style.width =
+            sampling && overall
+              ? `${overall.percent}%`
+              : "0%";
+          progressText.textContent = sampling
+            ? "Preparing UniDic for sample..."
+            : "Preparing UniDic...";
+          progressDetail.textContent =
+            ttsDetail || "Downloading dictionary and loading tokenizer.";
+        } else if (stage === "chunking") {
           progressFill.style.width =
             sampling && overall
               ? `${overall.percent}%`
@@ -4216,7 +4228,9 @@
         }
 
         if (sampling) {
-          if (stage === "chunking") {
+          if (stage === "unidic") {
+            bookStatus.textContent = ttsDetail || "Preparing UniDic...";
+          } else if (stage === "chunking") {
             bookStatus.textContent = "Preparing sample...";
           } else if (stage === "cloning") {
             bookStatus.textContent = "Cloning sample voice...";
@@ -4227,6 +4241,8 @@
           } else {
             bookStatus.textContent = state.book && state.book.has_audio ? "Audio ready." : "Waiting for audio.";
           }
+        } else if (stage === "unidic") {
+          bookStatus.textContent = ttsDetail || "Preparing UniDic...";
         } else if (stage === "chunking") {
           bookStatus.textContent = "Chunking text...";
         } else if (stage === "synthesizing") {

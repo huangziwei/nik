@@ -1588,6 +1588,8 @@ def create_app(root_dir: Path) -> FastAPI:
             status_stage = str(tts_status.get("stage") or "")
             if status_stage == "cloning":
                 payload["stage"] = "cloning"
+            elif status_stage == "unidic":
+                payload["stage"] = "unidic"
             elif not progress or not progress.get("total"):
                 payload["stage"] = "chunking"
             else:
