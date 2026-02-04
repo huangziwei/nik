@@ -714,6 +714,29 @@ def _is_kana_char(ch: str) -> bool:
     return False
 
 
+def _is_japanese_char(ch: str) -> bool:
+    if not ch:
+        return False
+    if _is_kana_char(ch):
+        return True
+    code = ord(ch)
+    ranges = (
+        (0x3400, 0x4DBF),  # CJK Unified Ideographs Extension A
+        (0x4E00, 0x9FFF),  # CJK Unified Ideographs
+        (0xF900, 0xFAFF),  # CJK Compatibility Ideographs
+        (0x20000, 0x2A6DF),  # CJK Unified Ideographs Extension B
+        (0x2A700, 0x2B73F),  # Extension C
+        (0x2B740, 0x2B81F),  # Extension D
+        (0x2B820, 0x2CEAF),  # Extension E
+        (0x2CEB0, 0x2EBEF),  # Extension F
+        (0x30000, 0x3134F),  # Extension G
+    )
+    for start, end in ranges:
+        if start <= code <= end:
+            return True
+    return False
+
+
 def _split_surface_kana_sequences(text: str) -> List[str]:
     sequences: List[str] = []
     buf: List[str] = []
@@ -749,6 +772,24 @@ def _apply_surface_kana(reading_kata: str, surface: str) -> str:
         out.append(seq)
         idx = pos + len(seq_kata)
     out.append(reading_kata[idx:])
+    return "".join(out)
+
+
+def _japanese_space_to_pause(text: str) -> str:
+    if not text or " " not in text:
+        return text
+    out: List[str] = []
+    length = len(text)
+    for idx, ch in enumerate(text):
+        if ch != " ":
+            out.append(ch)
+            continue
+        prev = text[idx - 1] if idx > 0 else ""
+        next_ch = text[idx + 1] if idx + 1 < length else ""
+        if _is_japanese_char(prev) and _is_japanese_char(next_ch):
+            out.append("、")
+        else:
+            out.append(ch)
     return "".join(out)
 
 
@@ -1203,6 +1244,7 @@ def prepare_tts_text(text: str, *, add_short_punct: bool = False) -> str:
     text = _strip_double_quotes(text)
     text = _strip_single_quotes(text)
     text = re.sub(r"\s+", " ", text).strip()
+    text = _japanese_space_to_pause(text)
     if add_short_punct:
         text = _append_short_tail_punct(text)
     return text
