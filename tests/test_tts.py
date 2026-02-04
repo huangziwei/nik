@@ -171,7 +171,82 @@ def test_normalize_kana_with_stub_tagger() -> None:
             ]
 
     out = tts_util._normalize_kana_with_tagger("漢字と東京未知X", DummyTagger())
+    assert out == "カンジとトウキョウ未知X"
+
+
+def test_normalize_kana_with_stub_tagger_hiragana() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("漢字", "カンジ"),
+                DummyToken("と", None),
+                DummyToken("東京", "トウキョウ"),
+                DummyToken("未知", "*"),
+                DummyToken("X", None),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "漢字と東京未知X", DummyTagger(), kana_style="hiragana"
+    )
     assert out == "かんじととうきょう未知X"
+
+
+def test_normalize_kana_with_stub_tagger_katakana() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("漢字", "カンジ"),
+                DummyToken("と", None),
+                DummyToken("東京", "トウキョウ"),
+                DummyToken("未知", "*"),
+                DummyToken("X", None),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "漢字と東京未知X", DummyTagger(), kana_style="katakana"
+    )
+    assert out == "カンジとトウキョウ未知X"
+
+
+def test_normalize_kana_with_stub_tagger_mixed_okurigana() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [DummyToken("始まる", "ハジマル")]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "始まる", DummyTagger(), kana_style="mixed"
+    )
+    assert out == "ハジまる"
 
 
 def test_normalize_kana_preserves_spaces(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -195,6 +270,30 @@ def test_normalize_kana_preserves_spaces(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr(tts_util, "_get_kana_tagger", lambda: DummyTagger())
     out = tts_util._normalize_kana_text("漢字 と 東京")
+    assert out == "カンジ と トウキョウ"
+
+
+def test_normalize_kana_preserves_spaces_hiragana(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, text: str):
+            if text == "漢字":
+                return [DummyToken("漢字", "カンジ")]
+            if text == "東京":
+                return [DummyToken("東京", "トウキョウ")]
+            return [DummyToken(text, None)]
+
+    monkeypatch.setattr(tts_util, "_get_kana_tagger", lambda: DummyTagger())
+    out = tts_util._normalize_kana_text("漢字 と 東京", kana_style="hiragana")
     assert out == "かんじ と とうきょう"
 
 

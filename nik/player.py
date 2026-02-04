@@ -861,6 +861,7 @@ class SynthRequest(BaseModel):
     rechunk: bool = False
     use_voice_map: bool = False
     kana_normalize: bool = True
+    kana_style: str = "mixed"
 
 
 class ChunkSynthRequest(BaseModel):
@@ -1658,6 +1659,8 @@ def create_app(root_dir: Path) -> FastAPI:
             "--pad-ms",
             str(payload.pad_ms),
         ]
+        if payload.kana_style:
+            cmd += ["--kana-style", payload.kana_style]
         if use_voice_map and voice_map_path and voice_map_path.exists():
             cmd += ["--voice-map", str(voice_map_path)]
         if payload.rechunk:
@@ -1766,6 +1769,8 @@ def create_app(root_dir: Path) -> FastAPI:
             "--pad-ms",
             str(payload.pad_ms),
         ]
+        if payload.kana_style:
+            cmd += ["--kana-style", payload.kana_style]
         if payload.rechunk:
             cmd.append("--rechunk")
         if not payload.kana_normalize:

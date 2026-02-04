@@ -662,6 +662,17 @@ def _has_japanese(text: str) -> bool:
     return _has_kanji(text)
 
 
+def _normalize_kana_style(value: Optional[str]) -> str:
+    normalized = (value or "mixed").strip().lower()
+    if normalized in {"mixed", "mix", "m"}:
+        return "mixed"
+    if normalized in {"hiragana", "hira", "h"}:
+        return "hiragana"
+    if normalized in {"katakana", "kata", "k"}:
+        return "katakana"
+    return "mixed"
+
+
 def _katakana_to_hiragana(text: str) -> str:
     if not text:
         return text
@@ -672,6 +683,72 @@ def _katakana_to_hiragana(text: str) -> str:
             out.append(chr(code - 0x60))
         else:
             out.append(ch)
+    return "".join(out)
+
+
+def _hiragana_to_katakana(text: str) -> str:
+    if not text:
+        return text
+    out: List[str] = []
+    for ch in text:
+        code = ord(ch)
+        if 0x3041 <= code <= 0x3096:
+            out.append(chr(code + 0x60))
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _is_kana_char(ch: str) -> bool:
+    if not ch:
+        return False
+    code = ord(ch)
+    if 0x3040 <= code <= 0x309F:  # Hiragana
+        return True
+    if 0x30A0 <= code <= 0x30FF:  # Katakana
+        return True
+    if 0x31F0 <= code <= 0x31FF:  # Katakana Phonetic Extensions
+        return True
+    if 0xFF66 <= code <= 0xFF9D:  # Halfwidth Katakana
+        return True
+    return False
+
+
+def _split_surface_kana_sequences(text: str) -> List[str]:
+    sequences: List[str] = []
+    buf: List[str] = []
+    for ch in text:
+        if _is_kana_char(ch):
+            buf.append(ch)
+        else:
+            if buf:
+                sequences.append("".join(buf))
+                buf = []
+    if buf:
+        sequences.append("".join(buf))
+    return sequences
+
+
+def _apply_surface_kana(reading_kata: str, surface: str) -> str:
+    if not reading_kata:
+        return reading_kata
+    sequences = _split_surface_kana_sequences(surface)
+    if not sequences:
+        return reading_kata
+    out: List[str] = []
+    idx = 0
+    for seq in sequences:
+        seq_kata = _hiragana_to_katakana(unicodedata.normalize("NFKC", seq))
+        if not seq_kata:
+            continue
+        pos = reading_kata.find(seq_kata, idx)
+        if pos == -1:
+            out.append(reading_kata[idx:])
+            return "".join(out)
+        out.append(reading_kata[idx:pos])
+        out.append(seq)
+        idx = pos + len(seq_kata)
+    out.append(reading_kata[idx:])
     return "".join(out)
 
 
@@ -1070,9 +1147,12 @@ def _extract_token_reading(token: Any) -> str:
     return ""
 
 
-def _normalize_kana_with_tagger(text: str, tagger: Any) -> str:
+def _normalize_kana_with_tagger(
+    text: str, tagger: Any, *, kana_style: str = "mixed"
+) -> str:
     if not text:
         return text
+    kana_style = _normalize_kana_style(kana_style)
     out: List[str] = []
     for token in tagger(text):
         surface = getattr(token, "surface", "")
@@ -1085,11 +1165,17 @@ def _normalize_kana_with_tagger(text: str, tagger: Any) -> str:
         if not reading or reading == "*":
             out.append(surface)
             continue
-        out.append(_katakana_to_hiragana(reading))
+        reading_kata = _hiragana_to_katakana(reading)
+        if kana_style == "katakana":
+            out.append(reading_kata)
+        elif kana_style == "hiragana":
+            out.append(_katakana_to_hiragana(reading_kata))
+        else:
+            out.append(_apply_surface_kana(reading_kata, surface))
     return "".join(out)
 
 
-def _normalize_kana_text(text: str) -> str:
+def _normalize_kana_text(text: str, *, kana_style: str = "mixed") -> str:
     if not _has_kanji(text):
         return text
     tagger = _get_kana_tagger()
@@ -1102,7 +1188,7 @@ def _normalize_kana_text(text: str) -> str:
             out.append(part)
             continue
         if _has_kanji(part):
-            out.append(_normalize_kana_with_tagger(part, tagger))
+            out.append(_normalize_kana_with_tagger(part, tagger, kana_style=kana_style))
         else:
             out.append(part)
     return "".join(out)
@@ -1667,12 +1753,14 @@ def synthesize_book(
     only_chapter_ids: Optional[set[str]] = None,
     backend: Optional[str] = None,
     kana_normalize: bool = True,
+    kana_style: str = "mixed",
 ) -> int:
     chapters = load_book_chapters(book_dir)
     backend_name = _select_backend(backend)
     model_name = _resolve_model_name(model_name, backend_name)
     global_overrides, reading_overrides = _load_reading_overrides(book_dir)
     kana_normalize = bool(kana_normalize)
+    kana_style = _normalize_kana_style(kana_style)
     if out_dir is None:
         out_dir = book_dir / "tts"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1737,6 +1825,7 @@ def synthesize_book(
         manifest["voice_overrides"] = voice_overrides
     manifest["pad_ms"] = int(pad_ms)
     manifest["kana_normalize"] = kana_normalize
+    manifest["kana_style"] = kana_style
     atomic_write_json(manifest_path, manifest)
 
     voice_configs: Dict[str, VoiceConfig] = {}
@@ -1851,7 +1940,7 @@ def synthesize_book(
                 if kana_normalize and kana_tagger and _has_kanji(tts_source):
                     try:
                         tts_source = _normalize_kana_with_tagger(
-                            tts_source, kana_tagger
+                            tts_source, kana_tagger, kana_style=kana_style
                         )
                     except Exception as exc:
                         sys.stderr.write(f"Failed kana normalization: {exc}\n")
@@ -1938,6 +2027,7 @@ def synthesize_book_sample(
     attn_implementation: Optional[str] = None,
     backend: Optional[str] = None,
     kana_normalize: bool = True,
+    kana_style: str = "mixed",
 ) -> int:
     chapters = load_book_chapters(book_dir)
     if not chapters:
@@ -1983,6 +2073,7 @@ def synthesize_book_sample(
         only_chapter_ids={sample_id},
         backend=backend,
         kana_normalize=kana_normalize,
+        kana_style=kana_style,
     )
 
 
@@ -1999,6 +2090,7 @@ def synthesize_chunk(
     attn_implementation: Optional[str] = None,
     backend: Optional[str] = None,
     kana_normalize: Optional[bool] = None,
+    kana_style: Optional[str] = None,
 ) -> dict:
     if base_dir is None:
         base_dir = Path.cwd()
@@ -2060,6 +2152,9 @@ def synthesize_chunk(
 
     if kana_normalize is None:
         kana_normalize = bool(manifest.get("kana_normalize"))
+    if kana_style is None:
+        kana_style = manifest.get("kana_style")
+    kana_style = _normalize_kana_style(kana_style)
 
     voice_id = default_voice
     if voice_map_path:
@@ -2103,7 +2198,7 @@ def synthesize_chunk(
     tts_source = _normalize_numbers(tts_source)
     if kana_normalize:
         try:
-            tts_source = _normalize_kana_text(tts_source)
+            tts_source = _normalize_kana_text(tts_source, kana_style=kana_style)
         except RuntimeError as exc:
             raise ValueError(str(exc)) from exc
     tts_text = prepare_tts_text(tts_source, add_short_punct=True)

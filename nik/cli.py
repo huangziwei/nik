@@ -402,6 +402,7 @@ def _synth(args: argparse.Namespace) -> int:
         attn_implementation=args.attn,
         backend=args.backend,
         kana_normalize=args.kana_normalize,
+        kana_style=args.kana_style,
     )
 
 
@@ -439,6 +440,7 @@ def _sample(args: argparse.Namespace) -> int:
         attn_implementation=args.attn,
         backend=args.backend,
         kana_normalize=args.kana_normalize,
+        kana_style=args.kana_style,
     )
 
 
@@ -546,7 +548,9 @@ def _kana(args: argparse.Namespace) -> int:
 
     if args.kana_normalize:
         try:
-            tts_source = tts_util._normalize_kana_text(tts_source)
+            tts_source = tts_util._normalize_kana_text(
+                tts_source, kana_style=args.kana_style
+            )
         except RuntimeError as exc:
             sys.stderr.write(f"{exc}\n")
             return 2
@@ -694,6 +698,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Normalize kanji to kana with UniDic (default: enabled)",
     )
     synth.add_argument(
+        "--kana-style",
+        choices=("hiragana", "katakana", "mixed"),
+        default="mixed",
+        help="Kana style when normalizing (default: mixed)",
+    )
+    synth.add_argument(
         "--model",
         default=None,
         help="Model id/path (defaults depend on backend)",
@@ -766,6 +776,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Normalize kanji to kana with UniDic (default: enabled)",
     )
     sample.add_argument(
+        "--kana-style",
+        choices=("hiragana", "katakana", "mixed"),
+        default="mixed",
+        help="Kana style when normalizing (default: mixed)",
+    )
+    sample.add_argument(
         "--model",
         default=None,
         help="Model id/path (defaults depend on backend)",
@@ -805,6 +821,12 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Apply UniDic kana normalization (default: enabled)",
+    )
+    kana.add_argument(
+        "--kana-style",
+        choices=("hiragana", "katakana", "mixed"),
+        default="mixed",
+        help="Kana style when normalizing (default: mixed)",
     )
     kana.add_argument(
         "--debug",
