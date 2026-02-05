@@ -779,6 +779,34 @@ def test_normalize_kana_with_stub_tagger_partial_kanji_run_keep() -> None:
     assert out == "漢字"
 
 
+def test_normalize_kana_first_token_partial() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("投げつけ", "ナゲツケ"),
+                DummyToken("好き", "スキ"),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "投げつけ好き",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_kanji=True,
+    )
+    assert out == "なげつけ好き"
+
+
 def test_normalize_numbers_standalone_digits() -> None:
     text = "全7冊 合本版"
     assert tts_util._normalize_numbers(text) == "全七冊 合本版"

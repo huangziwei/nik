@@ -715,7 +715,7 @@ def _kana(args: argparse.Namespace) -> int:
     if args.kana_normalize:
         try:
             tts_source = tts_util._normalize_kana_text(
-                tts_source, kana_style=args.kana_style
+                tts_source, kana_style=args.kana_style, force_first_kanji=True
             )
         except RuntimeError as exc:
             sys.stderr.write(f"{exc}\n")

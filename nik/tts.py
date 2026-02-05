@@ -918,6 +918,25 @@ def _is_hiragana_char(ch: str) -> bool:
     return 0x3040 <= code <= 0x309F
 
 
+def _is_katakana_char(ch: str) -> bool:
+    if not ch:
+        return False
+    code = ord(ch)
+    if 0x30A0 <= code <= 0x30FF:  # Katakana
+        return True
+    if 0x31F0 <= code <= 0x31FF:  # Katakana Phonetic Extensions
+        return True
+    if 0xFF66 <= code <= 0xFF9D:  # Halfwidth Katakana
+        return True
+    return False
+
+
+def _has_katakana(text: str) -> bool:
+    if not text:
+        return False
+    return any(_is_katakana_char(ch) for ch in text)
+
+
 def _is_japanese_char(ch: str) -> bool:
     if not ch:
         return False
@@ -1905,7 +1924,12 @@ def _should_convert_honorific_prefix(
 
 
 def _normalize_kana_with_tagger(
-    text: str, tagger: Any, *, kana_style: str = "mixed", zh_lexicon: Optional[set[str]] = None
+    text: str,
+    tagger: Any,
+    *,
+    kana_style: str = "mixed",
+    zh_lexicon: Optional[set[str]] = None,
+    force_first_kanji: bool = False,
 ) -> str:
     if not text:
         return text
@@ -1913,6 +1937,7 @@ def _normalize_kana_with_tagger(
     out: List[str] = []
     tokens = list(tagger(text))
     run_action: List[str] = [""] * len(tokens)
+    first_kanji_done = False
     if kana_style == "partial" and tokens:
         if zh_lexicon is None:
             zh_lexicon = _load_zh_lexicon()
@@ -1957,6 +1982,11 @@ def _normalize_kana_with_tagger(
         if not _has_kanji(surface):
             out.append(surface)
             continue
+        force_first = False
+        if not first_kanji_done:
+            first_kanji_done = True
+            if kana_style == "partial" and force_first_kanji:
+                force_first = True
         reading = _extract_token_reading(token)
         if not reading or reading == "*":
             out.append(surface)
@@ -1982,6 +2012,13 @@ def _normalize_kana_with_tagger(
             if action == "convert":
                 out.append(_apply_surface_kana(reading_kata, surface))
                 continue
+            if force_first:
+                converted = _apply_surface_kana(reading_kata, surface)
+                if _has_katakana(surface):
+                    out.append(converted)
+                else:
+                    out.append(_katakana_to_hiragana(converted))
+                continue
             if _should_convert_honorific_prefix(surface, reading_kata, attrs):
                 out.append(_apply_surface_kana(reading_kata, surface))
                 continue
@@ -1999,7 +2036,9 @@ def _normalize_kana_with_tagger(
     return "".join(out)
 
 
-def _normalize_kana_text(text: str, *, kana_style: str = "mixed") -> str:
+def _normalize_kana_text(
+    text: str, *, kana_style: str = "mixed", force_first_kanji: bool = False
+) -> str:
     kana_style = _normalize_kana_style(kana_style)
     if kana_style == "off":
         return text
@@ -2024,6 +2063,7 @@ def _normalize_kana_text(text: str, *, kana_style: str = "mixed") -> str:
                     tagger,
                     kana_style=kana_style,
                     zh_lexicon=zh_lexicon,
+                    force_first_kanji=force_first_kanji,
                 )
             )
         else:
@@ -3415,7 +3455,9 @@ def synthesize_chunk(
     tts_source = _normalize_numbers(tts_source)
     if kana_normalize:
         try:
-            tts_source = _normalize_kana_text(tts_source, kana_style=kana_style)
+            tts_source = _normalize_kana_text(
+                tts_source, kana_style=kana_style, force_first_kanji=True
+            )
         except RuntimeError as exc:
             raise ValueError(str(exc)) from exc
     tts_text = prepare_tts_text(tts_source, add_short_punct=True)
