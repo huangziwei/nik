@@ -161,6 +161,38 @@ def test_apply_reading_overrides_isolated_kanji() -> None:
     assert tts_util.apply_reading_overrides(text, overrides) == "「ま」は間違い。"
 
 
+def test_apply_reading_overrides_kanji_boundary() -> None:
+    text = "男の子と男女、人々と人は。"
+    overrides = [
+        {"base": "男", "reading": "おとこ", "mode": "kanji"},
+        {"base": "人", "reading": "ひと", "mode": "kanji"},
+    ]
+    assert (
+        tts_util.apply_reading_overrides(text, overrides)
+        == "おとこの子と男女、人々とひとは。"
+    )
+
+
+def test_split_reading_overrides_single_kanji_mode() -> None:
+    data = {
+        "chapters": {
+            "c1": {
+                "replacements": [
+                    {"base": "天", "reading": "てん"},
+                    {"base": "人", "reading": "ひと", "mode": "isolated"},
+                    {"base": "天国", "reading": "てんごく"},
+                ]
+            }
+        }
+    }
+    _global, chapters = tts_util._split_reading_overrides_data(data)
+    entries = chapters["c1"]
+    entry_map = {item.get("base"): item for item in entries}
+    assert entry_map["天"].get("mode") == "kanji"
+    assert entry_map["人"].get("mode") == "isolated"
+    assert "mode" not in entry_map["天国"]
+
+
 def test_apply_reading_overrides_regex() -> None:
     text = "御存知でした。御迷惑でした。"
     overrides = [{"base": "re:御(存知|迷惑)", "reading": r"ご\1"}]

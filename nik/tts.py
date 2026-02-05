@@ -768,6 +768,14 @@ def _is_kanji_char(ch: str) -> bool:
     return False
 
 
+def _is_kanji_boundary_char(ch: str) -> bool:
+    if not ch:
+        return False
+    if ch in _KANJI_SAFE_MARKS:
+        return True
+    return _is_kanji_char(ch)
+
+
 def _has_kana(text: str) -> bool:
     if not text:
         return False
@@ -2044,6 +2052,8 @@ def _normalize_reading_mode(value: object) -> str | None:
         return "first"
     if cleaned in {"isolated", "isolate", "boundary", "standalone"}:
         return "isolated"
+    if cleaned in {"kanji", "kanji-boundary", "kanji_boundary", "kanjiboundary"}:
+        return "kanji"
     return None
 
 
@@ -2085,7 +2095,9 @@ def _normalize_reading_override_entry(raw: object) -> dict[str, str] | None:
     return None
 
 
-def _parse_reading_entries(raw: object) -> List[dict[str, str]]:
+def _parse_reading_entries(
+    raw: object, *, single_kanji_mode: str | None = None
+) -> List[dict[str, str]]:
     replacements: list[dict[str, str]] = []
     if isinstance(raw, dict):
         raw_replacements = raw.get("replacements") or raw.get("entries") or []
@@ -2095,13 +2107,22 @@ def _parse_reading_entries(raw: object) -> List[dict[str, str]]:
         raw_replacements = []
     for item in raw_replacements:
         entry: dict[str, str] | None = None
+        explicit_mode = False
         if isinstance(item, dict):
+            explicit_mode = "mode" in item or "scope" in item
             entry = _normalize_reading_override_entry(item)
         elif isinstance(item, (list, tuple)) and len(item) >= 2:
             entry = _normalize_reading_override_entry(
                 {"base": item[0], "reading": item[1]}
             )
         if entry:
+            if (
+                single_kanji_mode
+                and not explicit_mode
+                and "mode" not in entry
+                and len(str(entry.get("base") or "")) == 1
+            ):
+                entry["mode"] = single_kanji_mode
             replacements.append(entry)
     return replacements
 
@@ -2161,7 +2182,7 @@ def _split_reading_overrides_data(
         return global_entries, {}
     overrides: dict[str, List[dict[str, str]]] = {}
     for chapter_id, entry in chapters_data.items():
-        replacements = _parse_reading_entries(entry)
+        replacements = _parse_reading_entries(entry, single_kanji_mode="kanji")
         if replacements:
             overrides[str(chapter_id)] = replacements
     return global_entries, overrides
@@ -2216,7 +2237,7 @@ def _ruby_global_overrides(ruby_data: dict) -> List[dict[str, str]]:
             if base and reading:
                 entry = {"base": base, "reading": reading}
                 if len(base) == 1:
-                    entry["mode"] = "isolated"
+                    entry["mode"] = "kanji"
                 overrides.append(entry)
     return overrides
 
@@ -2280,6 +2301,8 @@ def apply_reading_overrides(
             continue
         if mode == "isolated":
             out = _replace_isolated_kanji(out, base, reading)
+        elif mode == "kanji":
+            out = _replace_kanji_boundary(out, base, reading)
         elif mode == "first":
             out = out.replace(base, reading, 1)
         else:
@@ -2311,6 +2334,27 @@ def _replace_isolated_kanji(text: str, base: str, reading: str) -> str:
         prev = text[idx - 1] if idx > 0 else ""
         next_ch = text[idx + 1] if idx + 1 < length else ""
         if _is_japanese_char(prev) or _is_japanese_char(next_ch):
+            out.append(cur)
+        else:
+            out.append(reading)
+    return "".join(out)
+
+
+def _replace_kanji_boundary(text: str, base: str, reading: str) -> str:
+    if not text or not base or not reading:
+        return text
+    if len(base) != 1:
+        return text.replace(base, reading)
+    ch = base
+    out: List[str] = []
+    length = len(text)
+    for idx, cur in enumerate(text):
+        if cur != ch:
+            out.append(cur)
+            continue
+        prev = text[idx - 1] if idx > 0 else ""
+        next_ch = text[idx + 1] if idx + 1 < length else ""
+        if _is_kanji_boundary_char(prev) or _is_kanji_boundary_char(next_ch):
             out.append(cur)
         else:
             out.append(reading)
