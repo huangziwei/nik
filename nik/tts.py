@@ -1945,7 +1945,7 @@ def _replace_isolated_kanji(text: str, base: str, reading: str) -> str:
             continue
         prev = text[idx - 1] if idx > 0 else ""
         next_ch = text[idx + 1] if idx + 1 < length else ""
-        if _is_kanji_char(prev) or _is_kanji_char(next_ch):
+        if _is_japanese_char(prev) or _is_japanese_char(next_ch):
             out.append(cur)
         else:
             out.append(reading)

@@ -156,9 +156,9 @@ def test_apply_reading_overrides_first_only() -> None:
 
 
 def test_apply_reading_overrides_isolated_kanji() -> None:
-    text = "束の間は間違い。"
+    text = "「間」は間違い。"
     overrides = [{"base": "間", "reading": "ま", "mode": "isolated"}]
-    assert tts_util.apply_reading_overrides(text, overrides) == "束のまは間違い。"
+    assert tts_util.apply_reading_overrides(text, overrides) == "「ま」は間違い。"
 
 
 def test_apply_ruby_spans() -> None:
