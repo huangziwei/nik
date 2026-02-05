@@ -81,6 +81,8 @@ _JP_QUOTE_CHARS = {
     "〞",
     "〟",
 }
+_JP_OPEN_QUOTES = {"「", "『", "《", "〈", "【", "〔", "［", "｢", "〝"}
+_JP_CLOSE_QUOTES = {"」", "』", "》", "〉", "】", "〕", "］", "｣", "〞", "〟"}
 _DASH_RUN_RE = re.compile(r"[‐‑‒–—―─━]{2,}")
 
 _SHORT_TAIL_PUNCT = "。"
@@ -599,6 +601,36 @@ def _strip_format_chars(text: str) -> str:
     if not text:
         return text
     return "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+
+
+def _strip_jp_quotes(text: str) -> str:
+    if not text:
+        return text
+    out: List[str] = []
+    length = len(text)
+    for idx, ch in enumerate(text):
+        if ch not in _JP_QUOTE_CHARS:
+            out.append(ch)
+            continue
+        if ch in _JP_CLOSE_QUOTES:
+            prev = text[idx - 1] if idx > 0 else ""
+            j = idx + 1
+            while j < length and text[j] in _JP_QUOTE_CHARS:
+                j += 1
+            next_ch = text[j] if j < length else ""
+            if (
+                prev
+                and next_ch
+                and _is_japanese_char(prev)
+                and _is_japanese_char(next_ch)
+                and prev not in _END_PUNCT
+                and prev not in _MID_PUNCT
+                and next_ch not in _END_PUNCT
+                and next_ch not in _MID_PUNCT
+            ):
+                out.append("、")
+        continue
+    return "".join(out)
 
 
 def _append_short_tail_punct(text: str) -> str:
@@ -1261,7 +1293,7 @@ def prepare_tts_text(text: str, *, add_short_punct: bool = False) -> str:
     has_dash_run = bool(_DASH_RUN_RE.search(text))
     text = _DASH_RUN_RE.sub(" ", text)
     text = _strip_format_chars(text)
-    text = "".join(ch for ch in text if ch not in _JP_QUOTE_CHARS)
+    text = _strip_jp_quotes(text)
     text = _strip_double_quotes(text)
     text = _strip_single_quotes(text)
     text = re.sub(r"\s+", " ", text).strip()
