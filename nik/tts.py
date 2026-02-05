@@ -137,6 +137,21 @@ _KANJI_DIGITS = {
     9: "九",
 }
 
+_KANJI_DIGIT_READINGS = {
+    "〇": "ゼロ",
+    "零": "ゼロ",
+    "一": "いち",
+    "二": "に",
+    "三": "さん",
+    "四": "よん",
+    "五": "ご",
+    "六": "ろく",
+    "七": "なな",
+    "八": "はち",
+    "九": "きゅう",
+    "十": "じゅう",
+}
+
 _KANJI_UNITS = ["", "十", "百", "千"]
 _KANJI_BIG_UNITS = ["", "万", "億", "兆", "京"]
 
@@ -1221,6 +1236,15 @@ def _normalize_numbers(text: str) -> str:
             return _digit_seq_to_kana(num)
         return _to_kanji_number(num)
 
+    def _replace_kanji_digit_list(match: re.Match) -> str:
+        seq = match.group("seq") or ""
+        if not seq:
+            return match.group(0)
+        out: List[str] = []
+        for ch in seq:
+            out.append(_KANJI_DIGIT_READINGS.get(ch, ch))
+        return "".join(out)
+
     text = re.sub(
         r"(?<!\d)(?P<year>\d{2,4})年(?P<month>\d{1,2})月(?P<day>\d{1,2})日",
         _replace_ymd,
@@ -1271,6 +1295,12 @@ def _normalize_numbers(text: str) -> str:
     text = re.sub(
         r"(?P<prefix>[A-Za-z]+)(?P<num>\d+)(?P<suffix>[A-Za-z]*)",
         _replace_alnum,
+        text,
+    )
+    kanji_digit_chars = "".join(_KANJI_DIGIT_READINGS.keys())
+    text = re.sub(
+        rf"(?P<seq>[{kanji_digit_chars}](?:[、，,・][{kanji_digit_chars}])+)",
+        _replace_kanji_digit_list,
         text,
     )
     text = re.sub(

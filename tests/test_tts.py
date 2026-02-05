@@ -760,6 +760,11 @@ def test_normalize_numbers_counter_wa() -> None:
     assert tts_util._normalize_numbers(text) == "いちわ 土曜日"
 
 
+def test_normalize_numbers_kanji_digit_list() -> None:
+    text = "一、二席聞いて帰る"
+    assert tts_util._normalize_numbers(text) == "いち、に席聞いて帰る"
+
+
 def test_prepare_tts_text_strips_japanese_quotes() -> None:
     assert (
         tts_util.prepare_tts_text("「聖書」『旧約』《新約》“Test” 'OK'〝注〟don't")
