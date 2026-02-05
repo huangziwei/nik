@@ -841,6 +841,13 @@ def _is_kana_char(ch: str) -> bool:
     return False
 
 
+def _is_hiragana_char(ch: str) -> bool:
+    if not ch:
+        return False
+    code = ord(ch)
+    return 0x3040 <= code <= 0x309F
+
+
 def _is_japanese_char(ch: str) -> bool:
     if not ch:
         return False
@@ -877,6 +884,73 @@ def _split_surface_kana_sequences(text: str) -> List[str]:
     if buf:
         sequences.append("".join(buf))
     return sequences
+
+
+def _kana_char_count(text: str) -> int:
+    return sum(1 for ch in text if _is_kana_char(ch))
+
+
+def _trailing_kana_sequence(text: str) -> str:
+    if not text:
+        return ""
+    idx = len(text)
+    while idx > 0 and _is_kana_char(text[idx - 1]):
+        idx -= 1
+    return text[idx:] if idx < len(text) else ""
+
+
+def _feature_value(feature: Any, names: Sequence[str]) -> str:
+    if not feature:
+        return ""
+    for name in names:
+        value = getattr(feature, name, None)
+        if value and value != "*":
+            return str(value)
+    return ""
+
+
+def _maybe_canonicalize_surface(surface: str, token: Any, reading_kata: str) -> str:
+    if not surface:
+        return surface
+    feature = getattr(token, "feature", None)
+    if not feature:
+        return surface
+    lemma = _feature_value(feature, ("lemma",))
+    if not lemma or lemma == surface:
+        return surface
+    if _kana_char_count(lemma) <= _kana_char_count(surface):
+        return surface
+    if not reading_kata:
+        return surface
+    lemma_reading = _feature_value(
+        feature, ("lForm", "kanaBase", "pronBase", "formBase", "form")
+    )
+    if not lemma_reading:
+        return surface
+    lemma_reading_kata = _hiragana_to_katakana(
+        unicodedata.normalize("NFKC", lemma_reading)
+    )
+    reading_kata = _hiragana_to_katakana(unicodedata.normalize("NFKC", reading_kata))
+    tail = _trailing_kana_sequence(lemma)
+    if not tail:
+        if reading_kata == lemma_reading_kata:
+            return lemma
+        return surface
+    tail_kata = _hiragana_to_katakana(unicodedata.normalize("NFKC", tail))
+    if not tail_kata:
+        return surface
+    if not lemma_reading_kata.endswith(tail_kata):
+        return surface
+    if len(reading_kata) < len(tail_kata):
+        return surface
+    if lemma_reading_kata[:-len(tail_kata)] != reading_kata[:-len(tail_kata)]:
+        return surface
+    new_tail_kata = reading_kata[-len(tail_kata):]
+    if _is_hiragana_char(tail[0]):
+        new_tail = _katakana_to_hiragana(new_tail_kata)
+    else:
+        new_tail = new_tail_kata
+    return lemma[:-len(tail)] + new_tail
 
 
 def _apply_surface_kana(reading_kata: str, surface: str) -> str:
@@ -1589,6 +1663,7 @@ def _normalize_kana_with_tagger(
         if kana_style == "partial":
             attrs = _extract_token_attrs(token)
             action = run_action[idx]
+            surface = _maybe_canonicalize_surface(surface, token, reading_kata)
             if action == "keep":
                 out.append(surface)
                 continue

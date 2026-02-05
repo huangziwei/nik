@@ -387,6 +387,32 @@ def test_normalize_kana_with_stub_tagger_partial_common_noun(monkeypatch) -> Non
     assert out == "自分"
 
 
+def test_normalize_kana_partial_canonicalizes_okurigana_variant() -> None:
+    class DummyFeature:
+        def __init__(self) -> None:
+            self.kana = "タチアガリ"
+            self.pron = "タチアガリ"
+            self.lemma = "立ち上がる"
+            self.lForm = "タチアガル"
+
+    class DummyToken:
+        def __init__(self, surface: str, feature: DummyFeature) -> None:
+            self.surface = surface
+            self.feature = feature
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [DummyToken("立上り", DummyFeature())]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "立上り",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+    )
+    assert out == "立ち上がり"
+
+
 def test_normalize_kana_with_stub_tagger_partial_common_noun_guard(monkeypatch) -> None:
     class DummyFeature:
         def __init__(
