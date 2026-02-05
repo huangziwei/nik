@@ -479,13 +479,51 @@ def _advance_ws(text: str, pos: int) -> int:
     return pos
 
 
+def _space_pause_split_indices(text: str) -> set[int]:
+    if not text:
+        return set()
+    splits: set[int] = set()
+    start = 0
+    length = len(text)
+    while start < length:
+        end = text.find("\n", start)
+        if end == -1:
+            end = length
+        line = text[start:end]
+        if line:
+            candidates: List[int] = []
+            for idx, ch in enumerate(line):
+                if ch not in (" ", "\u3000"):
+                    continue
+                prev = line[idx - 1] if idx > 0 else ""
+                next_ch = line[idx + 1] if idx + 1 < len(line) else ""
+                if _is_japanese_char(prev) and _is_japanese_char(next_ch):
+                    candidates.append(idx)
+            if len(candidates) == 1:
+                has_punct = any(ch in _END_PUNCT or ch in _MID_PUNCT for ch in line)
+                has_ascii = any(ch.isascii() and ch.isalnum() for ch in line)
+                if not has_punct and not has_ascii:
+                    splits.add(start + candidates[0])
+        start = end + 1
+    return splits
+
+
 def split_sentence_spans(text: str) -> List[Tuple[int, int]]:
     spans: List[Tuple[int, int]] = []
+    space_splits = _space_pause_split_indices(text)
     start = 0
     i = 0
     length = len(text)
     while i < length:
         ch = text[i]
+        if i in space_splits:
+            span = _trim_span(text, start, i)
+            if span:
+                spans.append(span)
+            i += 1
+            i = _advance_ws(text, i)
+            start = i
+            continue
         if ch == "\n":
             span = _trim_span(text, start, i)
             if span:
