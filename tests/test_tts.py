@@ -351,7 +351,7 @@ def test_normalize_kana_with_stub_tagger_partial() -> None:
     assert out == "カンジ始まる"
 
 
-def test_normalize_kana_with_stub_tagger_partial_common_noun() -> None:
+def test_normalize_kana_with_stub_tagger_partial_common_noun(monkeypatch) -> None:
     class DummyFeature:
         def __init__(
             self,
@@ -377,6 +377,7 @@ def test_normalize_kana_with_stub_tagger_partial_common_noun() -> None:
                 DummyToken("自分", DummyFeature("ジブン", goshu="漢", pos1="名詞", pos2="普通名詞"))
             ]
 
+    monkeypatch.setattr(tts_util, "_is_common_japanese_word", lambda _word: True)
     out = tts_util._normalize_kana_with_tagger(
         "自分",
         DummyTagger(),
@@ -384,6 +385,42 @@ def test_normalize_kana_with_stub_tagger_partial_common_noun() -> None:
         zh_lexicon=set(),
     )
     assert out == "自分"
+
+
+def test_normalize_kana_with_stub_tagger_partial_common_noun_guard(monkeypatch) -> None:
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            goshu: str | None = None,
+            pos1: str | None = None,
+            pos2: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.goshu = goshu
+            self.pos1 = pos1
+            self.pos2 = pos2
+
+    class DummyToken:
+        def __init__(self, surface: str, feature: DummyFeature) -> None:
+            self.surface = surface
+            self.feature = feature
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("前略", DummyFeature("ゼンリャク", goshu="漢", pos1="名詞", pos2="普通名詞"))
+            ]
+
+    monkeypatch.setattr(tts_util, "_is_common_japanese_word", lambda _word: False)
+    out = tts_util._normalize_kana_with_tagger(
+        "前略",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+    )
+    assert out == "ゼンリャク"
 
 
 def test_normalize_kana_with_stub_tagger_partial_rare() -> None:

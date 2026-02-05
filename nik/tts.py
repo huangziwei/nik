@@ -41,10 +41,12 @@ Qwen3TTSModel = None
 mlx_audio = None
 mlx_load_model = None
 fugashi = None
+wordfreq = None
 
 _KANA_TAGGER = None
 _KANA_TAGGER_DIR: Optional[Path] = None
 _ZH_LEXICON: Optional[set[str]] = None
+_JP_FREQ_CACHE: Dict[str, float] = {}
 
 _END_PUNCT = set("。！？?!…")
 _MID_PUNCT = set("、，,;；:：")
@@ -90,6 +92,10 @@ _KANJI_SAFE_MARKS = {"々", "〆", "ヶ", "ヵ", "ゝ", "ゞ"}
 
 _SHORT_TAIL_PUNCT = "。"
 _SHORT_TAIL_MAX_CHARS = 12
+try:
+    _JP_COMMON_ZIPF = float(os.environ.get("NIK_JP_COMMON_ZIPF", "4.0") or 4.0)
+except ValueError:
+    _JP_COMMON_ZIPF = 4.0
 
 DEFAULT_TORCH_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 DEFAULT_MLX_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"
@@ -1293,6 +1299,35 @@ def _lazy_import_fugashi() -> None:
     fugashi = _fugashi
 
 
+def _lazy_import_wordfreq() -> None:
+    global wordfreq
+    if wordfreq is not None:
+        return
+    try:
+        import wordfreq as _wordfreq
+    except Exception as exc:  # pragma: no cover - optional runtime dependency
+        raise RuntimeError(
+            "Japanese frequency guard requires wordfreq. Install it with `uv sync`."
+        ) from exc
+    wordfreq = _wordfreq
+
+
+def _jp_zipf_frequency(word: str) -> float:
+    cached = _JP_FREQ_CACHE.get(word)
+    if cached is not None:
+        return cached
+    _lazy_import_wordfreq()
+    freq = float(wordfreq.zipf_frequency(word, "ja"))
+    _JP_FREQ_CACHE[word] = freq
+    return freq
+
+
+def _is_common_japanese_word(word: str) -> bool:
+    if not word:
+        return False
+    return _jp_zipf_frequency(word) >= _JP_COMMON_ZIPF
+
+
 def _load_zh_lexicon() -> set[str]:
     global _ZH_LEXICON
     if _ZH_LEXICON is not None:
@@ -1395,10 +1430,12 @@ def _should_partial_convert(
         return False
     if any(ch in _KANJI_SAFE_MARKS for ch in surface):
         return False
-    if surface not in zh_lexicon:
-        return False
     length = len(surface)
     if length <= 1:
+        return False
+    if surface in zh_lexicon:
+        return True
+    if _is_common_japanese_word(surface):
         return False
     return True
 
@@ -1440,14 +1477,14 @@ def _normalize_kana_with_tagger(
                         has_numeric = True
                     if attrs.get("pos3") == "助数詞" or attrs.get("type") == "助数":
                         has_counter = True
+                action = ""
                 if has_numeric and has_counter:
                     action = "convert"
                 elif run_surface and run_surface in (zh_lexicon or set()):
                     action = "convert"
-                else:
-                    action = "keep"
-                for pos in range(idx, end):
-                    run_action[pos] = action
+                if action:
+                    for pos in range(idx, end):
+                        run_action[pos] = action
             idx = end
     for idx, token in enumerate(tokens):
         surface = getattr(token, "surface", "")
