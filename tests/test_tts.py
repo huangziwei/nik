@@ -457,6 +457,27 @@ def test_normalize_kana_with_stub_tagger_partial_rare() -> None:
     )
     assert out == "サイシ"
 
+
+def test_normalize_ruby_reading_small_yoon() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [DummyToken("京極堂", "キョウゴクドウ")]
+
+    out = tts_util._normalize_ruby_reading(
+        "京極堂", "きようごくどう", DummyTagger()
+    )
+    assert out == "きょうごくどう"
+
 def test_normalize_kana_with_stub_tagger_partial_kanji_run_convert() -> None:
     class DummyFeature:
         def __init__(

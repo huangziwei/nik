@@ -47,6 +47,7 @@ _KANA_TAGGER = None
 _KANA_TAGGER_DIR: Optional[Path] = None
 _ZH_LEXICON: Optional[set[str]] = None
 _JP_FREQ_CACHE: Dict[str, float] = {}
+_RUBY_BASE_READING_CACHE: Dict[str, str] = {}
 
 _END_PUNCT = set("。！？?!…")
 _MID_PUNCT = set("、，,;；:：")
@@ -89,6 +90,9 @@ _JP_OPEN_QUOTES = {"「", "『", "《", "〈", "【", "〔", "［", "｢", "〝"
 _JP_CLOSE_QUOTES = {"」", "』", "》", "〉", "】", "〕", "］", "｣", "〞", "〟"}
 _DASH_RUN_RE = re.compile(r"[‐‑‒–—―─━]{2,}")
 _KANJI_SAFE_MARKS = {"々", "〆", "ヶ", "ヵ", "ゝ", "ゞ"}
+_RUBY_YOON_LARGE = set("やゆよヤユヨ")
+_RUBY_YOON_SMALL_MAP = str.maketrans("やゆよヤユヨ", "ゃゅょャュョ")
+_RUBY_YOON_SMALL_KATA_MAP = str.maketrans("ヤユヨ", "ャュョ")
 
 _SHORT_TAIL_PUNCT = "。"
 _SHORT_TAIL_MAX_CHARS = 12
@@ -1421,6 +1425,90 @@ def _extract_token_attrs(token: Any) -> Dict[str, str]:
     return attrs
 
 
+def _base_reading_kata(base: str, tagger: Any) -> str:
+    base = unicodedata.normalize("NFKC", base or "")
+    if not base:
+        return ""
+    cached = _RUBY_BASE_READING_CACHE.get(base)
+    if cached is not None:
+        return cached
+    try:
+        tokens = list(tagger(base))
+    except Exception:
+        _RUBY_BASE_READING_CACHE[base] = ""
+        return ""
+    parts: List[str] = []
+    for token in tokens:
+        reading = _extract_token_reading(token)
+        if not reading:
+            _RUBY_BASE_READING_CACHE[base] = ""
+            return ""
+        parts.append(_hiragana_to_katakana(reading))
+    joined = "".join(parts)
+    _RUBY_BASE_READING_CACHE[base] = joined
+    return joined
+
+
+def _normalize_ruby_reading(base: str, reading: str, tagger: Any) -> str:
+    if not base or not reading:
+        return reading
+    if not any(ch in _RUBY_YOON_LARGE for ch in reading):
+        return reading
+    base_reading = _base_reading_kata(base, tagger)
+    if not base_reading:
+        return reading
+    reading_kata = _hiragana_to_katakana(unicodedata.normalize("NFKC", reading))
+    if reading_kata == base_reading:
+        return reading
+    smallified_kata = reading_kata.translate(_RUBY_YOON_SMALL_KATA_MAP)
+    if smallified_kata != base_reading:
+        return reading
+    return reading.translate(_RUBY_YOON_SMALL_MAP)
+
+
+def _normalize_ruby_entries(entries: Sequence[dict], tagger: Any) -> List[dict]:
+    out: List[dict] = []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        base = str(item.get("base") or "")
+        reading = str(item.get("reading") or "")
+        if not base or not reading:
+            out.append(item)
+            continue
+        if not any(ch in _RUBY_YOON_LARGE for ch in reading):
+            out.append(item)
+            continue
+        normalized = _normalize_ruby_reading(base, reading, tagger)
+        if normalized == reading:
+            out.append(item)
+            continue
+        updated = dict(item)
+        updated["reading"] = normalized
+        out.append(updated)
+    return out
+
+
+def _maybe_normalize_ruby_entries(entries: Sequence[dict]) -> List[dict]:
+    if not entries:
+        return list(entries)
+    needs_fix = False
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        reading = str(item.get("reading") or "")
+        if any(ch in _RUBY_YOON_LARGE for ch in reading):
+            needs_fix = True
+            break
+    if not needs_fix:
+        return list(entries)
+    try:
+        tagger = _get_kana_tagger()
+    except Exception:
+        return list(entries)
+    return _normalize_ruby_entries(entries, tagger)
+
+
 def _should_partial_convert(
     surface: str, attrs: Dict[str, str], zh_lexicon: set[str]
 ) -> bool:
@@ -1605,9 +1693,11 @@ def _apply_ruby_evidence(
         return text
     spans = _select_ruby_spans(chapter_id, text, ruby_data)
     if spans:
+        spans = _maybe_normalize_ruby_entries(spans)
         text = apply_ruby_spans(text, spans)
     ruby_global = _ruby_global_overrides(ruby_data)
     if ruby_global:
+        ruby_global = _maybe_normalize_ruby_entries(ruby_global)
         if skip_bases:
             ruby_global = [
                 item
@@ -1668,9 +1758,11 @@ def _apply_ruby_evidence_to_chunk(
     text = chunk_text
     spans = _chunk_ruby_spans(chunk_span, chapter_spans)
     if spans:
+        spans = _maybe_normalize_ruby_entries(spans)
         text = apply_ruby_spans(text, spans)
     ruby_global = _ruby_global_overrides(ruby_data)
     if ruby_global:
+        ruby_global = _maybe_normalize_ruby_entries(ruby_global)
         if skip_bases:
             ruby_global = [
                 item
