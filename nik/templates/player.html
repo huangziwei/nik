@@ -936,6 +936,14 @@
         z-index: 10;
       }
 
+      .menu-panel__label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        padding: 4px 8px 2px;
+      }
+
       .menu-panel.open {
         display: flex;
         flex-direction: column;
@@ -2347,9 +2355,9 @@
           downloadM4b: "M4B をダウンロード",
           deleteTtsCache: "TTS キャッシュを削除",
           deleteTtsCacheTitle: "この本の TTS セグメントを削除します。",
-          kanaStyleLabel: "かな表記",
-          kanaStylePartial: "部分変換（漢字を多めに残す）",
-          kanaStyleMixed: "混在 (ハジまる)",
+          kanaStyleLabel: "漢字変換",
+          kanaStylePartial: "部分（漢字を多めに残す）",
+          kanaStyleMixed: "全変換（漢字→かな）",
           kanaStyleKatakana: "カタカナ (ハジマル)",
           kanaStyleHiragana: "ひらがな (はじまる)",
           kanaStyleOff: "オフ（漢字のまま）",
@@ -2631,9 +2639,9 @@
           downloadM4b: "Download M4B",
           deleteTtsCache: "Delete TTS cache",
           deleteTtsCacheTitle: "Delete TTS segments for this book.",
-          kanaStyleLabel: "Kana Style",
-          kanaStylePartial: "Partial (keep kanji)",
-          kanaStyleMixed: "Mixed (ハジまる)",
+          kanaStyleLabel: "Kanji Transform",
+          kanaStylePartial: "Partial (keep more kanji)",
+          kanaStyleMixed: "All (kanji to kana)",
           kanaStyleKatakana: "Katakana (ハジマル)",
           kanaStyleHiragana: "Hiragana (はじまる)",
           kanaStyleOff: "Off (Keep Kanji)",
@@ -2875,20 +2883,30 @@
 
       function normalizeKanaStyle(value) {
         const cleaned = String(value || "").trim().toLowerCase();
-        if (cleaned === "off" || cleaned === "none" || cleaned === "disable") {
-          return "off";
-        }
         if (cleaned === "partial" || cleaned === "part" || cleaned === "p") {
           return "partial";
         }
-        if (cleaned === "hiragana" || cleaned === "hira" || cleaned === "h") {
-          return "hiragana";
-        }
-        if (cleaned === "katakana" || cleaned === "kata" || cleaned === "k") {
-          return "katakana";
-        }
-        if (cleaned === "mixed" || cleaned === "mix" || cleaned === "m") {
+        if (
+          cleaned === "mixed" ||
+          cleaned === "mix" ||
+          cleaned === "m" ||
+          cleaned === "all" ||
+          cleaned === "full"
+        ) {
           return "mixed";
+        }
+        if (
+          cleaned === "off" ||
+          cleaned === "none" ||
+          cleaned === "disable" ||
+          cleaned === "hiragana" ||
+          cleaned === "hira" ||
+          cleaned === "h" ||
+          cleaned === "katakana" ||
+          cleaned === "kata" ||
+          cleaned === "k"
+        ) {
+          return "partial";
         }
         return "partial";
       }
@@ -5098,12 +5116,13 @@
           return;
         }
         ttsMenuPanel.innerHTML = "";
+        const label = document.createElement("div");
+        label.className = "menu-panel__label";
+        label.textContent = t("kanaStyleLabel");
+        ttsMenuPanel.appendChild(label);
         const options = [
-          { value: "off", label: t("kanaStyleOff") },
           { value: "partial", label: t("kanaStylePartial") },
           { value: "mixed", label: t("kanaStyleMixed") },
-          { value: "katakana", label: t("kanaStyleKatakana") },
-          { value: "hiragana", label: t("kanaStyleHiragana") },
         ];
         options.forEach((option) => {
           const btn = document.createElement("button");
@@ -5198,12 +5217,13 @@
           return;
         }
         regenMenuPanel.innerHTML = "";
+        const label = document.createElement("div");
+        label.className = "menu-panel__label";
+        label.textContent = t("kanaStyleLabel");
+        regenMenuPanel.appendChild(label);
         const options = [
-          { value: "off", label: t("kanaStyleOff") },
           { value: "partial", label: t("kanaStylePartial") },
           { value: "mixed", label: t("kanaStyleMixed") },
-          { value: "katakana", label: t("kanaStyleKatakana") },
-          { value: "hiragana", label: t("kanaStyleHiragana") },
         ];
         options.forEach((option) => {
           const btn = document.createElement("button");
