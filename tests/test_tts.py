@@ -387,30 +387,47 @@ def test_normalize_kana_with_stub_tagger_partial_common_noun(monkeypatch) -> Non
     assert out == "自分"
 
 
-def test_normalize_kana_partial_canonicalizes_okurigana_variant() -> None:
+@pytest.mark.parametrize(
+    ("surface", "lemma", "lemma_reading", "reading", "expected"),
+    [
+        ("立上り", "立ち上がる", "タチアガル", "タチアガリ", "立ち上がり"),
+        ("立上がり", "立ち上がり", "タチアガリ", "タチアガリ", "立ち上がり"),
+        ("立ち上り", "立ち上がり", "タチアガリ", "タチアガリ", "立ち上がり"),
+        ("取消し", "取り消し", "トリケシ", "トリケシ", "取り消し"),
+        ("取戻す", "取り戻す", "トリモドス", "トリモドス", "取り戻す"),
+        ("立入る", "立ち入る", "タチイル", "タチイル", "立ち入る"),
+    ],
+)
+def test_normalize_kana_partial_canonicalizes_okurigana_variants(
+    surface: str,
+    lemma: str,
+    lemma_reading: str,
+    reading: str,
+    expected: str,
+) -> None:
     class DummyFeature:
         def __init__(self) -> None:
-            self.kana = "タチアガリ"
-            self.pron = "タチアガリ"
-            self.lemma = "立ち上がる"
-            self.lForm = "タチアガル"
+            self.kana = reading
+            self.pron = reading
+            self.lemma = lemma
+            self.lForm = lemma_reading
 
     class DummyToken:
-        def __init__(self, surface: str, feature: DummyFeature) -> None:
-            self.surface = surface
+        def __init__(self, token_surface: str, feature: DummyFeature) -> None:
+            self.surface = token_surface
             self.feature = feature
 
     class DummyTagger:
         def __call__(self, _text: str):
-            return [DummyToken("立上り", DummyFeature())]
+            return [DummyToken(surface, DummyFeature())]
 
     out = tts_util._normalize_kana_with_tagger(
-        "立上り",
+        surface,
         DummyTagger(),
         kana_style="partial",
         zh_lexicon=set(),
     )
-    assert out == "立ち上がり"
+    assert out == expected
 
 
 def test_normalize_kana_with_stub_tagger_partial_common_noun_guard(monkeypatch) -> None:
