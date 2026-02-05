@@ -155,6 +155,12 @@ def test_apply_reading_overrides_first_only() -> None:
     assert tts_util.apply_reading_overrides(text, overrides) == "やまだ山田"
 
 
+def test_apply_reading_overrides_isolated_kanji() -> None:
+    text = "束の間は間違い。"
+    overrides = [{"base": "間", "reading": "ま", "mode": "isolated"}]
+    assert tts_util.apply_reading_overrides(text, overrides) == "束のまは間違い。"
+
+
 def test_apply_ruby_spans() -> None:
     text = "前漢字後"
     spans = [{"start": 1, "end": 3, "base": "漢字", "reading": "かんじ"}]
@@ -340,6 +346,39 @@ def test_normalize_kana_with_stub_tagger_partial() -> None:
         "漢字始まる", DummyTagger(), kana_style="partial"
     )
     assert out == "カンジ始まる"
+
+
+def test_normalize_kana_with_stub_tagger_partial_kanji_run() -> None:
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            goshu: str | None = None,
+            pos1: str | None = None,
+            pos2: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.goshu = goshu
+            self.pos1 = pos1
+            self.pos2 = pos2
+
+    class DummyToken:
+        def __init__(self, surface: str, feature: DummyFeature) -> None:
+            self.surface = surface
+            self.feature = feature
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("漢", DummyFeature("カン", goshu="漢", pos1="名詞")),
+                DummyToken("字", DummyFeature("ジ", goshu="漢", pos1="名詞")),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "漢字", DummyTagger(), kana_style="partial"
+    )
+    assert out == "漢字"
 
 
 def test_normalize_numbers_standalone_digits() -> None:

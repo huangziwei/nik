@@ -718,10 +718,43 @@ def _has_kanji(text: str) -> bool:
     return False
 
 
+def _is_kanji_char(ch: str) -> bool:
+    if not ch:
+        return False
+    if len(ch) != 1:
+        return False
+    code = ord(ch)
+    ranges = (
+        (0x3400, 0x4DBF),  # CJK Unified Ideographs Extension A
+        (0x4E00, 0x9FFF),  # CJK Unified Ideographs
+        (0xF900, 0xFAFF),  # CJK Compatibility Ideographs
+        (0x20000, 0x2A6DF),  # CJK Unified Ideographs Extension B
+        (0x2A700, 0x2B73F),  # Extension C
+        (0x2B740, 0x2B81F),  # Extension D
+        (0x2B820, 0x2CEAF),  # Extension E
+        (0x2CEB0, 0x2EBEF),  # Extension F
+        (0x30000, 0x3134F),  # Extension G
+    )
+    for start, end in ranges:
+        if start <= code <= end:
+            return True
+    return False
+
+
 def _has_kana(text: str) -> bool:
     if not text:
         return False
     return any(_is_kana_char(ch) for ch in text)
+
+
+def _is_kanji_only(surface: str) -> bool:
+    if not surface:
+        return False
+    if _has_kana(surface):
+        return False
+    if any(ch.isascii() and ch.isalnum() for ch in surface):
+        return False
+    return _has_kanji(surface)
 
 
 def _has_japanese(text: str) -> bool:
@@ -1354,7 +1387,26 @@ def _normalize_kana_with_tagger(
         return text
     kana_style = _normalize_kana_style(kana_style)
     out: List[str] = []
-    for token in tagger(text):
+    tokens = list(tagger(text))
+    keep_run: List[bool] = [False] * len(tokens)
+    if kana_style == "partial" and tokens:
+        idx = 0
+        while idx < len(tokens):
+            surface = getattr(tokens[idx], "surface", "") or ""
+            if not _is_kanji_only(surface):
+                idx += 1
+                continue
+            end = idx + 1
+            while end < len(tokens):
+                next_surface = getattr(tokens[end], "surface", "") or ""
+                if not _is_kanji_only(next_surface):
+                    break
+                end += 1
+            if end - idx >= 2:
+                for pos in range(idx, end):
+                    keep_run[pos] = True
+            idx = end
+    for idx, token in enumerate(tokens):
         surface = getattr(token, "surface", "")
         if not surface:
             continue
@@ -1368,6 +1420,9 @@ def _normalize_kana_with_tagger(
         reading_kata = _hiragana_to_katakana(reading)
         if kana_style == "partial":
             attrs = _extract_token_attrs(token)
+            if keep_run[idx]:
+                out.append(surface)
+                continue
             if _should_partial_convert(surface, attrs):
                 out.append(_apply_surface_kana(reading_kata, surface))
             else:
@@ -1619,6 +1674,8 @@ def _normalize_reading_mode(value: object) -> str | None:
         return None
     if cleaned in {"first", "once", "single", "one"}:
         return "first"
+    if cleaned in {"isolated", "isolate", "boundary", "standalone"}:
+        return "isolated"
     return None
 
 
@@ -1756,7 +1813,10 @@ def _ruby_global_overrides(ruby_data: dict) -> List[dict[str, str]]:
             base = str(item.get("base") or "").strip()
             reading = str(item.get("reading") or "").strip()
             if base and reading:
-                overrides.append({"base": base, "reading": reading})
+                entry = {"base": base, "reading": reading}
+                if len(base) == 1:
+                    entry["mode"] = "isolated"
+                overrides.append(entry)
     return overrides
 
 
@@ -1805,11 +1865,34 @@ def apply_reading_overrides(
         mode = _normalize_reading_mode(item.get("mode"))
         if not base or not reading:
             continue
-        if mode == "first":
+        if mode == "isolated":
+            out = _replace_isolated_kanji(out, base, reading)
+        elif mode == "first":
             out = out.replace(base, reading, 1)
         else:
             out = out.replace(base, reading)
     return out
+
+
+def _replace_isolated_kanji(text: str, base: str, reading: str) -> str:
+    if not text or not base or not reading:
+        return text
+    if len(base) != 1:
+        return text.replace(base, reading)
+    ch = base
+    out: List[str] = []
+    length = len(text)
+    for idx, cur in enumerate(text):
+        if cur != ch:
+            out.append(cur)
+            continue
+        prev = text[idx - 1] if idx > 0 else ""
+        next_ch = text[idx + 1] if idx + 1 < length else ""
+        if _is_kanji_char(prev) or _is_kanji_char(next_ch):
+            out.append(cur)
+        else:
+            out.append(reading)
+    return "".join(out)
 
 
 def apply_ruby_spans(text: str, spans: Sequence[dict]) -> str:
