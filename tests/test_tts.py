@@ -173,6 +173,18 @@ def test_apply_reading_overrides_kanji_boundary() -> None:
     )
 
 
+def test_apply_reading_overrides_isolated_kanji_no_compound() -> None:
+    text = "なんだ、これが天国か？"
+    overrides = [{"base": "天", "reading": "てん", "mode": "isolated"}]
+    assert tts_util.apply_reading_overrides(text, overrides) == text
+
+
+def test_apply_reading_overrides_isolated_kanji_no_okurigana() -> None:
+    text = "好きにすれば"
+    overrides = [{"base": "好", "reading": "こう", "mode": "isolated"}]
+    assert tts_util.apply_reading_overrides(text, overrides) == text
+
+
 def test_split_reading_overrides_single_kanji_mode() -> None:
     data = {
         "chapters": {
