@@ -797,6 +797,16 @@ def test_normalize_numbers_kanji_digit_list() -> None:
     assert tts_util._normalize_numbers(text) == "いち、に席聞いて帰る"
 
 
+def test_normalize_numbers_kanji_counter_age() -> None:
+    text = "二十代半ば"
+    assert tts_util._normalize_numbers(text) == "にじゅうだい半ば"
+
+
+def test_normalize_numbers_kanji_counter_digit_seq() -> None:
+    text = "一七五センチはある"
+    assert tts_util._normalize_numbers(text) == "ひゃくななじゅうごセンチはある"
+
+
 def test_prepare_tts_text_strips_japanese_quotes() -> None:
     assert (
         tts_util.prepare_tts_text("「聖書」『旧約』《新約》“Test” 'OK'〝注〟don't")

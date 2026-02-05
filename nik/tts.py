@@ -152,6 +152,45 @@ _KANJI_DIGIT_READINGS = {
     "十": "じゅう",
 }
 
+_KANJI_NUMERAL_DIGITS = {
+    "〇": 0,
+    "零": 0,
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+}
+
+_KANJI_SMALL_UNIT_VALUES = {
+    "十": 10,
+    "百": 100,
+    "千": 1000,
+}
+
+_KANJI_BIG_UNIT_VALUES = {
+    "万": 10_000,
+    "億": 100_000_000,
+    "兆": 1_000_000_000_000,
+    "京": 10_000_000_000_000_000,
+}
+
+_KANA_DIGITS = {
+    1: "いち",
+    2: "に",
+    3: "さん",
+    4: "よん",
+    5: "ご",
+    6: "ろく",
+    7: "なな",
+    8: "はち",
+    9: "きゅう",
+}
+
 _KANJI_UNITS = ["", "十", "百", "千"]
 _KANJI_BIG_UNITS = ["", "万", "億", "兆", "京"]
 
@@ -252,10 +291,18 @@ _COUNTERS = [
     "歳",
     "才",
     "円",
+    "代",
+    "代目",
+    "センチ",
+    "センチメートル",
     "丁目",
     "番",
 ]
 
+_KANA_COUNTER_READINGS = {
+    "代": "だい",
+    "代目": "だいめ",
+}
 
 @dataclass(frozen=True)
 class ChapterInput:
@@ -1041,6 +1088,123 @@ def _digit_seq_to_kana(seq: str) -> str:
     return "".join(_DIGIT_KANA.get(ch, ch) for ch in seq)
 
 
+def _kanji_digit_seq_to_kana(seq: str) -> str:
+    if not seq:
+        return seq
+    out: List[str] = []
+    for ch in seq:
+        reading = _KANJI_DIGIT_READINGS.get(ch, ch)
+        out.append(_katakana_to_hiragana(reading))
+    return "".join(out)
+
+
+def _kanji_digits_to_int(seq: str) -> Optional[int]:
+    if not seq:
+        return None
+    value = 0
+    for ch in seq:
+        digit = _KANJI_NUMERAL_DIGITS.get(ch)
+        if digit is None:
+            return None
+        value = value * 10 + digit
+    return value
+
+
+def _parse_kanji_numeral(seq: str) -> Optional[int]:
+    if not seq:
+        return None
+    total = 0
+    section = 0
+    num = 0
+    saw = False
+    for ch in seq:
+        if ch in _KANJI_NUMERAL_DIGITS:
+            num = _KANJI_NUMERAL_DIGITS[ch]
+            saw = True
+            continue
+        if ch in _KANJI_SMALL_UNIT_VALUES:
+            unit = _KANJI_SMALL_UNIT_VALUES[ch]
+            saw = True
+            if num == 0:
+                num = 1
+            section += num * unit
+            num = 0
+            continue
+        if ch in _KANJI_BIG_UNIT_VALUES:
+            unit = _KANJI_BIG_UNIT_VALUES[ch]
+            saw = True
+            if num or section:
+                section += num
+            else:
+                section = 1
+            total += section * unit
+            section = 0
+            num = 0
+            continue
+        return None
+    if not saw:
+        return None
+    return total + section + num
+
+
+def _group_to_kana(value: int) -> str:
+    if value <= 0:
+        return ""
+    out: List[str] = []
+    thousands = value // 1000
+    hundreds = (value // 100) % 10
+    tens = (value // 10) % 10
+    ones = value % 10
+    if thousands:
+        if thousands == 1:
+            out.append("せん")
+        elif thousands == 3:
+            out.append("さんぜん")
+        elif thousands == 8:
+            out.append("はっせん")
+        else:
+            out.append(f"{_KANA_DIGITS[thousands]}せん")
+    if hundreds:
+        if hundreds == 1:
+            out.append("ひゃく")
+        elif hundreds == 3:
+            out.append("さんびゃく")
+        elif hundreds == 6:
+            out.append("ろっぴゃく")
+        elif hundreds == 8:
+            out.append("はっぴゃく")
+        else:
+            out.append(f"{_KANA_DIGITS[hundreds]}ひゃく")
+    if tens:
+        if tens == 1:
+            out.append("じゅう")
+        else:
+            out.append(f"{_KANA_DIGITS[tens]}じゅう")
+    if ones:
+        out.append(_KANA_DIGITS[ones])
+    return "".join(out)
+
+
+def _int_to_kana(value: int) -> str:
+    if value == 0:
+        return "ぜろ"
+    out: List[str] = []
+    group_index = 0
+    n = value
+    big_units = ["", "まん", "おく", "ちょう", "けい"]
+    while n > 0 and group_index < len(big_units):
+        group = n % 10000
+        if group:
+            part = _group_to_kana(group)
+            unit = big_units[group_index]
+            out.append(f"{part}{unit}" if unit else part)
+        n //= 10000
+        group_index += 1
+    if n > 0:
+        return _digit_seq_to_kana(str(value))
+    return "".join(reversed(out))
+
+
 def _group_to_kanji(value: int) -> str:
     if value <= 0:
         return ""
@@ -1215,6 +1379,28 @@ def _normalize_numbers(text: str) -> str:
             return "いちわ"
         return f"{_to_kanji_number(num)}{counter}"
 
+    def _replace_kanji_counter(match: re.Match) -> str:
+        num = match.group("num") or ""
+        counter = match.group("counter") or ""
+        if not num or not counter:
+            return match.group(0)
+        if counter in {"年", "月", "日"}:
+            return match.group(0)
+        counter_reading = _KANA_COUNTER_READINGS.get(counter, counter)
+        if any(
+            ch in _KANJI_SMALL_UNIT_VALUES or ch in _KANJI_BIG_UNIT_VALUES for ch in num
+        ):
+            value = _parse_kanji_numeral(num)
+            if value is None:
+                return match.group(0)
+            return f"{_int_to_kana(value)}{counter_reading}"
+        if any(ch in {"〇", "零"} for ch in num):
+            return f"{_kanji_digit_seq_to_kana(num)}{counter_reading}"
+        value = _kanji_digits_to_int(num)
+        if value is None:
+            return match.group(0)
+        return f"{_int_to_kana(value)}{counter_reading}"
+
     def _replace_ordinal(match: re.Match) -> str:
         num = match.group("num") or ""
         suffix = match.group("suffix") or ""
@@ -1293,6 +1479,20 @@ def _normalize_numbers(text: str) -> str:
         text = re.sub(
             rf"(?P<num>\d+)(?P<counter>{counters})",
             _replace_counter,
+            text,
+        )
+        kanji_numeral_chars = "".join(
+            sorted(
+                {
+                    *_KANJI_NUMERAL_DIGITS.keys(),
+                    *_KANJI_SMALL_UNIT_VALUES.keys(),
+                    *_KANJI_BIG_UNIT_VALUES.keys(),
+                }
+            )
+        )
+        text = re.sub(
+            rf"(?P<num>[{kanji_numeral_chars}]+)(?P<counter>{counters})",
+            _replace_kanji_counter,
             text,
         )
         text = re.sub(
