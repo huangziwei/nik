@@ -19,7 +19,7 @@ from . import merge as merge_util
 from . import sanitize as sanitize_util
 from . import tts as tts_util
 from . import voice as voice_util
-from .text import read_clean_text
+from .text import read_clean_text, guess_title_from_path
 
 
 def _summarize_ruby_pairs(
@@ -189,6 +189,49 @@ def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
     return 0
 
 
+def _ingest_txt(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
+    try:
+        text = input_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        text = input_path.read_text(encoding="utf-8", errors="replace")
+    title = guess_title_from_path(input_path)
+    chapter_title = title or "Chapter 1"
+    slug = epub_util.slugify(chapter_title)
+    filename = f"0001-{slug}.txt"
+    out_path = raw_dir / filename
+    out_path.write_text(text.rstrip() + "\n", encoding="utf-8")
+    toc_items = [
+        {
+            "index": 1,
+            "title": chapter_title,
+            "href": "",
+            "source": "",
+            "path": out_path.relative_to(out_dir).as_posix(),
+        }
+    ]
+    toc_data = {
+        "created_unix": int(time.time()),
+        "source_epub": str(input_path),
+        "metadata": {
+            "title": title,
+            "authors": [],
+            "language": "",
+            "dates": [],
+            "year": "",
+            "cover": None,
+        },
+        "chapters": toc_items,
+    }
+    toc_path = out_dir / "toc.json"
+    toc_path.write_text(
+        json.dumps(toc_data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    print(f"Wrote {len(toc_items)} chapters to {raw_dir}")
+    print(f"TOC metadata saved to {toc_path}")
+    return 0
+
+
 def _ingest(args: argparse.Namespace) -> int:
     input_path = Path(args.input)
     if not input_path.exists():
@@ -196,8 +239,8 @@ def _ingest(args: argparse.Namespace) -> int:
         return 2
 
     suffix = input_path.suffix.lower()
-    if suffix != ".epub":
-        sys.stderr.write("Only .epub files are supported.\n")
+    if suffix not in {".epub", ".txt"}:
+        sys.stderr.write("Only .epub or .txt files are supported.\n")
         return 2
 
     out_dir = Path(args.out)
@@ -212,6 +255,8 @@ def _ingest(args: argparse.Namespace) -> int:
             return 2
 
     raw_dir.mkdir(parents=True, exist_ok=True)
+    if suffix == ".txt":
+        return _ingest_txt(input_path, out_dir, raw_dir)
     return _ingest_epub(input_path, out_dir, raw_dir)
 
 
@@ -691,9 +736,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     ingest = subparsers.add_parser(
-        "ingest", help="Extract chapters from an EPUB (Japanese only)"
+        "ingest", help="Extract chapters from an EPUB or TXT (Japanese only)"
     )
-    ingest.add_argument("--input", required=True, help="Path to input .epub")
+    ingest.add_argument("--input", required=True, help="Path to input .epub or .txt")
     ingest.add_argument(
         "--out",
         "--output",

@@ -1162,10 +1162,10 @@ def create_app(root_dir: Path) -> FastAPI:
     def ingest_file(file: UploadFile = File(...), override: bool = False) -> JSONResponse:
         filename = file.filename or ""
         suffix = Path(filename).suffix.lower()
-        if suffix != ".epub":
+        if suffix not in {".epub", ".txt"}:
             raise HTTPException(
                 status_code=400,
-                detail="Only .epub files are supported.",
+                detail="Only .epub or .txt files are supported.",
             )
 
         tmp_path = None
@@ -1175,13 +1175,15 @@ def create_app(root_dir: Path) -> FastAPI:
                 shutil.copyfileobj(file.file, handle)
                 tmp_path = Path(handle.name)
 
-            try:
-                book = epub_util.read_epub(tmp_path)
-                metadata = epub_util.extract_metadata(book)
-                if metadata.get("title"):
-                    title = str(metadata.get("title") or "").strip() or title
-            except Exception:
-                metadata = {}
+            metadata = {}
+            if suffix == ".epub":
+                try:
+                    book = epub_util.read_epub(tmp_path)
+                    metadata = epub_util.extract_metadata(book)
+                    if metadata.get("title"):
+                        title = str(metadata.get("title") or "").strip() or title
+                except Exception:
+                    metadata = {}
 
             slug = _slug_from_title(title, Path(filename).stem)
             out_dir = root_dir / slug
