@@ -1310,11 +1310,6 @@ def _load_zh_lexicon() -> set[str]:
                 word = str(row.get("word") or "").strip()
                 if not word:
                     continue
-                word = unicodedata.normalize("NFKC", word)
-                if len(word) <= 1:
-                    continue
-                if not _is_kanji_only(word):
-                    continue
                 lex.add(word)
     except Exception as exc:
         raise RuntimeError("Failed to load modern-chinese-common-words.csv.") from exc
