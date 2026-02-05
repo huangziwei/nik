@@ -188,7 +188,7 @@ def test_split_reading_overrides_single_kanji_mode() -> None:
     _global, chapters = tts_util._split_reading_overrides_data(data)
     entries = chapters["c1"]
     entry_map = {item.get("base"): item for item in entries}
-    assert entry_map["天"].get("mode") == "kanji"
+    assert entry_map["天"].get("mode") == "isolated"
     assert entry_map["人"].get("mode") == "isolated"
     assert "mode" not in entry_map["天国"]
 

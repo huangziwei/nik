@@ -2382,7 +2382,7 @@ def _split_reading_overrides_data(
         return global_entries, {}
     overrides: dict[str, List[dict[str, str]]] = {}
     for chapter_id, entry in chapters_data.items():
-        replacements = _parse_reading_entries(entry, single_kanji_mode="kanji")
+        replacements = _parse_reading_entries(entry, single_kanji_mode="isolated")
         if replacements:
             overrides[str(chapter_id)] = replacements
     return global_entries, overrides
@@ -2437,7 +2437,7 @@ def _ruby_global_overrides(ruby_data: dict) -> List[dict[str, str]]:
             if base and reading:
                 entry = {"base": base, "reading": reading}
                 if len(base) == 1:
-                    entry["mode"] = "kanji"
+                    entry["mode"] = "isolated"
                 overrides.append(entry)
     return overrides
 
