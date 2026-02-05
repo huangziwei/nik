@@ -11,6 +11,7 @@ import re
 import shutil
 import sys
 import tempfile
+import csv
 import time
 import unicodedata
 import urllib.parse
@@ -43,6 +44,7 @@ fugashi = None
 
 _KANA_TAGGER = None
 _KANA_TAGGER_DIR: Optional[Path] = None
+_ZH_LEXICON: Optional[set[str]] = None
 
 _END_PUNCT = set("。！？?!…")
 _MID_PUNCT = set("、，,;；:：")
@@ -1291,6 +1293,35 @@ def _lazy_import_fugashi() -> None:
     fugashi = _fugashi
 
 
+def _load_zh_lexicon() -> set[str]:
+    global _ZH_LEXICON
+    if _ZH_LEXICON is not None:
+        return _ZH_LEXICON
+    lex: set[str] = set()
+    lex_path = Path(__file__).resolve().parent / "templates" / "modern-chinese-common-words.csv"
+    if not lex_path.exists():
+        raise RuntimeError(
+            f"Partial kana mode requires {lex_path}. Missing file."
+        )
+    try:
+        with lex_path.open(encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                word = str(row.get("word") or "").strip()
+                if not word:
+                    continue
+                word = unicodedata.normalize("NFKC", word)
+                if len(word) <= 1:
+                    continue
+                if not _is_kanji_only(word):
+                    continue
+                lex.add(word)
+    except Exception as exc:
+        raise RuntimeError("Failed to load modern-chinese-common-words.csv.") from exc
+    _ZH_LEXICON = lex
+    return lex
+
+
 def _get_kana_tagger() -> Any:
     global _KANA_TAGGER, _KANA_TAGGER_DIR
     dict_dir = _ensure_unidic_dir(_resolve_unidic_dir())
@@ -1353,35 +1384,25 @@ def _extract_token_attrs(token: Any) -> Dict[str, str]:
     return attrs
 
 
-def _should_partial_convert(surface: str, attrs: Dict[str, str]) -> bool:
+def _should_partial_convert(
+    surface: str, attrs: Dict[str, str], zh_lexicon: set[str]
+) -> bool:
     if not surface or not _has_kanji(surface):
         return False
     if _has_kana(surface):
         return False
     if any(ch in _KANJI_SAFE_MARKS for ch in surface):
         return False
+    if surface not in zh_lexicon:
+        return False
     length = len(surface)
     if length <= 1:
         return False
-    score = 0
-    goshu = attrs.get("goshu") or ""
-    pos1 = attrs.get("pos1") or ""
-    pos2 = attrs.get("pos2") or ""
-    if goshu in {"漢", "混", "外"}:
-        score += 1
-    if pos1 == "名詞" or pos2 == "固有名詞":
-        score += 1
-    if 2 <= length <= 4:
-        score += 1
-    if goshu == "和":
-        score -= 1
-    if length >= 5:
-        score -= 1
-    return score >= 2
+    return True
 
 
 def _normalize_kana_with_tagger(
-    text: str, tagger: Any, *, kana_style: str = "mixed"
+    text: str, tagger: Any, *, kana_style: str = "mixed", zh_lexicon: Optional[set[str]] = None
 ) -> str:
     if not text:
         return text
@@ -1390,6 +1411,8 @@ def _normalize_kana_with_tagger(
     tokens = list(tagger(text))
     keep_run: List[bool] = [False] * len(tokens)
     if kana_style == "partial" and tokens:
+        if zh_lexicon is None:
+            zh_lexicon = _load_zh_lexicon()
         idx = 0
         while idx < len(tokens):
             surface = getattr(tokens[idx], "surface", "") or ""
@@ -1423,7 +1446,7 @@ def _normalize_kana_with_tagger(
             if keep_run[idx]:
                 out.append(surface)
                 continue
-            if _should_partial_convert(surface, attrs):
+            if _should_partial_convert(surface, attrs, zh_lexicon or set()):
                 out.append(_apply_surface_kana(reading_kata, surface))
             else:
                 out.append(surface)
@@ -1444,6 +1467,9 @@ def _normalize_kana_text(text: str, *, kana_style: str = "mixed") -> str:
     if not _has_kanji(text):
         return text
     tagger = _get_kana_tagger()
+    zh_lexicon: Optional[set[str]] = None
+    if kana_style == "partial":
+        zh_lexicon = _load_zh_lexicon()
     parts = re.split(r"(\s+)", text)
     out: List[str] = []
     for part in parts:
@@ -1453,7 +1479,14 @@ def _normalize_kana_text(text: str, *, kana_style: str = "mixed") -> str:
             out.append(part)
             continue
         if _has_kanji(part):
-            out.append(_normalize_kana_with_tagger(part, tagger, kana_style=kana_style))
+            out.append(
+                _normalize_kana_with_tagger(
+                    part,
+                    tagger,
+                    kana_style=kana_style,
+                    zh_lexicon=zh_lexicon,
+                )
+            )
         else:
             out.append(part)
     return "".join(out)
