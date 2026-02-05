@@ -2351,6 +2351,7 @@
           kanaStyleMixed: "混在 (ハジまる)",
           kanaStyleKatakana: "カタカナ (ハジマル)",
           kanaStyleHiragana: "ひらがな (はじまる)",
+          kanaStyleOff: "オフ（漢字のまま）",
           idle: "待機中。",
           localVoices: "ローカルボイス",
           builtinVoices: "内蔵ボイス",
@@ -2633,6 +2634,7 @@
           kanaStyleMixed: "Mixed (ハジまる)",
           kanaStyleKatakana: "Katakana (ハジマル)",
           kanaStyleHiragana: "Hiragana (はじまる)",
+          kanaStyleOff: "Off (Keep Kanji)",
           idle: "Idle.",
           localVoices: "Local voices",
           builtinVoices: "Built-in voices",
@@ -2871,6 +2873,9 @@
 
       function normalizeKanaStyle(value) {
         const cleaned = String(value || "").trim().toLowerCase();
+        if (cleaned === "off" || cleaned === "none" || cleaned === "disable") {
+          return "off";
+        }
         if (cleaned === "hiragana" || cleaned === "hira" || cleaned === "h") {
           return "hiragana";
         }
@@ -5010,7 +5015,6 @@
         }
         if (kanaStyle) {
           setKanaStyle(kanaStyle);
-          saveSettings();
         }
         currentAudio.pause();
         nextAudio.pause();
@@ -5093,6 +5097,7 @@
           { value: "mixed", label: t("kanaStyleMixed") },
           { value: "katakana", label: t("kanaStyleKatakana") },
           { value: "hiragana", label: t("kanaStyleHiragana") },
+          { value: "off", label: t("kanaStyleOff") },
         ];
         options.forEach((option) => {
           const btn = document.createElement("button");
@@ -5191,6 +5196,7 @@
           { value: "mixed", label: t("kanaStyleMixed") },
           { value: "katakana", label: t("kanaStyleKatakana") },
           { value: "hiragana", label: t("kanaStyleHiragana") },
+          { value: "off", label: t("kanaStyleOff") },
         ];
         options.forEach((option) => {
           const btn = document.createElement("button");
@@ -5809,7 +5815,6 @@
         if (kanaStyle) {
           setKanaStyle(kanaStyle);
         }
-        saveSettings();
         if (state.advancedMode) {
           const saved = await saveVoiceMap();
           if (!saved) {

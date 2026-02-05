@@ -735,6 +735,8 @@ def _has_japanese(text: str) -> bool:
 
 def _normalize_kana_style(value: Optional[str]) -> str:
     normalized = (value or "mixed").strip().lower()
+    if normalized in {"off", "none", "disable", "disabled", "no"}:
+        return "off"
     if normalized in {"mixed", "mix", "m"}:
         return "mixed"
     if normalized in {"hiragana", "hira", "h"}:
@@ -1306,6 +1308,9 @@ def _normalize_kana_with_tagger(
 
 
 def _normalize_kana_text(text: str, *, kana_style: str = "mixed") -> str:
+    kana_style = _normalize_kana_style(kana_style)
+    if kana_style == "off":
+        return text
     if not _has_kanji(text):
         return text
     tagger = _get_kana_tagger()
@@ -2098,6 +2103,8 @@ def synthesize_book(
             )
     kana_normalize = bool(kana_normalize)
     kana_style = _normalize_kana_style(kana_style)
+    if kana_style == "off":
+        kana_normalize = False
     if out_dir is None:
         out_dir = book_dir / "tts"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -2512,6 +2519,8 @@ def synthesize_chunk(
     if kana_style is None:
         kana_style = manifest.get("kana_style")
     kana_style = _normalize_kana_style(kana_style)
+    if kana_style == "off":
+        kana_normalize = False
 
     voice_id = default_voice
     if voice_map_path:

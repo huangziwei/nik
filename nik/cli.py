@@ -865,9 +865,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     synth.add_argument(
         "--kana-style",
-        choices=("hiragana", "katakana", "mixed"),
+        choices=("hiragana", "katakana", "mixed", "off"),
         default="mixed",
-        help="Kana style when normalizing (default: mixed)",
+        help="Kana style when normalizing (default: mixed; use off to keep kanji)",
     )
     synth.add_argument(
         "--model",
@@ -943,9 +943,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sample.add_argument(
         "--kana-style",
-        choices=("hiragana", "katakana", "mixed"),
+        choices=("hiragana", "katakana", "mixed", "off"),
         default="mixed",
-        help="Kana style when normalizing (default: mixed)",
+        help="Kana style when normalizing (default: mixed; use off to keep kanji)",
     )
     sample.add_argument(
         "--model",
@@ -990,9 +990,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     kana.add_argument(
         "--kana-style",
-        choices=("hiragana", "katakana", "mixed"),
+        choices=("hiragana", "katakana", "mixed", "off"),
         default="mixed",
-        help="Kana style when normalizing (default: mixed)",
+        help="Kana style when normalizing (default: mixed; use off to keep kanji)",
     )
     kana.add_argument(
         "--debug",
