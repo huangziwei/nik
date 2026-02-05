@@ -2409,7 +2409,8 @@
           save: "保存",
           cancel: "キャンセル",
           overridesTitle: "読み上げ置換（全体）",
-          overridesHelp: "1 行 1 件: 漢字=かな。TTS 時のみ適用。",
+          overridesHelp:
+            "1 行 1 件: 漢字=かな。re: で正規表現可（例: re:御(存知|迷惑)=ご\\1）。TTS 時のみ適用。",
           saveOverrides: "置換を保存",
           rulesTitle: "ルール",
           rulesParagraphs: "段落区切り",
@@ -2693,7 +2694,8 @@
           save: "Save",
           cancel: "Cancel",
           overridesTitle: "Reading overrides (global)",
-          overridesHelp: "One per line: 漢字=かな. Applied at TTS time only.",
+          overridesHelp:
+            "One per line: 漢字=かな. Prefix with re: for regex (e.g., re:御(存知|迷惑)=ご\\1). Applied at TTS time only.",
           saveOverrides: "Save overrides",
           rulesTitle: "Rules",
           rulesParagraphs: "Paragraph breaks",
@@ -6358,7 +6360,12 @@
           return "";
         }
         return entries
-          .map((entry) => `${entry.base || ""}=${entry.reading || ""}`.trim())
+          .map((entry) => {
+            const rawBase = entry.pattern
+              ? `re:${entry.pattern}`
+              : (entry.base || "");
+            return `${rawBase}=${entry.reading || ""}`.trim();
+          })
           .filter((line) => line !== "=")
           .join("\n");
       }
@@ -6391,6 +6398,17 @@
             const reading = line.slice(sepIndex + sepLen).trim();
             if (!base || !reading) {
               invalid.push(line);
+              return;
+            }
+            const lowered = base.toLowerCase();
+            if (lowered.startsWith("re:") || lowered.startsWith("regex:")) {
+              const prefixLen = lowered.startsWith("re:") ? 3 : 6;
+              const pattern = base.slice(prefixLen).trim();
+              if (!pattern) {
+                invalid.push(line);
+                return;
+              }
+              entries.push({ pattern, reading, regex: true });
               return;
             }
             entries.push({ base, reading });

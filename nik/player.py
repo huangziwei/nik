@@ -400,15 +400,36 @@ def _normalize_reading_overrides(raw: object) -> List[dict[str, str]]:
     items = raw if isinstance(raw, list) else []
     cleaned: List[dict[str, str]] = []
     for item in items:
+        base = ""
+        reading = ""
+        pattern = ""
+        regex = False
         if isinstance(item, dict):
             base = str(item.get("base") or "").strip()
             reading = str(item.get("reading") or item.get("kana") or "").strip()
+            pattern = str(item.get("pattern") or "").strip()
+            regex = bool(item.get("regex"))
         elif isinstance(item, (list, tuple)) and len(item) >= 2:
             base = str(item[0] or "").strip()
             reading = str(item[1] or "").strip()
         else:
             continue
-        if base and reading:
+        if not reading:
+            continue
+        if pattern:
+            cleaned.append({"pattern": pattern, "reading": reading})
+            continue
+        if regex and base:
+            cleaned.append({"pattern": base, "reading": reading})
+            continue
+        if base:
+            lowered = base.lower()
+            if lowered.startswith("re:") or lowered.startswith("regex:"):
+                prefix_len = 3 if lowered.startswith("re:") else 6
+                regex_pattern = base[prefix_len:].strip()
+                if regex_pattern:
+                    cleaned.append({"pattern": regex_pattern, "reading": reading})
+                continue
             cleaned.append({"base": base, "reading": reading})
     return cleaned
 

@@ -161,6 +161,12 @@ def test_apply_reading_overrides_isolated_kanji() -> None:
     assert tts_util.apply_reading_overrides(text, overrides) == "「ま」は間違い。"
 
 
+def test_apply_reading_overrides_regex() -> None:
+    text = "御存知でした。御迷惑でした。"
+    overrides = [{"base": "re:御(存知|迷惑)", "reading": r"ご\1"}]
+    assert tts_util.apply_reading_overrides(text, overrides) == "ご存知でした。ご迷惑でした。"
+
+
 def test_apply_ruby_spans() -> None:
     text = "前漢字後"
     spans = [{"start": 1, "end": 3, "base": "漢字", "reading": "かんじ"}]
@@ -385,6 +391,109 @@ def test_normalize_kana_with_stub_tagger_partial_common_noun(monkeypatch) -> Non
         zh_lexicon=set(),
     )
     assert out == "自分"
+
+
+def test_normalize_kana_with_stub_tagger_partial_honorific_prefix(monkeypatch) -> None:
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            pos1: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+
+    class DummyToken:
+        def __init__(self, surface: str, feature: DummyFeature) -> None:
+            self.surface = surface
+            self.feature = feature
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("御", DummyFeature("ゴ", pos1="接頭辞")),
+                DummyToken("存知", DummyFeature("ゾンジ", pos1="名詞")),
+            ]
+
+    monkeypatch.setattr(tts_util, "_is_common_japanese_word", lambda _word: False)
+    out = tts_util._normalize_kana_with_tagger(
+        "御存知",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+    )
+    assert out == "ゴゾンジ"
+
+
+def test_normalize_kana_with_stub_tagger_partial_honorific_prefix_other_reading(
+    monkeypatch,
+) -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None, pos1: str | None = None) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+
+    class DummyToken:
+        def __init__(self, surface: str, feature: DummyFeature) -> None:
+            self.surface = surface
+            self.feature = feature
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("御", DummyFeature("ミ", pos1="接頭辞")),
+                DummyToken("子", DummyFeature("コ", pos1="名詞")),
+            ]
+
+    monkeypatch.setattr(tts_util, "_is_common_japanese_word", lambda _word: False)
+    out = tts_util._normalize_kana_with_tagger(
+        "御子",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+    )
+    assert out == "ミ子"
+
+
+def test_normalize_kana_with_stub_tagger_partial_honorific_prefix_go_o_choice(
+    monkeypatch,
+) -> None:
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            goshu: str | None = None,
+            pos1: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.goshu = goshu
+            self.pos1 = pos1
+
+    class DummyToken:
+        def __init__(self, surface: str, feature: DummyFeature) -> None:
+            self.surface = surface
+            self.feature = feature
+
+    class DummyTagger:
+        def __call__(self, text: str):
+            if text == "存知":
+                return [DummyToken("存知", DummyFeature("ゾンジ", goshu="漢", pos1="名詞"))]
+            return [
+                DummyToken("御", DummyFeature("オ", pos1="接頭辞")),
+                DummyToken("存知", DummyFeature("ゾンジ", goshu="漢", pos1="名詞")),
+            ]
+
+    monkeypatch.setattr(tts_util, "_is_common_japanese_word", lambda _word: False)
+    out = tts_util._normalize_kana_with_tagger(
+        "御存知",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+    )
+    assert out == "ゴゾンジ"
 
 
 @pytest.mark.parametrize(
@@ -693,7 +802,10 @@ def test_prepare_tts_text_adds_short_tail_punct() -> None:
 
 def test_load_reading_overrides(tmp_path: Path) -> None:
     payload = {
-        "global": [{"base": "妻子", "reading": "さいし"}],
+        "global": [
+            {"base": "妻子", "reading": "さいし"},
+            {"pattern": "御(存知)", "reading": r"ご\1"},
+        ],
         "chapters": {
             "0001-test": {
                 "replacements": [{"base": "漢字", "reading": "かんじ"}],
@@ -706,7 +818,10 @@ def test_load_reading_overrides(tmp_path: Path) -> None:
     global_overrides, overrides = tts_util._load_reading_overrides(
         tmp_path, include_template=False
     )
-    assert global_overrides == [{"base": "妻子", "reading": "さいし"}]
+    assert global_overrides == [
+        {"base": "妻子", "reading": "さいし"},
+        {"pattern": "御(存知)", "reading": r"ご\1"},
+    ]
     assert overrides == {"0001-test": [{"base": "漢字", "reading": "かんじ"}]}
 
 

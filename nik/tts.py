@@ -1602,6 +1602,70 @@ def _should_partial_convert(
     return True
 
 
+def _resolve_honorific_reading_kata(
+    surface: str,
+    reading_kata: str,
+    attrs: Dict[str, str],
+    *,
+    tagger: Any,
+    next_token: Optional[Any] = None,
+) -> str:
+    if not surface:
+        return reading_kata
+    if not surface.startswith("御"):
+        return reading_kata
+    if not reading_kata:
+        return reading_kata
+    reading_kata = _hiragana_to_katakana(unicodedata.normalize("NFKC", reading_kata))
+    if not _is_kana_reading(reading_kata):
+        return reading_kata
+    if reading_kata[0] not in {"オ", "ゴ"}:
+        return reading_kata
+    pos1 = attrs.get("pos1") or ""
+    if pos1 and pos1 != "接頭辞":
+        return reading_kata
+
+    rest_surface = ""
+    if surface == "御":
+        if next_token is not None:
+            rest_surface = str(getattr(next_token, "surface", "") or "")
+    else:
+        rest_surface = surface[1:]
+
+    goshu = ""
+    if surface == "御" and next_token is not None:
+        goshu = _extract_token_attrs(next_token).get("goshu", "")
+    if not goshu and rest_surface:
+        try:
+            rest_tokens = list(tagger(rest_surface))
+        except Exception:
+            rest_tokens = []
+        if rest_tokens:
+            goshu = _extract_token_attrs(rest_tokens[0]).get("goshu", "")
+
+    if goshu in {"漢", "外", "混"}:
+        return "ゴ" + reading_kata[1:]
+    if goshu == "和":
+        return "オ" + reading_kata[1:]
+    return reading_kata
+
+
+def _should_convert_honorific_prefix(
+    surface: str, reading_kata: str, attrs: Dict[str, str]
+) -> bool:
+    if surface != "御":
+        return False
+    if not reading_kata:
+        return False
+    reading_kata = _hiragana_to_katakana(unicodedata.normalize("NFKC", reading_kata))
+    if not _is_kana_reading(reading_kata):
+        return False
+    pos1 = attrs.get("pos1") or ""
+    if pos1 and pos1 != "接頭辞":
+        return False
+    return True
+
+
 def _normalize_kana_with_tagger(
     text: str, tagger: Any, *, kana_style: str = "mixed", zh_lexicon: Optional[set[str]] = None
 ) -> str:
@@ -1660,6 +1724,16 @@ def _normalize_kana_with_tagger(
             out.append(surface)
             continue
         reading_kata = _hiragana_to_katakana(reading)
+        next_token = tokens[idx + 1] if idx + 1 < len(tokens) else None
+        if surface.startswith("御"):
+            attrs = _extract_token_attrs(token)
+            reading_kata = _resolve_honorific_reading_kata(
+                surface,
+                reading_kata,
+                attrs,
+                tagger=tagger,
+                next_token=next_token,
+            )
         if kana_style == "partial":
             attrs = _extract_token_attrs(token)
             action = run_action[idx]
@@ -1668,6 +1742,9 @@ def _normalize_kana_with_tagger(
                 out.append(surface)
                 continue
             if action == "convert":
+                out.append(_apply_surface_kana(reading_kata, surface))
+                continue
+            if _should_convert_honorific_prefix(surface, reading_kata, attrs):
                 out.append(_apply_surface_kana(reading_kata, surface))
                 continue
             if _should_partial_convert(surface, attrs, zh_lexicon or set()):
@@ -1940,6 +2017,44 @@ def _normalize_reading_mode(value: object) -> str | None:
     return None
 
 
+_READING_REGEX_PREFIXES = ("re:", "regex:")
+
+
+def _split_reading_regex_prefix(text: str) -> tuple[bool, str]:
+    cleaned = str(text or "").strip()
+    lowered = cleaned.lower()
+    for prefix in _READING_REGEX_PREFIXES:
+        if lowered.startswith(prefix):
+            return True, cleaned[len(prefix) :].strip()
+    return False, cleaned
+
+
+def _normalize_reading_override_entry(raw: object) -> dict[str, str] | None:
+    if not isinstance(raw, dict):
+        return None
+    reading = str(raw.get("reading") or raw.get("kana") or "").strip()
+    if not reading:
+        return None
+    pattern = str(raw.get("pattern") or "").strip()
+    base = str(raw.get("base") or "").strip()
+    if pattern:
+        return {"pattern": pattern, "reading": reading}
+    if base and bool(raw.get("regex")):
+        return {"pattern": base, "reading": reading}
+    if base:
+        is_regex, pattern = _split_reading_regex_prefix(base)
+        if is_regex:
+            if not pattern:
+                return None
+            return {"pattern": pattern, "reading": reading}
+        entry = {"base": base, "reading": reading}
+        mode = _normalize_reading_mode(raw.get("mode") or raw.get("scope"))
+        if mode:
+            entry["mode"] = mode
+        return entry
+    return None
+
+
 def _parse_reading_entries(raw: object) -> List[dict[str, str]]:
     replacements: list[dict[str, str]] = []
     if isinstance(raw, dict):
@@ -1949,22 +2064,15 @@ def _parse_reading_entries(raw: object) -> List[dict[str, str]]:
     else:
         raw_replacements = []
     for item in raw_replacements:
+        entry: dict[str, str] | None = None
         if isinstance(item, dict):
-            base = str(item.get("base") or "").strip()
-            reading = str(item.get("reading") or item.get("kana") or "").strip()
-            mode = _normalize_reading_mode(item.get("mode") or item.get("scope"))
+            entry = _normalize_reading_override_entry(item)
         elif isinstance(item, (list, tuple)) and len(item) >= 2:
-            base = str(item[0] or "").strip()
-            reading = str(item[1] or "").strip()
-            mode = None
-        else:
-            continue
-        if not base or not reading:
-            continue
-        entry = {"base": base, "reading": reading}
-        if mode:
-            entry["mode"] = mode
-        replacements.append(entry)
+            entry = _normalize_reading_override_entry(
+                {"base": item[0], "reading": item[1]}
+            )
+        if entry:
+            replacements.append(entry)
     return replacements
 
 
@@ -1992,7 +2100,9 @@ def _parse_reading_overrides_text(text: str) -> List[dict[str, str]]:
         reading = reading.strip()
         if not base or not reading:
             continue
-        replacements.append({"base": base, "reading": reading})
+        entry = _normalize_reading_override_entry({"base": base, "reading": reading})
+        if entry:
+            replacements.append(entry)
     return replacements
 
 
@@ -2088,24 +2198,26 @@ def _merge_reading_overrides(
     if not global_overrides and not chapter_overrides:
         return []
     merged: dict[str, dict[str, str]] = {}
-    for item in global_overrides:
-        base = item.get("base", "")
-        reading = item.get("reading", "")
-        mode = _normalize_reading_mode(item.get("mode"))
-        if base and reading:
-            entry = {"base": base, "reading": reading}
-            if mode:
-                entry["mode"] = mode
-            merged[base] = entry
-    for item in chapter_overrides:
-        base = item.get("base", "")
-        reading = item.get("reading", "")
-        mode = _normalize_reading_mode(item.get("mode"))
-        if base and reading:
-            entry = {"base": base, "reading": reading}
-            if mode:
-                entry["mode"] = mode
-            merged[base] = entry
+
+    def key_for(entry: dict[str, str]) -> str:
+        pattern = str(entry.get("pattern") or "").strip()
+        if pattern:
+            return f"re:{pattern}"
+        base = str(entry.get("base") or "").strip()
+        return f"lit:{base}" if base else ""
+
+    def add_items(items: Sequence[dict[str, str]]) -> None:
+        for item in items:
+            entry = _normalize_reading_override_entry(item)
+            if not entry:
+                continue
+            key = key_for(entry)
+            if not key:
+                continue
+            merged[key] = entry
+
+    add_items(global_overrides)
+    add_items(chapter_overrides)
     return list(merged.values())
 
 
@@ -2114,8 +2226,18 @@ def apply_reading_overrides(
 ) -> str:
     if not overrides:
         return text
+    literals: list[dict[str, str]] = []
+    regex_entries: list[dict[str, str]] = []
+    for item in overrides:
+        entry = _normalize_reading_override_entry(item)
+        if not entry:
+            continue
+        if entry.get("pattern"):
+            regex_entries.append(entry)
+        else:
+            literals.append(entry)
     ordered = sorted(
-        overrides,
+        literals,
         key=lambda item: len(item.get("base", "")),
         reverse=True,
     )
@@ -2132,6 +2254,15 @@ def apply_reading_overrides(
             out = out.replace(base, reading, 1)
         else:
             out = out.replace(base, reading)
+    for item in regex_entries:
+        pattern = str(item.get("pattern") or "")
+        reading = str(item.get("reading") or "")
+        if not pattern or not reading:
+            continue
+        try:
+            out = re.sub(pattern, reading, out)
+        except re.error:
+            continue
     return out
 
 
