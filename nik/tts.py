@@ -1348,7 +1348,7 @@ def _extract_token_reading(token: Any) -> str:
 
 
 def _extract_token_attrs(token: Any) -> Dict[str, str]:
-    attrs = {"goshu": "", "pos1": "", "pos2": ""}
+    attrs = {"goshu": "", "pos1": "", "pos2": "", "pos3": "", "pos4": "", "type": ""}
     feature = getattr(token, "feature", None)
     if not feature:
         return attrs
@@ -1363,6 +1363,9 @@ def _extract_token_attrs(token: Any) -> Dict[str, str]:
     attrs["goshu"] = _pick(("goshu",))
     attrs["pos1"] = _pick(("pos1", "pos"))
     attrs["pos2"] = _pick(("pos2",))
+    attrs["pos3"] = _pick(("pos3",))
+    attrs["pos4"] = _pick(("pos4",))
+    attrs["type"] = _pick(("type",))
 
     raw = str(feature)
     if raw and "," in raw:
@@ -1371,6 +1374,10 @@ def _extract_token_attrs(token: Any) -> Dict[str, str]:
             attrs["pos1"] = parts[0]
         if not attrs["pos2"] and len(parts) > 1:
             attrs["pos2"] = parts[1]
+        if not attrs["pos3"] and len(parts) > 2:
+            attrs["pos3"] = parts[2]
+        if not attrs["pos4"] and len(parts) > 3:
+            attrs["pos4"] = parts[3]
         if not attrs["goshu"]:
             for part in parts:
                 if part in {"漢", "和", "混", "外"}:
@@ -1404,7 +1411,7 @@ def _normalize_kana_with_tagger(
     kana_style = _normalize_kana_style(kana_style)
     out: List[str] = []
     tokens = list(tagger(text))
-    keep_run: List[bool] = [False] * len(tokens)
+    run_action: List[str] = [""] * len(tokens)
     if kana_style == "partial" and tokens:
         if zh_lexicon is None:
             zh_lexicon = _load_zh_lexicon()
@@ -1421,8 +1428,26 @@ def _normalize_kana_with_tagger(
                     break
                 end += 1
             if end - idx >= 2:
+                run_surface = "".join(
+                    str(getattr(tokens[pos], "surface", "") or "")
+                    for pos in range(idx, end)
+                )
+                has_numeric = False
+                has_counter = False
                 for pos in range(idx, end):
-                    keep_run[pos] = True
+                    attrs = _extract_token_attrs(tokens[pos])
+                    if attrs.get("pos2") == "数詞" or attrs.get("type") == "数":
+                        has_numeric = True
+                    if attrs.get("pos3") == "助数詞" or attrs.get("type") == "助数":
+                        has_counter = True
+                if has_numeric and has_counter:
+                    action = "convert"
+                elif run_surface and run_surface in (zh_lexicon or set()):
+                    action = "convert"
+                else:
+                    action = "keep"
+                for pos in range(idx, end):
+                    run_action[pos] = action
             idx = end
     for idx, token in enumerate(tokens):
         surface = getattr(token, "surface", "")
@@ -1438,8 +1463,12 @@ def _normalize_kana_with_tagger(
         reading_kata = _hiragana_to_katakana(reading)
         if kana_style == "partial":
             attrs = _extract_token_attrs(token)
-            if keep_run[idx]:
+            action = run_action[idx]
+            if action == "keep":
                 out.append(surface)
+                continue
+            if action == "convert":
+                out.append(_apply_surface_kana(reading_kata, surface))
                 continue
             if _should_partial_convert(surface, attrs, zh_lexicon or set()):
                 out.append(_apply_surface_kana(reading_kata, surface))

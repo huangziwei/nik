@@ -420,7 +420,7 @@ def test_normalize_kana_with_stub_tagger_partial_rare() -> None:
     )
     assert out == "サイシ"
 
-def test_normalize_kana_with_stub_tagger_partial_kanji_run() -> None:
+def test_normalize_kana_with_stub_tagger_partial_kanji_run_convert() -> None:
     class DummyFeature:
         def __init__(
             self,
@@ -449,6 +449,78 @@ def test_normalize_kana_with_stub_tagger_partial_kanji_run() -> None:
 
     out = tts_util._normalize_kana_with_tagger(
         "漢字", DummyTagger(), kana_style="partial", zh_lexicon={"漢字"}
+    )
+    assert out == "カンジ"
+
+
+def test_normalize_kana_with_stub_tagger_partial_numeric_counter() -> None:
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            goshu: str | None = None,
+            pos1: str | None = None,
+            pos2: str | None = None,
+            pos3: str | None = None,
+            pos4: str | None = None,
+            type_: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.goshu = goshu
+            self.pos1 = pos1
+            self.pos2 = pos2
+            self.pos3 = pos3
+            self.pos4 = pos4
+            self.type = type_
+
+    class DummyToken:
+        def __init__(self, surface: str, feature: DummyFeature) -> None:
+            self.surface = surface
+            self.feature = feature
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("十", DummyFeature("トオ", pos1="名詞", pos2="数詞", type_="数")),
+                DummyToken("日", DummyFeature("カ", pos1="接尾辞", pos2="名詞的", pos3="助数詞", type_="助数")),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "十日", DummyTagger(), kana_style="partial", zh_lexicon=set()
+    )
+    assert out == "トオカ"
+
+
+def test_normalize_kana_with_stub_tagger_partial_kanji_run_keep() -> None:
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            goshu: str | None = None,
+            pos1: str | None = None,
+            pos2: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.goshu = goshu
+            self.pos1 = pos1
+            self.pos2 = pos2
+
+    class DummyToken:
+        def __init__(self, surface: str, feature: DummyFeature) -> None:
+            self.surface = surface
+            self.feature = feature
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("漢", DummyFeature("カン", goshu="漢", pos1="名詞")),
+                DummyToken("字", DummyFeature("ジ", goshu="漢", pos1="名詞")),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "漢字", DummyTagger(), kana_style="partial", zh_lexicon=set()
     )
     assert out == "漢字"
 
