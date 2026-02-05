@@ -3198,7 +3198,10 @@ def synthesize_book(
                 if kana_normalize and kana_tagger and _has_kanji(tts_source):
                     try:
                         tts_source = _normalize_kana_with_tagger(
-                            tts_source, kana_tagger, kana_style=kana_style
+                            tts_source,
+                            kana_tagger,
+                            kana_style=kana_style,
+                            force_first_kanji=True,
                         )
                     except Exception as exc:
                         sys.stderr.write(f"Failed kana normalization: {exc}\n")

@@ -807,6 +807,79 @@ def test_normalize_kana_first_token_partial() -> None:
     assert out == "なげつけ好き"
 
 
+def test_synthesize_book_force_first_kanji(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: dict[str, bool] = {}
+
+    def fake_normalize(
+        text: str,
+        _tagger: object,
+        *,
+        kana_style: str = "mixed",
+        zh_lexicon: set[str] | None = None,
+        force_first_kanji: bool = False,
+    ) -> str:
+        calls["force_first_kanji"] = force_first_kanji
+        return text
+
+    def fake_prepare_manifest(**_kwargs):
+        manifest = {
+            "chapters": [
+                {
+                    "id": "c1",
+                    "title": "c1",
+                    "chunks": ["投げつけ"],
+                    "durations_ms": [None],
+                    "chunk_spans": [[0, 3]],
+                }
+            ]
+        }
+        return manifest, [["投げつけ"]]
+
+    unidic_dir = tmp_path / "unidic"
+    unidic_dir.mkdir()
+    (unidic_dir / "dicrc").write_text("stub", encoding="utf-8")
+
+    monkeypatch.setattr(tts_util, "_normalize_kana_with_tagger", fake_normalize)
+    monkeypatch.setattr(tts_util, "_prepare_manifest", fake_prepare_manifest)
+    monkeypatch.setattr(tts_util, "_select_backend", lambda _backend: "torch")
+    monkeypatch.setattr(tts_util, "_resolve_model_name", lambda _name, _backend: "dummy")
+    monkeypatch.setattr(tts_util, "_load_model", lambda **_kwargs: object())
+    monkeypatch.setattr(tts_util, "_prepare_voice_prompt", lambda _model, _voice: (None, "Japanese"))
+    monkeypatch.setattr(
+        tts_util,
+        "_generate_audio",
+        lambda *_args, **_kwargs: ([tts_util.np.zeros(1)], 24000),
+    )
+    monkeypatch.setattr(tts_util, "_load_voice_map", lambda _path: {})
+    monkeypatch.setattr(tts_util, "_load_reading_overrides", lambda _book_dir: ([], {}))
+    monkeypatch.setattr(tts_util, "_load_ruby_data", lambda _book_dir: {})
+    monkeypatch.setattr(tts_util, "_get_kana_tagger", lambda: object())
+    monkeypatch.setattr(tts_util, "_resolve_unidic_dir", lambda: unidic_dir)
+    monkeypatch.setattr(
+        tts_util,
+        "load_book_chapters",
+        lambda _book_dir: [
+            tts_util.ChapterInput(
+                index=1, id="c1", title="c1", text="投げつけ"
+            )
+        ],
+    )
+
+    voice = voice_util.VoiceConfig(
+        name="v", ref_audio=str(tmp_path / "ref.wav"), ref_text="dummy"
+    )
+    out_dir = tmp_path / "tts"
+    result = tts_util.synthesize_book(
+        book_dir=tmp_path,
+        voice=voice,
+        out_dir=out_dir,
+        kana_normalize=True,
+        kana_style="partial",
+    )
+    assert result == 0
+    assert calls.get("force_first_kanji") is True
+
+
 def test_normalize_numbers_standalone_digits() -> None:
     text = "全7冊 合本版"
     assert tts_util._normalize_numbers(text) == "全七冊 合本版"
