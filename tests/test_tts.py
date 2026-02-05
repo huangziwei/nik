@@ -847,6 +847,11 @@ def test_normalize_numbers_kanji_counter_digit_seq() -> None:
     assert tts_util._normalize_numbers(text) == "ひゃくななじゅうごセンチはある"
 
 
+def test_normalize_numbers_person_readings() -> None:
+    text = "一人で二人と4人"
+    assert tts_util._normalize_numbers(text) == "ひとりでふたりとよにん"
+
+
 def test_prepare_tts_text_strips_japanese_quotes() -> None:
     assert (
         tts_util.prepare_tts_text("「聖書」『旧約』《新約》“Test” 'OK'〝注〟don't")

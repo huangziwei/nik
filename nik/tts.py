@@ -1396,6 +1396,18 @@ def _normalize_numbers(text: str) -> str:
             return match.group(0)
         if counter == "話" and num == "1":
             return "いちわ"
+        if counter == "人":
+            try:
+                value = int(num)
+            except ValueError:
+                return match.group(0)
+            if value == 1:
+                return "ひとり"
+            if value == 2:
+                return "ふたり"
+            if value == 4:
+                return "よにん"
+            return f"{_int_to_kana(value)}にん"
         return f"{_to_kanji_number(num)}{counter}"
 
     def _replace_kanji_counter(match: re.Match) -> str:
@@ -1405,6 +1417,24 @@ def _normalize_numbers(text: str) -> str:
             return match.group(0)
         if counter in {"年", "月", "日"}:
             return match.group(0)
+        if counter == "人":
+            if any(
+                ch in _KANJI_SMALL_UNIT_VALUES or ch in _KANJI_BIG_UNIT_VALUES for ch in num
+            ):
+                value = _parse_kanji_numeral(num)
+            elif any(ch in {"〇", "零"} for ch in num):
+                value = _kanji_digits_to_int(num)
+            else:
+                value = _kanji_digits_to_int(num)
+            if value is None:
+                return match.group(0)
+            if value == 1:
+                return "ひとり"
+            if value == 2:
+                return "ふたり"
+            if value == 4:
+                return "よにん"
+            return f"{_int_to_kana(value)}にん"
         counter_reading = _KANA_COUNTER_READINGS.get(counter, counter)
         if any(
             ch in _KANJI_SMALL_UNIT_VALUES or ch in _KANJI_BIG_UNIT_VALUES for ch in num
