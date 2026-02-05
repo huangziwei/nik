@@ -84,6 +84,7 @@ _JP_QUOTE_CHARS = {
 _JP_OPEN_QUOTES = {"「", "『", "《", "〈", "【", "〔", "［", "｢", "〝"}
 _JP_CLOSE_QUOTES = {"」", "』", "》", "〉", "】", "〕", "］", "｣", "〞", "〟"}
 _DASH_RUN_RE = re.compile(r"[‐‑‒–—―─━]{2,}")
+_KANJI_SAFE_MARKS = {"々", "〆", "ヶ", "ヵ", "ゝ", "ゞ"}
 
 _SHORT_TAIL_PUNCT = "。"
 _SHORT_TAIL_MAX_CHARS = 12
@@ -717,6 +718,12 @@ def _has_kanji(text: str) -> bool:
     return False
 
 
+def _has_kana(text: str) -> bool:
+    if not text:
+        return False
+    return any(_is_kana_char(ch) for ch in text)
+
+
 def _has_japanese(text: str) -> bool:
     if not text:
         return False
@@ -737,6 +744,8 @@ def _normalize_kana_style(value: Optional[str]) -> str:
     normalized = (value or "mixed").strip().lower()
     if normalized in {"off", "none", "disable", "disabled", "no"}:
         return "off"
+    if normalized in {"partial", "part", "p"}:
+        return "partial"
     if normalized in {"mixed", "mix", "m"}:
         return "mixed"
     if normalized in {"hiragana", "hira", "h"}:
@@ -1279,6 +1288,65 @@ def _extract_token_reading(token: Any) -> str:
     return ""
 
 
+def _extract_token_attrs(token: Any) -> Dict[str, str]:
+    attrs = {"goshu": "", "pos1": "", "pos2": ""}
+    feature = getattr(token, "feature", None)
+    if not feature:
+        return attrs
+
+    def _pick(names: Sequence[str]) -> str:
+        for name in names:
+            value = getattr(feature, name, None)
+            if value and value != "*":
+                return str(value)
+        return ""
+
+    attrs["goshu"] = _pick(("goshu",))
+    attrs["pos1"] = _pick(("pos1", "pos"))
+    attrs["pos2"] = _pick(("pos2",))
+
+    raw = str(feature)
+    if raw and "," in raw:
+        parts = [p.strip() for p in raw.split(",")]
+        if not attrs["pos1"] and len(parts) > 0:
+            attrs["pos1"] = parts[0]
+        if not attrs["pos2"] and len(parts) > 1:
+            attrs["pos2"] = parts[1]
+        if not attrs["goshu"]:
+            for part in parts:
+                if part in {"漢", "和", "混", "外"}:
+                    attrs["goshu"] = part
+                    break
+    return attrs
+
+
+def _should_partial_convert(surface: str, attrs: Dict[str, str]) -> bool:
+    if not surface or not _has_kanji(surface):
+        return False
+    if _has_kana(surface):
+        return False
+    if any(ch in _KANJI_SAFE_MARKS for ch in surface):
+        return False
+    length = len(surface)
+    if length <= 1:
+        return False
+    score = 0
+    goshu = attrs.get("goshu") or ""
+    pos1 = attrs.get("pos1") or ""
+    pos2 = attrs.get("pos2") or ""
+    if goshu in {"漢", "混", "外"}:
+        score += 1
+    if pos1 == "名詞" or pos2 == "固有名詞":
+        score += 1
+    if 2 <= length <= 4:
+        score += 1
+    if goshu == "和":
+        score -= 1
+    if length >= 5:
+        score -= 1
+    return score >= 2
+
+
 def _normalize_kana_with_tagger(
     text: str, tagger: Any, *, kana_style: str = "mixed"
 ) -> str:
@@ -1298,6 +1366,13 @@ def _normalize_kana_with_tagger(
             out.append(surface)
             continue
         reading_kata = _hiragana_to_katakana(reading)
+        if kana_style == "partial":
+            attrs = _extract_token_attrs(token)
+            if _should_partial_convert(surface, attrs):
+                out.append(_apply_surface_kana(reading_kata, surface))
+            else:
+                out.append(surface)
+            continue
         if kana_style == "katakana":
             out.append(reading_kata)
         elif kana_style == "hiragana":

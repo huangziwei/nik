@@ -861,7 +861,7 @@ class SynthRequest(BaseModel):
     rechunk: bool = False
     use_voice_map: bool = False
     kana_normalize: bool = True
-    kana_style: str = "mixed"
+    kana_style: str = "partial"
 
 
 class ChunkSynthRequest(BaseModel):

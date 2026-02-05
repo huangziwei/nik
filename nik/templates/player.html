@@ -2126,7 +2126,7 @@
         },
         voicePreference: null,
         selectedVoice: null,
-        kanaStyle: "mixed",
+        kanaStyle: "partial",
         advancedMode: false,
         voiceMap: { default: null, chapters: {} },
         voiceOptions: [],
@@ -2348,6 +2348,7 @@
           deleteTtsCache: "TTS キャッシュを削除",
           deleteTtsCacheTitle: "この本の TTS セグメントを削除します。",
           kanaStyleLabel: "かな表記",
+          kanaStylePartial: "部分変換（漢字を多めに残す）",
           kanaStyleMixed: "混在 (ハジまる)",
           kanaStyleKatakana: "カタカナ (ハジマル)",
           kanaStyleHiragana: "ひらがな (はじまる)",
@@ -2631,6 +2632,7 @@
           deleteTtsCache: "Delete TTS cache",
           deleteTtsCacheTitle: "Delete TTS segments for this book.",
           kanaStyleLabel: "Kana Style",
+          kanaStylePartial: "Partial (keep kanji)",
           kanaStyleMixed: "Mixed (ハジまる)",
           kanaStyleKatakana: "Katakana (ハジマル)",
           kanaStyleHiragana: "Hiragana (はじまる)",
@@ -2876,6 +2878,9 @@
         if (cleaned === "off" || cleaned === "none" || cleaned === "disable") {
           return "off";
         }
+        if (cleaned === "partial" || cleaned === "part" || cleaned === "p") {
+          return "partial";
+        }
         if (cleaned === "hiragana" || cleaned === "hira" || cleaned === "h") {
           return "hiragana";
         }
@@ -2885,7 +2890,7 @@
         if (cleaned === "mixed" || cleaned === "mix" || cleaned === "m") {
           return "mixed";
         }
-        return "mixed";
+        return "partial";
       }
 
       function setKanaStyle(value, persist = true) {
@@ -5094,10 +5099,11 @@
         }
         ttsMenuPanel.innerHTML = "";
         const options = [
+          { value: "off", label: t("kanaStyleOff") },
+          { value: "partial", label: t("kanaStylePartial") },
           { value: "mixed", label: t("kanaStyleMixed") },
           { value: "katakana", label: t("kanaStyleKatakana") },
           { value: "hiragana", label: t("kanaStyleHiragana") },
-          { value: "off", label: t("kanaStyleOff") },
         ];
         options.forEach((option) => {
           const btn = document.createElement("button");
@@ -5193,10 +5199,11 @@
         }
         regenMenuPanel.innerHTML = "";
         const options = [
+          { value: "off", label: t("kanaStyleOff") },
+          { value: "partial", label: t("kanaStylePartial") },
           { value: "mixed", label: t("kanaStyleMixed") },
           { value: "katakana", label: t("kanaStyleKatakana") },
           { value: "hiragana", label: t("kanaStyleHiragana") },
-          { value: "off", label: t("kanaStyleOff") },
         ];
         options.forEach((option) => {
           const btn = document.createElement("button");
