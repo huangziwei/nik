@@ -877,7 +877,7 @@ class SynthRequest(BaseModel):
     book_id: str
     voice: Optional[str] = None
     max_chars: int = 220
-    pad_ms: int = 120
+    pad_ms: int = 150
     chunk_mode: str = "japanese"
     rechunk: bool = False
     use_voice_map: bool = False
