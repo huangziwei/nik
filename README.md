@@ -1,28 +1,16 @@
 # nik
 
-Japanese EPUB -> M4B pipeline using Qwen TTS voice cloning, superseding [nk](https://github.com/huangziwei/nk).
+`nik` is essentially a Japanese counterpart to [ptts](https://github.com/huangziwei/ptts): it converts Japanese EPUBs to M4B using Qwen3-TTS instead of Pocket-TTS, superseding [nk](https://github.com/huangziwei/nk).
 
-## Prerequisites
+The most difficult part of using Qwen3-TTS is forcing it to speak monolingually. It is challenging because Japanese and Chinese share a lot of vocabulary, and the model seems to default to Mandarin even when we set `language="japanese"` during TTS synthesis. I tried many things:
 
-- Apple Silicon Mac (arm64)
-- Python 3.12
-- `ffmpeg` on PATH (required for merge, voice clip prep, and Whisper)
-
-## Installation
-
-Apple Silicon (MLX backend):
-```bash
-uv sync --prerelease=allow
-```
-
-### UniDic setup (kana normalization)
-- The first TTS run will download the UniDic dictionary to `~/.cache/nik/unidic-cwj-202512_full`.
-- Override the dictionary path with `NIK_UNIDIC_DIR=/path/to/unidic`.
-- Override the download URL with `NIK_UNIDIC_URL=...` if you maintain a custom mirror.
+1. Convert all kanji to kana. This turns out to be a bad idea because the model loses context and cannot read the words with correct pitch.
+2. Convert some kanji if they are [common Chinese words](https://github.com/huangziwei/mcc) or rare Japanese words not in UniDic. This helps, but it still converts too many kanji words and introduces unnatural sounds.
+3. The trick that works so far is to convert only the first kanji word at chunk beginnings. It seems to prime the model to speak only Japanese :)
 
 ## Usage
 
-### Play in web UI
 ```bash
+uv sync --prerelease=allow
 uv run nik play --port 2999
 ```
