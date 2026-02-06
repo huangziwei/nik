@@ -1967,6 +1967,7 @@ def _normalize_kana_with_tagger(
     out: List[str] = []
     tokens = list(tagger(text))
     run_action: List[str] = [""] * len(tokens)
+    force_first_span: set[int] = set()
     first_kanji_done = False
     if kana_style == "partial" and tokens:
         if zh_lexicon is None:
@@ -2005,6 +2006,23 @@ def _normalize_kana_with_tagger(
                     for pos in range(idx, end):
                         run_action[pos] = action
             idx = end
+    if kana_style == "partial" and force_first_kanji and tokens:
+        first_idx = None
+        for idx, token in enumerate(tokens):
+            surface = getattr(token, "surface", "") or ""
+            if surface and _has_kanji(surface):
+                first_idx = idx
+                break
+        if first_idx is not None:
+            surface = getattr(tokens[first_idx], "surface", "") or ""
+            if _is_kanji_only(surface):
+                end = first_idx + 1
+                while end < len(tokens):
+                    next_surface = getattr(tokens[end], "surface", "") or ""
+                    if not _is_kanji_only(next_surface):
+                        break
+                    force_first_span.add(end)
+                    end += 1
     for idx, token in enumerate(tokens):
         surface = getattr(token, "surface", "")
         if not surface:
@@ -2017,6 +2035,8 @@ def _normalize_kana_with_tagger(
             first_kanji_done = True
             if kana_style == "partial" and force_first_kanji:
                 force_first = True
+        if idx in force_first_span:
+            force_first = True
         reading = _extract_token_reading(token)
         if not reading or reading == "*":
             out.append(surface)
