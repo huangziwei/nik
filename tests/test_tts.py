@@ -895,7 +895,9 @@ def test_normalize_kana_first_token_already_kana() -> None:
     assert out == "かな漢字"
 
 
-def test_synthesize_book_force_first_kanji(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_synthesize_book_disables_force_first_kanji(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     calls: dict[str, bool] = {}
 
     def fake_normalize(
@@ -966,7 +968,7 @@ def test_synthesize_book_force_first_kanji(monkeypatch: pytest.MonkeyPatch, tmp_
         kana_style="partial",
     )
     assert result == 0
-    assert calls.get("force_first_kanji") is True
+    assert calls.get("force_first_kanji") is False
 
 
 def test_normalize_numbers_standalone_digits() -> None:
@@ -1126,13 +1128,17 @@ def test_normalize_lang_code() -> None:
     assert tts_util._normalize_lang_code("") is None
 
 
-def test_generate_audio_mlx_passes_lang_code() -> None:
+def test_generate_audio_mlx_passes_language_name() -> None:
     class DummyModel:
         def __init__(self) -> None:
             self.kwargs = None
 
-        def generate(self, text, lang_code=None, voice=None, **kwargs):
-            self.kwargs = {"lang_code": lang_code, "voice": voice}
+        def generate(self, text, language=None, lang_code=None, voice=None, **kwargs):
+            self.kwargs = {
+                "language": language,
+                "lang_code": lang_code,
+                "voice": voice,
+            }
             return []
 
     model = DummyModel()
@@ -1145,7 +1151,8 @@ def test_generate_audio_mlx_passes_lang_code() -> None:
     audio, rate = tts_util._generate_audio_mlx(model, "テスト", config)
     assert audio == []
     assert rate == 24000
-    assert model.kwargs["lang_code"] == "ja"
+    assert model.kwargs["language"] == "Japanese"
+    assert model.kwargs["lang_code"] is None
 
 
 def test_generate_audio_falls_back_to_generate() -> None:

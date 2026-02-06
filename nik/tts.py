@@ -108,7 +108,6 @@ DEFAULT_TORCH_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 DEFAULT_MLX_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"
 MIN_MLX_AUDIO_VERSION = "0.3.1"
 FORCED_LANGUAGE = "Japanese"
-FORCED_LANG_CODE = "ja"
 READING_TEMPLATE_FILENAME = "global-reading-overrides.md"
 UNIDIC_URL = "https://clrd.ninjal.ac.jp/unidic_archive/2512/unidic-cwj-202512_full.zip"
 UNIDIC_DIR_ENV = "NIK_UNIDIC_DIR"
@@ -493,11 +492,11 @@ def _generate_audio_mlx(
     if sig and voice_config:
         if voice_config.name and _mlx_kwarg("voice", sig):
             kwargs["voice"] = voice_config.name
-        lang_code = FORCED_LANG_CODE
-        if _mlx_kwarg("lang_code", sig):
-            kwargs["lang_code"] = lang_code
-        elif _mlx_kwarg("language", sig):
-            kwargs["language"] = lang_code
+        language = (voice_config.language or FORCED_LANGUAGE).strip()
+        if _mlx_kwarg("language", sig):
+            kwargs["language"] = language
+        elif _mlx_kwarg("lang_code", sig):
+            kwargs["lang_code"] = _normalize_lang_code(language)
         if voice_config.ref_audio:
             for key in ("ref_audio", "reference_audio", "speaker_wav", "speaker_audio"):
                 if _mlx_kwarg(key, sig):
@@ -509,11 +508,11 @@ def _generate_audio_mlx(
                     kwargs[key] = voice_config.ref_text
                     break
     elif sig:
-        lang_code = FORCED_LANG_CODE
-        if _mlx_kwarg("lang_code", sig):
-            kwargs["lang_code"] = lang_code
-        elif _mlx_kwarg("language", sig):
-            kwargs["language"] = lang_code
+        language = FORCED_LANGUAGE
+        if _mlx_kwarg("language", sig):
+            kwargs["language"] = language
+        elif _mlx_kwarg("lang_code", sig):
+            kwargs["lang_code"] = _normalize_lang_code(language)
 
     outputs = generate(text, **kwargs)
     if isinstance(outputs, np.ndarray):
@@ -3416,7 +3415,7 @@ def synthesize_book(
                             tts_source,
                             kana_tagger,
                             kana_style=kana_style,
-                            force_first_kanji=True,
+                            force_first_kanji=False,
                             partial_mid_kanji=partial_mid_kanji,
                         )
                     except Exception as exc:
@@ -3720,7 +3719,7 @@ def synthesize_chunk(
             tts_source = _normalize_kana_text(
                 tts_source,
                 kana_style=kana_style,
-                force_first_kanji=True,
+                force_first_kanji=False,
                 partial_mid_kanji=partial_mid_kanji,
             )
         except RuntimeError as exc:
