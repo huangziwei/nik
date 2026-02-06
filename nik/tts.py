@@ -1458,22 +1458,43 @@ def _normalize_numbers(text: str) -> str:
         ci = _safe_int(c) if c else None
         if ai is None or bi is None:
             return match.group(0)
-        if ci is not None:
-            if len(a) == 4:
-                year, month, day = ai, bi, ci
-            elif len(c) == 4:
-                year, month, day = ci, ai, bi
-            else:
-                year, month, day = ai, bi, ci
-            year_part = f"{_int_to_kanji(year)}年"
-            month_part = _month_reading(month) or f"{_int_to_kanji(month)}月"
-            day_part = _day_reading(day) or f"{_int_to_kanji(day)}日"
-            return f"{year_part}{month_part}{day_part}"
-        if 1 <= ai <= 12 and 1 <= bi <= 31:
-            month_part = _month_reading(ai) or f"{_int_to_kanji(ai)}月"
-            day_part = _day_reading(bi) or f"{_int_to_kanji(bi)}日"
-            return f"{month_part}{day_part}"
+        if ci is None:
+            return match.group(0)
+        if len(a) == 4:
+            year, month, day = ai, bi, ci
+        elif len(c) == 4:
+            year, month, day = ci, ai, bi
+        else:
+            year, month, day = ai, bi, ci
+        year_part = f"{_int_to_kanji(year)}年"
+        month_part = _month_reading(month) or f"{_int_to_kanji(month)}月"
+        day_part = _day_reading(day) or f"{_int_to_kanji(day)}日"
+        return f"{year_part}{month_part}{day_part}"
         return match.group(0)
+
+    def _replace_slash_md_weekday(match: re.Match) -> str:
+        month = _safe_int(match.group("month") or "")
+        day = _safe_int(match.group("day") or "")
+        weekday = match.group("weekday") or ""
+        if month is None or day is None:
+            return match.group(0)
+        month_part = _month_reading(month) or f"{_int_to_kanji(month)}月"
+        day_part = _day_reading(day) or f"{_int_to_kanji(day)}日"
+        return f"{month_part}{day_part}{weekday}"
+
+    def _replace_fraction(match: re.Match) -> str:
+        num = match.group("num") or ""
+        den = match.group("den") or ""
+        if not num or not den:
+            return match.group(0)
+        try:
+            num_value = int(num)
+            den_value = int(den)
+        except ValueError:
+            return match.group(0)
+        if den_value == 0:
+            return match.group(0)
+        return f"{_int_to_kana(den_value)}ぶんの{_int_to_kana(num_value)}"
 
     def _replace_time(match: re.Match) -> str:
         h = _safe_int(match.group("h") or "")
@@ -1623,8 +1644,18 @@ def _normalize_numbers(text: str) -> str:
         text,
     )
     text = re.sub(
-        r"(?<!\d)(?P<a>\d{1,4})[/-](?P<b>\d{1,2})(?:[/-](?P<c>\d{1,2}))?(?!\d)",
+        r"(?<!\d)(?P<a>\d{1,4})[/-](?P<b>\d{1,2})[/-](?P<c>\d{1,2})(?!\d)",
         _replace_slash_date,
+        text,
+    )
+    text = re.sub(
+        r"(?<!\d)(?P<month>\d{1,2})[/-](?P<day>\d{1,2})(?P<weekday>\s*\((?:[日月火水木金土](?:曜|曜日)?)\))",
+        _replace_slash_md_weekday,
+        text,
+    )
+    text = re.sub(
+        r"(?<!\d)(?P<num>\d+)[/／](?P<den>\d+)(?!\d)",
+        _replace_fraction,
         text,
     )
     text = re.sub(

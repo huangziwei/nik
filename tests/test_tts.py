@@ -1021,6 +1021,21 @@ def test_normalize_numbers_person_readings() -> None:
     assert tts_util._normalize_numbers(text) == "ひとりでふたりとよにん"
 
 
+def test_normalize_numbers_slash_fraction() -> None:
+    text = "北の夕鶴2/3の殺人"
+    assert tts_util._normalize_numbers(text) == "北の夕鶴さんぶんのにの殺人"
+
+
+def test_normalize_numbers_slash_date_weekday() -> None:
+    text = "2/3(日)開催"
+    assert tts_util._normalize_numbers(text) == "にがつみっか(日)開催"
+
+
+def test_normalize_numbers_slash_date_year() -> None:
+    text = "2024/2/3"
+    assert tts_util._normalize_numbers(text) == "二千二十四年にがつみっか"
+
+
 def test_prepare_tts_text_strips_japanese_quotes() -> None:
     assert (
         tts_util.prepare_tts_text("「聖書」『旧約』《新約》“Test” 'OK'〝注〟don't")
