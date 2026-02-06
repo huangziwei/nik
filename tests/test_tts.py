@@ -1071,6 +1071,51 @@ def test_normalize_numbers_date() -> None:
     assert tts_util._normalize_numbers(text) == "二千二十四年しちがつついたち"
 
 
+def test_normalize_numbers_kanji_month() -> None:
+    text = "四月"
+    assert tts_util._normalize_numbers(text) == "しがつ"
+
+
+def test_normalize_numbers_kanji_month_day() -> None:
+    text = "七月一五日"
+    assert tts_util._normalize_numbers(text) == "しちがつじゅうごにち"
+
+
+def test_normalize_numbers_kanji_month_day_zero() -> None:
+    text = "八月一〇日"
+    assert tts_util._normalize_numbers(text) == "はちがつとおか"
+
+
+def test_normalize_numbers_kanji_year_month_zero() -> None:
+    text = "二〇一〇年三月"
+    assert tts_util._normalize_numbers(text) == "二千十年さんがつ"
+
+
+def test_normalize_numbers_kanji_time_digits() -> None:
+    text = "一二時五九分〇二秒"
+    assert tts_util._normalize_numbers(text) == "じゅうにじごじゅうきゅうふんにびょう"
+
+
+def test_normalize_numbers_kanji_percent_zero() -> None:
+    text = "一〇〇パーセント"
+    assert tts_util._normalize_numbers(text) == "百パーセント"
+
+
+def test_normalize_numbers_kanji_year_counter_zero() -> None:
+    text = "三〇年"
+    assert tts_util._normalize_numbers(text) == "三十年"
+
+
+def test_normalize_numbers_kanji_digit_day_duration() -> None:
+    text = "二〇日ほど経つ"
+    assert tts_util._normalize_numbers(text) == "にじゅうにちほど経つ"
+
+
+def test_normalize_numbers_kanji_digit_sequence_zero() -> None:
+    text = "一〇〇の人間"
+    assert tts_util._normalize_numbers(text) == "百の人間"
+
+
 def test_normalize_numbers_decimal() -> None:
     text = "3.14"
     assert tts_util._normalize_numbers(text) == "三てんいちよん"

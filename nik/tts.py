@@ -1324,6 +1324,14 @@ def _parse_kanji_numeral(seq: str) -> Optional[int]:
     return total + section + num
 
 
+def _parse_kanji_number(seq: str) -> Optional[int]:
+    if not seq:
+        return None
+    if any(ch in _KANJI_SMALL_UNIT_VALUES or ch in _KANJI_BIG_UNIT_VALUES for ch in seq):
+        return _parse_kanji_numeral(seq)
+    return _kanji_digits_to_int(seq)
+
+
 def _group_to_kana(value: int) -> str:
     if value <= 0:
         return ""
@@ -1453,6 +1461,23 @@ def _normalize_numbers(text: str) -> str:
             return _digit_seq_to_kana(cleaned)
         return _int_to_kanji(int(cleaned))
 
+    kanji_numeral_chars = "".join(
+        sorted(
+            {
+                *_KANJI_NUMERAL_DIGITS.keys(),
+                *_KANJI_SMALL_UNIT_VALUES.keys(),
+                *_KANJI_BIG_UNIT_VALUES.keys(),
+            }
+        )
+    )
+    kanji_digit_chars = "".join(_KANJI_DIGIT_READINGS.keys())
+    kanji_num_re = rf"[{kanji_numeral_chars}]+"
+
+    def _safe_kanji_int(raw: str) -> Optional[int]:
+        if not raw:
+            return None
+        return _parse_kanji_number(raw)
+
     def _replace_ymd(match: re.Match) -> str:
         year = _safe_int(match.group("year") or "")
         month = _safe_int(match.group("month") or "")
@@ -1487,6 +1512,59 @@ def _normalize_numbers(text: str) -> str:
             month_part = f"{_int_to_kanji(month)}月"
             day_part = f"{_int_to_kanji(day)}日"
         return f"{month_part}{day_part}"
+
+    def _replace_kanji_ymd(match: re.Match) -> str:
+        year = _safe_kanji_int(match.group("year") or "")
+        month = _safe_kanji_int(match.group("month") or "")
+        day = _safe_kanji_int(match.group("day") or "")
+        if year is None or month is None or day is None:
+            return match.group(0)
+        year_part = f"{_int_to_kanji(year)}年"
+        month_part = _month_reading(month)
+        day_part = _day_reading(day)
+        if not month_part or not day_part:
+            month_part = f"{_int_to_kanji(month)}月"
+            day_part = f"{_int_to_kanji(day)}日"
+        return f"{year_part}{month_part}{day_part}"
+
+    def _replace_kanji_ym(match: re.Match) -> str:
+        year = _safe_kanji_int(match.group("year") or "")
+        month = _safe_kanji_int(match.group("month") or "")
+        if year is None or month is None:
+            return match.group(0)
+        year_part = f"{_int_to_kanji(year)}年"
+        month_part = _month_reading(month) or f"{_int_to_kanji(month)}月"
+        return f"{year_part}{month_part}"
+
+    def _replace_kanji_md(match: re.Match) -> str:
+        month = _safe_kanji_int(match.group("month") or "")
+        day = _safe_kanji_int(match.group("day") or "")
+        if month is None or day is None:
+            return match.group(0)
+        month_part = _month_reading(month)
+        day_part = _day_reading(day)
+        if not month_part or not day_part:
+            month_part = f"{_int_to_kanji(month)}月"
+            day_part = f"{_int_to_kanji(day)}日"
+        return f"{month_part}{day_part}"
+
+    def _replace_kanji_month(match: re.Match) -> str:
+        month = _safe_kanji_int(match.group("month") or "")
+        if month is None:
+            return match.group(0)
+        return _month_reading(month) or f"{_int_to_kanji(month)}月"
+
+    def _replace_kanji_digit_year(match: re.Match) -> str:
+        year = _kanji_digits_to_int(match.group("year") or "")
+        if year is None:
+            return match.group(0)
+        return f"{_int_to_kanji(year)}年"
+
+    def _replace_kanji_digit_day(match: re.Match) -> str:
+        day = _kanji_digits_to_int(match.group("day") or "")
+        if day is None:
+            return match.group(0)
+        return f"{_int_to_kana(day)}にち"
 
     def _replace_slash_date(match: re.Match) -> str:
         a = match.group("a") or ""
@@ -1546,6 +1624,18 @@ def _normalize_numbers(text: str) -> str:
             out = f"{out}{_int_to_kanji(s)}秒"
         return out
 
+    def _replace_kanji_time(match: re.Match) -> str:
+        h = _safe_kanji_int(match.group("h") or "")
+        m = _safe_kanji_int(match.group("m") or "")
+        s_raw = match.groupdict().get("s")
+        s = _safe_kanji_int(s_raw or "") if s_raw else None
+        if h is None or m is None:
+            return match.group(0)
+        out = f"{_int_to_kanji(h)}時{_int_to_kanji(m)}分"
+        if s is not None:
+            out = f"{out}{_int_to_kanji(s)}秒"
+        return out
+
     def _replace_decimal(match: re.Match) -> str:
         left = match.group("left") or ""
         right = match.group("right") or ""
@@ -1567,6 +1657,13 @@ def _normalize_numbers(text: str) -> str:
         else:
             value = _to_kanji_number(num)
         return f"{value}パーセント"
+
+    def _replace_kanji_percent(match: re.Match) -> str:
+        num = match.group("num") or ""
+        value = _safe_kanji_int(num)
+        if value is None:
+            return match.group(0)
+        return f"{_int_to_kanji(value)}パーセント"
 
     def _replace_counter(match: re.Match) -> str:
         num = match.group("num") or ""
@@ -1597,14 +1694,7 @@ def _normalize_numbers(text: str) -> str:
         if counter in {"年", "月", "日"}:
             return match.group(0)
         if counter == "人":
-            if any(
-                ch in _KANJI_SMALL_UNIT_VALUES or ch in _KANJI_BIG_UNIT_VALUES for ch in num
-            ):
-                value = _parse_kanji_numeral(num)
-            elif any(ch in {"〇", "零"} for ch in num):
-                value = _kanji_digits_to_int(num)
-            else:
-                value = _kanji_digits_to_int(num)
+            value = _parse_kanji_number(num)
             if value is None:
                 return match.group(0)
             if value == 1:
@@ -1615,14 +1705,7 @@ def _normalize_numbers(text: str) -> str:
                 return "よにん"
             return f"{_int_to_kana(value)}にん"
         if counter == "日間":
-            if any(
-                ch in _KANJI_SMALL_UNIT_VALUES or ch in _KANJI_BIG_UNIT_VALUES for ch in num
-            ):
-                value = _parse_kanji_numeral(num)
-            elif any(ch in {"〇", "零"} for ch in num):
-                value = _kanji_digits_to_int(num)
-            else:
-                value = _kanji_digits_to_int(num)
+            value = _parse_kanji_number(num)
             if value is None:
                 return match.group(0)
             if value == 1:
@@ -1632,16 +1715,7 @@ def _normalize_numbers(text: str) -> str:
                 return f"{day_reading}かん"
             return f"{_int_to_kana(value)}にちかん"
         counter_reading = _KANA_COUNTER_READINGS.get(counter, counter)
-        if any(
-            ch in _KANJI_SMALL_UNIT_VALUES or ch in _KANJI_BIG_UNIT_VALUES for ch in num
-        ):
-            value = _parse_kanji_numeral(num)
-            if value is None:
-                return match.group(0)
-            return f"{_int_to_kana(value)}{counter_reading}"
-        if any(ch in {"〇", "零"} for ch in num):
-            return f"{_kanji_digit_seq_to_kana(num)}{counter_reading}"
-        value = _kanji_digits_to_int(num)
+        value = _parse_kanji_number(num)
         if value is None:
             return match.group(0)
         return f"{_int_to_kana(value)}{counter_reading}"
@@ -1684,6 +1758,15 @@ def _normalize_numbers(text: str) -> str:
             out.append(_KANJI_DIGIT_READINGS.get(ch, ch))
         return "".join(out)
 
+    def _replace_kanji_digit_seq(match: re.Match) -> str:
+        num = match.group("num") or ""
+        if not num:
+            return match.group(0)
+        value = _kanji_digits_to_int(num)
+        if value is None:
+            return match.group(0)
+        return _int_to_kanji(value)
+
     text = re.sub(
         r"(?<!\d)(?P<year>\d{2,4})年(?P<month>\d{1,2})月(?P<day>\d{1,2})日",
         _replace_ymd,
@@ -1697,6 +1780,36 @@ def _normalize_numbers(text: str) -> str:
     text = re.sub(
         r"(?<!\d)(?P<month>\d{1,2})月(?P<day>\d{1,2})日",
         _replace_md,
+        text,
+    )
+    text = re.sub(
+        rf"(?P<year>{kanji_num_re})年(?P<month>{kanji_num_re})月(?P<day>{kanji_num_re})日",
+        _replace_kanji_ymd,
+        text,
+    )
+    text = re.sub(
+        rf"(?P<year>{kanji_num_re})年(?P<month>{kanji_num_re})月",
+        _replace_kanji_ym,
+        text,
+    )
+    text = re.sub(
+        rf"(?P<year>[{kanji_digit_chars}]{{2,}})年",
+        _replace_kanji_digit_year,
+        text,
+    )
+    text = re.sub(
+        rf"(?P<month>{kanji_num_re})月(?P<day>{kanji_num_re})日",
+        _replace_kanji_md,
+        text,
+    )
+    text = re.sub(
+        rf"(?P<day>[{kanji_digit_chars}]{{2,}})日(?!間|目)",
+        _replace_kanji_digit_day,
+        text,
+    )
+    text = re.sub(
+        rf"(?P<month>{kanji_num_re})月",
+        _replace_kanji_month,
         text,
     )
     text = re.sub(
@@ -1720,8 +1833,28 @@ def _normalize_numbers(text: str) -> str:
         text,
     )
     text = re.sub(
+        rf"(?P<h>{kanji_num_re})時(?P<m>{kanji_num_re})分(?P<s>{kanji_num_re})秒",
+        _replace_kanji_time,
+        text,
+    )
+    text = re.sub(
+        rf"(?P<h>{kanji_num_re})時(?P<m>{kanji_num_re})分",
+        _replace_kanji_time,
+        text,
+    )
+    text = re.sub(
         r"(?<!\d)(?P<num>\d+(?:\.\d+)?)%",
         _replace_percent,
+        text,
+    )
+    text = re.sub(
+        rf"(?P<num>{kanji_num_re})[%％]",
+        _replace_kanji_percent,
+        text,
+    )
+    text = re.sub(
+        rf"(?P<num>{kanji_num_re})パーセント",
+        _replace_kanji_percent,
         text,
     )
     text = re.sub(
@@ -1735,15 +1868,6 @@ def _normalize_numbers(text: str) -> str:
             rf"(?P<num>\d+)(?P<counter>{counters})",
             _replace_counter,
             text,
-        )
-        kanji_numeral_chars = "".join(
-            sorted(
-                {
-                    *_KANJI_NUMERAL_DIGITS.keys(),
-                    *_KANJI_SMALL_UNIT_VALUES.keys(),
-                    *_KANJI_BIG_UNIT_VALUES.keys(),
-                }
-            )
         )
         text = re.sub(
             rf"(?P<num>[{kanji_numeral_chars}]+)(?P<counter>{counters})",
@@ -1760,7 +1884,11 @@ def _normalize_numbers(text: str) -> str:
         _replace_alnum,
         text,
     )
-    kanji_digit_chars = "".join(_KANJI_DIGIT_READINGS.keys())
+    text = re.sub(
+        rf"(?P<num>[{kanji_digit_chars}]{{2,}})",
+        _replace_kanji_digit_seq,
+        text,
+    )
     text = re.sub(
         rf"(?P<seq>[{kanji_digit_chars}](?:[、，,・][{kanji_digit_chars}])+)",
         _replace_kanji_digit_list,
