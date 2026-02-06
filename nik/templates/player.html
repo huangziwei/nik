@@ -1115,6 +1115,25 @@
         margin: 0 0 16px;
       }
 
+      .chapter-text ruby {
+        ruby-position: over;
+        ruby-align: center;
+      }
+
+      .chapter-text rt {
+        font-size: 0.55em;
+        color: var(--text-dim);
+        letter-spacing: 0.02em;
+      }
+
+      .chapter-text .chunk.active rt {
+        color: #000;
+      }
+
+      .chapter-text ruby.ruby-propagated rt {
+        opacity: 0.75;
+      }
+
       .panel {
         background: var(--surface);
         border: 1px solid var(--line);
@@ -4686,6 +4705,12 @@
           state.chapterTextRequests[chapterId] = fetchJson(url)
             .then((data) => {
               chapter.clean_text = data.clean_text || "";
+              chapter.ruby_spans = Array.isArray(data.ruby_spans)
+                ? data.ruby_spans
+                : [];
+              chapter.ruby_prop_spans = Array.isArray(data.ruby_prop_spans)
+                ? data.ruby_prop_spans
+                : [];
               return chapter.clean_text;
             })
             .catch((err) => {
@@ -4765,6 +4790,94 @@
           spans.push([tailStart, tailEnd]);
         }
         return spans;
+      }
+
+      function normalizeRubySpans(spans) {
+        if (!Array.isArray(spans)) {
+          return [];
+        }
+        return spans
+          .map((span) => {
+            const start = Number(span.start);
+            const end = Number(span.end);
+            const reading = String(span.reading || "").trim();
+            const kind = span.kind === "propagated" ? "propagated" : "inline";
+            if (!Number.isFinite(start) || !Number.isFinite(end)) {
+              return null;
+            }
+            if (!reading || end <= start) {
+              return null;
+            }
+            return { start, end, reading, kind };
+          })
+          .filter(Boolean);
+      }
+
+      function mergeRubySpans(primary, secondary) {
+        const merged = normalizeRubySpans(primary);
+        const reserved = merged.map((span) => [span.start, span.end]);
+        const result = merged.slice();
+
+        const overlaps = (start, end) =>
+          reserved.some((range) => start < range[1] && end > range[0]);
+
+        normalizeRubySpans(secondary).forEach((span) => {
+          if (overlaps(span.start, span.end)) {
+            return;
+          }
+          reserved.push([span.start, span.end]);
+          result.push(span);
+        });
+
+        result.sort((a, b) => a.start - b.start || a.end - b.end);
+        return result;
+      }
+
+      function renderRubyFragment(text, start, end, spans) {
+        const fragment = document.createDocumentFragment();
+        if (!text || start >= end) {
+          return fragment;
+        }
+        if (!spans || !spans.length) {
+          fragment.appendChild(document.createTextNode(text.slice(start, end)));
+          return fragment;
+        }
+        const relevant = spans
+          .filter((span) => span.start >= start && span.end <= end)
+          .sort((a, b) => a.start - b.start || a.end - b.end);
+        if (!relevant.length) {
+          fragment.appendChild(document.createTextNode(text.slice(start, end)));
+          return fragment;
+        }
+        let cursor = start;
+        relevant.forEach((span) => {
+          if (span.start > cursor) {
+            fragment.appendChild(
+              document.createTextNode(text.slice(cursor, span.start))
+            );
+          }
+          if (span.start < cursor) {
+            return;
+          }
+          const ruby = document.createElement("ruby");
+          ruby.classList.add(
+            span.kind === "propagated" ? "ruby-propagated" : "ruby-inline"
+          );
+          ruby.appendChild(
+            document.createTextNode(text.slice(span.start, span.end))
+          );
+          const rt = document.createElement("rt");
+          rt.textContent = span.reading;
+          ruby.appendChild(rt);
+          fragment.appendChild(ruby);
+          cursor = span.end;
+        });
+        if (cursor < end) {
+          fragment.appendChild(
+            document.createTextNode(text.slice(cursor, end))
+          );
+        }
+        return fragment;
       }
 
       function describeIndex(index) {
@@ -6182,6 +6295,10 @@
         const spans = chapter.chunk_spans || [];
         const startIndex = state.chapterOffsets[chapter.id] || 0;
         const paragraphs = splitParagraphSpans(cleanText);
+        const rubySpans = mergeRubySpans(
+          chapter.ruby_spans || [],
+          chapter.ruby_prop_spans || []
+        );
         let spanIndex = 0;
 
         if (!paragraphs.length) {
@@ -6210,7 +6327,9 @@
               const span = document.createElement("span");
               span.className = "chunk";
               span.dataset.queueIndex = startIndex + spanIndex;
-              span.textContent = cleanText.slice(spanStart, spanEnd);
+              span.appendChild(
+                renderRubyFragment(cleanText, spanStart, spanEnd, rubySpans)
+              );
               p.appendChild(span);
               cursor = spanEnd;
               spanIndex += 1;
@@ -7260,8 +7379,9 @@
 
       chapterText.addEventListener("click", (event) => {
         const target = event.target;
-        if (target && target.classList.contains("chunk")) {
-          const index = parseInt(target.dataset.queueIndex, 10);
+        const chunk = target && target.closest ? target.closest(".chunk") : null;
+        if (chunk) {
+          const index = parseInt(chunk.dataset.queueIndex, 10);
           if (!Number.isNaN(index)) {
             playIndex(index);
           }

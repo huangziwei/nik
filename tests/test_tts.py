@@ -852,6 +852,34 @@ def test_normalize_kana_first_token_partial_kanji_run() -> None:
     assert out == "じてんしゃ"
 
 
+def test_normalize_kana_first_token_already_kana() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("かな", "カナ"),
+                DummyToken("漢字", "カンジ"),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "かな漢字",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_kanji=True,
+    )
+    assert out == "かな漢字"
+
+
 def test_synthesize_book_force_first_kanji(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     calls: dict[str, bool] = {}
 

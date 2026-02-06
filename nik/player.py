@@ -32,6 +32,61 @@ def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _tag_ruby_spans(spans: List[dict], kind: str) -> List[dict]:
+    tagged: List[dict] = []
+    for span in spans:
+        if not isinstance(span, dict):
+            continue
+        try:
+            start = int(span.get("start"))
+            end = int(span.get("end"))
+        except (TypeError, ValueError):
+            continue
+        reading = str(span.get("reading") or "").strip()
+        base = str(span.get("base") or "")
+        if not reading or end <= start:
+            continue
+        tagged.append(
+            {
+                "start": start,
+                "end": end,
+                "base": base,
+                "reading": reading,
+                "kind": kind,
+            }
+        )
+    return tagged
+
+
+def _filter_overlapping_spans(spans: List[dict], reserved: List[dict]) -> List[dict]:
+    if not spans or not reserved:
+        return spans
+    reserved_ranges = []
+    for span in reserved:
+        try:
+            reserved_ranges.append((int(span.get("start")), int(span.get("end"))))
+        except (TypeError, ValueError):
+            continue
+
+    def overlaps(start: int, end: int) -> bool:
+        for res_start, res_end in reserved_ranges:
+            if start < res_end and end > res_start:
+                return True
+        return False
+
+    filtered: List[dict] = []
+    for span in spans:
+        try:
+            start = int(span.get("start"))
+            end = int(span.get("end"))
+        except (TypeError, ValueError):
+            continue
+        if overlaps(start, end):
+            continue
+        filtered.append(span)
+    return filtered
+
+
 def _no_store(data: dict) -> JSONResponse:
     return JSONResponse(data, headers={"Cache-Control": "no-store"})
 
@@ -1034,12 +1089,32 @@ def create_app(root_dir: Path) -> FastAPI:
             raise HTTPException(status_code=404, detail="Chapter not found.")
         if not clean_path.exists():
             raise HTTPException(status_code=404, detail="Chapter text not found.")
-        clean_text = read_clean_text(clean_path)
+        clean_text = tts_util._normalize_text(read_clean_text(clean_path))
+        ruby_spans: List[dict] = []
+        ruby_prop_spans: List[dict] = []
+        ruby_data = tts_util._load_ruby_data(book_dir)
+        if ruby_data:
+            spans = tts_util._select_ruby_spans(chapter_id, clean_text, ruby_data)
+            if spans:
+                spans = tts_util._maybe_normalize_ruby_entries(spans)
+                ruby_spans = _tag_ruby_spans(spans, "inline")
+            ruby_global = tts_util._ruby_global_overrides(ruby_data)
+            if ruby_global:
+                ruby_global = tts_util._maybe_normalize_ruby_entries(ruby_global)
+                ruby_prop_spans = _tag_ruby_spans(
+                    tts_util._reading_override_spans(clean_text, ruby_global),
+                    "propagated",
+                )
+                ruby_prop_spans = _filter_overlapping_spans(
+                    ruby_prop_spans, ruby_spans
+                )
         return _no_store(
             {
                 "book_id": book_id,
                 "chapter_id": chapter_id,
                 "clean_text": clean_text,
+                "ruby_spans": ruby_spans,
+                "ruby_prop_spans": ruby_prop_spans,
             }
         )
 

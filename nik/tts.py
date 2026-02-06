@@ -1994,6 +1994,16 @@ def _normalize_kana_with_tagger(
     run_action: List[str] = [""] * len(tokens)
     force_first_span: set[int] = set()
     first_kanji_done = False
+    force_first_kanji_active = force_first_kanji
+    if force_first_kanji and tokens:
+        for token in tokens:
+            surface = getattr(token, "surface", "") or ""
+            if not surface:
+                continue
+            if _has_kana(surface) or _has_kanji(surface):
+                if _has_kana(surface) and not _has_kanji(surface):
+                    force_first_kanji_active = False
+                break
     if kana_style == "partial" and tokens:
         if partial_mid_kanji and zh_lexicon is None:
             zh_lexicon = _load_zh_lexicon()
@@ -2031,7 +2041,7 @@ def _normalize_kana_with_tagger(
                     for pos in range(idx, end):
                         run_action[pos] = action
             idx = end
-    if kana_style == "partial" and force_first_kanji and tokens:
+    if kana_style == "partial" and force_first_kanji_active and tokens:
         first_idx = None
         for idx, token in enumerate(tokens):
             surface = getattr(token, "surface", "") or ""
@@ -2058,7 +2068,7 @@ def _normalize_kana_with_tagger(
         force_first = False
         if not first_kanji_done:
             first_kanji_done = True
-            if kana_style == "partial" and force_first_kanji:
+            if kana_style == "partial" and force_first_kanji_active:
                 force_first = True
         if idx in force_first_span:
             force_first = True
@@ -2637,6 +2647,113 @@ def apply_reading_overrides(
         except re.error:
             continue
     return out
+
+
+def _reading_override_spans(
+    text: str, overrides: Sequence[dict[str, str]]
+) -> List[dict[str, object]]:
+    if not text or not overrides:
+        return []
+    literals: list[dict[str, str]] = []
+    regex_entries: list[dict[str, str]] = []
+    for item in overrides:
+        entry = _normalize_reading_override_entry(item)
+        if not entry:
+            continue
+        if entry.get("pattern"):
+            regex_entries.append(entry)
+        else:
+            literals.append(entry)
+
+    ordered = sorted(
+        literals,
+        key=lambda item: len(item.get("base", "")),
+        reverse=True,
+    )
+
+    spans: list[dict[str, object]] = []
+    used: list[tuple[int, int]] = []
+
+    def overlaps(start: int, end: int) -> bool:
+        for used_start, used_end in used:
+            if start < used_end and end > used_start:
+                return True
+        return False
+
+    def add_span(start: int, end: int, base: str, reading: str) -> None:
+        if start < 0 or end <= start or end > len(text):
+            return
+        if overlaps(start, end):
+            return
+        spans.append({"start": start, "end": end, "base": base, "reading": reading})
+        used.append((start, end))
+
+    for item in ordered:
+        base = str(item.get("base") or "")
+        reading = str(item.get("reading") or "")
+        if not base or not reading:
+            continue
+        mode = _normalize_reading_mode(item.get("mode"))
+        if mode == "first":
+            pos = text.find(base)
+            if pos != -1:
+                add_span(pos, pos + len(base), base, reading)
+            continue
+        if mode == "isolated" and len(base) == 1:
+            ch = base
+            length = len(text)
+            for idx, cur in enumerate(text):
+                if cur != ch:
+                    continue
+                prev = text[idx - 1] if idx > 0 else ""
+                next_ch = text[idx + 1] if idx + 1 < length else ""
+                if _is_japanese_char(prev) or _is_japanese_char(next_ch):
+                    continue
+                add_span(idx, idx + 1, base, reading)
+            continue
+        if mode == "kanji" and len(base) == 1:
+            ch = base
+            length = len(text)
+            for idx, cur in enumerate(text):
+                if cur != ch:
+                    continue
+                prev = text[idx - 1] if idx > 0 else ""
+                next_ch = text[idx + 1] if idx + 1 < length else ""
+                if _is_kanji_boundary_char(prev) or _is_kanji_boundary_char(next_ch):
+                    continue
+                add_span(idx, idx + 1, base, reading)
+            continue
+        start = 0
+        while True:
+            pos = text.find(base, start)
+            if pos == -1:
+                break
+            add_span(pos, pos + len(base), base, reading)
+            start = pos + len(base)
+
+    for item in regex_entries:
+        pattern = str(item.get("pattern") or "")
+        reading = str(item.get("reading") or "")
+        if not pattern or not reading:
+            continue
+        try:
+            regex = re.compile(pattern)
+        except re.error:
+            continue
+        for match in regex.finditer(text):
+            start, end = match.span()
+            if start == end:
+                continue
+            try:
+                reading_text = match.expand(reading)
+            except re.error:
+                reading_text = reading
+            add_span(start, end, match.group(0), reading_text)
+
+    spans.sort(key=lambda item: int(item.get("start", 0)))
+    return spans
+
+
 
 
 def _replace_isolated_kanji(text: str, base: str, reading: str) -> str:
