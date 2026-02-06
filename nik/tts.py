@@ -2184,6 +2184,18 @@ def _normalize_kana_with_tagger(
                         break
                     force_first_span.add(end)
                     end += 1
+    def _adjust_weekday_reading(idx: int, reading_kata: str) -> str:
+        if not reading_kata:
+            return reading_kata
+        surface = getattr(tokens[idx], "surface", "") or ""
+        if surface == "曜日":
+            return reading_kata[:-1] + "ビ" if reading_kata.endswith("ヒ") else reading_kata
+        if surface == "日" and idx > 0:
+            prev_surface = getattr(tokens[idx - 1], "surface", "") or ""
+            if prev_surface.endswith("曜"):
+                return "ビ"
+        return reading_kata
+
     for idx, token in enumerate(tokens):
         surface = getattr(token, "surface", "")
         if not surface:
@@ -2203,6 +2215,7 @@ def _normalize_kana_with_tagger(
             out.append(surface)
             continue
         reading_kata = _hiragana_to_katakana(reading)
+        reading_kata = _adjust_weekday_reading(idx, reading_kata)
         next_token = tokens[idx + 1] if idx + 1 < len(tokens) else None
         if surface.startswith("御"):
             attrs = _extract_token_attrs(token)
