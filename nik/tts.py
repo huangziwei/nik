@@ -548,6 +548,19 @@ def _trim_span(text: str, start: int, end: int) -> Optional[Tuple[int, int]]:
     return start, end
 
 
+def _span_has_content(text: str, start: int, end: int) -> bool:
+    for ch in text[start:end]:
+        if ch.isspace():
+            continue
+        if _is_japanese_char(ch):
+            return True
+        if ch.isascii() and ch.isalnum():
+            return True
+        if ch in _KANJI_SAFE_MARKS:
+            return True
+    return False
+
+
 def _advance_ws(text: str, pos: int) -> int:
     while pos < len(text) and text[pos].isspace():
         pos += 1
@@ -592,20 +605,28 @@ def split_sentence_spans(text: str) -> List[Tuple[int, int]]:
     while i < length:
         ch = text[i]
         if i in space_splits:
-            span = _trim_span(text, start, i)
-            if span:
-                spans.append(span)
+            if _span_has_content(text, start, i):
+                span = _trim_span(text, start, i)
+                if span:
+                    spans.append(span)
+                i += 1
+                i = _advance_ws(text, i)
+                start = i
+                continue
             i += 1
             i = _advance_ws(text, i)
-            start = i
             continue
         if ch == "\n":
-            span = _trim_span(text, start, i)
-            if span:
-                spans.append(span)
+            if _span_has_content(text, start, i):
+                span = _trim_span(text, start, i)
+                if span:
+                    spans.append(span)
+                i += 1
+                i = _advance_ws(text, i)
+                start = i
+                continue
             i += 1
             i = _advance_ws(text, i)
-            start = i
             continue
         if ch in _END_PUNCT:
             j = i + 1
@@ -613,12 +634,15 @@ def split_sentence_spans(text: str) -> List[Tuple[int, int]]:
                 j += 1
             while j < length and text[j] in _CLOSE_PUNCT:
                 j += 1
-            span = _trim_span(text, start, j)
-            if span:
-                spans.append(span)
-            j = _advance_ws(text, j)
-            start = j
-            i = j
+            if _span_has_content(text, start, j):
+                span = _trim_span(text, start, j)
+                if span:
+                    spans.append(span)
+                j = _advance_ws(text, j)
+                start = j
+                i = j
+                continue
+            i = _advance_ws(text, j)
             continue
         i += 1
     span = _trim_span(text, start, length)

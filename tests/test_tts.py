@@ -27,6 +27,13 @@ def test_chunking_splits_on_commas_when_too_long() -> None:
     assert any("、" in chunk for chunk in chunks)
 
 
+def test_chunking_keeps_leading_ellipsis_with_sentence() -> None:
+    text = "……なんで八奈見がここにいるんだ。"
+    spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["……なんで八奈見がここにいるんだ。"]
+
+
 def test_chunk_book_writes_manifest(tmp_path: Path) -> None:
     book_dir = tmp_path / "book"
     clean_dir = book_dir / "clean" / "chapters"
