@@ -895,7 +895,7 @@ def test_normalize_kana_first_token_already_kana() -> None:
     assert out == "かな漢字"
 
 
-def test_synthesize_book_disables_force_first_kanji(
+def test_synthesize_book_force_first_kanji(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     calls: dict[str, bool] = {}
@@ -968,7 +968,7 @@ def test_synthesize_book_disables_force_first_kanji(
         kana_style="partial",
     )
     assert result == 0
-    assert calls.get("force_first_kanji") is False
+    assert calls.get("force_first_kanji") is True
 
 
 def test_normalize_numbers_standalone_digits() -> None:
@@ -1146,7 +1146,7 @@ def test_generate_audio_mlx_passes_language_name() -> None:
         name="jp",
         ref_audio="voice.wav",
         ref_text="こんにちは",
-        language="Japanese",
+        language="ja",
     )
     audio, rate = tts_util._generate_audio_mlx(model, "テスト", config)
     assert audio == []

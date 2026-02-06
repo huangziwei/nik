@@ -492,7 +492,7 @@ def _generate_audio_mlx(
     if sig and voice_config:
         if voice_config.name and _mlx_kwarg("voice", sig):
             kwargs["voice"] = voice_config.name
-        language = (voice_config.language or FORCED_LANGUAGE).strip()
+        language = FORCED_LANGUAGE
         if _mlx_kwarg("language", sig):
             kwargs["language"] = language
         elif _mlx_kwarg("lang_code", sig):
@@ -3415,7 +3415,7 @@ def synthesize_book(
                             tts_source,
                             kana_tagger,
                             kana_style=kana_style,
-                            force_first_kanji=False,
+                            force_first_kanji=True,
                             partial_mid_kanji=partial_mid_kanji,
                         )
                     except Exception as exc:
@@ -3719,7 +3719,7 @@ def synthesize_chunk(
             tts_source = _normalize_kana_text(
                 tts_source,
                 kana_style=kana_style,
-                force_first_kanji=False,
+                force_first_kanji=True,
                 partial_mid_kanji=partial_mid_kanji,
             )
         except RuntimeError as exc:
