@@ -1869,18 +1869,7 @@
             <div class="advanced-list" id="advancedList"></div>
           </div>
           <div class="tts-actions">
-            <div class="tts-menu" id="ttsMenu">
-              <button
-                class="btn primary"
-                id="startTts"
-                type="button"
-                aria-haspopup="true"
-                aria-expanded="false"
-              >
-                読み上げ開始
-              </button>
-              <div class="menu-panel" id="ttsMenuPanel"></div>
-            </div>
+            <button class="btn primary" id="startTts" type="button">読み上げ開始</button>
             <button class="btn" id="sampleTts" type="button">サンプル</button>
             <span class="tts-divider" aria-hidden="true"></span>
             <button class="btn" id="mergeBtn" type="button">M4B を結合</button>
@@ -2028,8 +2017,6 @@
             id="regenChunkBtn"
             aria-label="チャンクを再生成"
             title="選択中のチャンクを再生成"
-            aria-haspopup="true"
-            aria-expanded="false"
           >
             <svg
               viewBox="0 0 24 24"
@@ -2039,7 +2026,6 @@
               <path d="M17.65 6.35A7.95 7.95 0 0 0 12 4V1L7 6l5 5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 12.65-5.65z" fill="currentColor"></path>
             </svg>
           </button>
-          <div class="menu-panel" id="regenMenuPanel"></div>
         </div>
         <div class="status" id="status">最後: —</div>
       </div>
@@ -2293,7 +2279,6 @@
       let nextAudio = audioNext;
       const bookmarkBtn = document.getElementById("bookmarkBtn");
       const regenChunkBtn = document.getElementById("regenChunkBtn");
-      const regenMenuPanel = document.getElementById("regenMenuPanel");
       const bookmarkList = document.getElementById("bookmarkList");
       const bookmarkPanel = document.getElementById("bookmarkPanel");
       const bookmarkTitle = document.getElementById("bookmarkTitle");
@@ -2304,7 +2289,6 @@
       const mergeBtn = document.getElementById("mergeBtn");
       const downloadM4bBtn = document.getElementById("downloadM4bBtn");
       const downloadMenuPanel = document.getElementById("downloadMenuPanel");
-      const ttsMenuPanel = document.getElementById("ttsMenuPanel");
       const clearTtsBtn = document.getElementById("clearTtsBtn");
       const progressFill = document.getElementById("progressFill");
       const progressText = document.getElementById("progressText");
@@ -4387,7 +4371,7 @@
 
       function loadSettings() {
         state.voicePreference = localStorage.getItem("nik.voice");
-        setKanaStyle(localStorage.getItem("nik.kanaStyle"), false);
+        setKanaStyle("partial", false);
         state.advancedMode = localStorage.getItem("nik.advancedMode") === "1";
         state.libraryShelf = normalizeShelf(
           localStorage.getItem("nik.libraryShelf")
@@ -4414,9 +4398,6 @@
       function saveSettings() {
         if (state.voicePreference) {
           localStorage.setItem("nik.voice", state.voicePreference);
-        }
-        if (state.kanaStyle) {
-          localStorage.setItem("nik.kanaStyle", state.kanaStyle);
         }
         localStorage.setItem("nik.advancedMode", state.advancedMode ? "1" : "0");
       }
@@ -5133,9 +5114,6 @@
           state.mergeRunning ||
           state.chunkRegenRunning;
         regenChunkBtn.disabled = disabled;
-        if (disabled && regenMenuPanel && regenMenuPanel.classList.contains("open")) {
-          closeRegenMenu();
-        }
         if (state.chunkRegenRunning) {
           regenChunkBtn.title = t("regenChunkRunning");
         } else if (!state.book) {
@@ -5152,16 +5130,13 @@
         }
       }
 
-      async function regenerateChunk(kanaStyle = null) {
+      async function regenerateChunk() {
         if (!state.book || state.chunkRegenRunning) {
           return;
         }
         if (state.synthRunning || state.mergeRunning) {
           setStatus(t("regenChunkStopSynth"));
           return;
-        }
-        if (kanaStyle) {
-          setKanaStyle(kanaStyle);
         }
         currentAudio.pause();
         nextAudio.pause();
@@ -5233,207 +5208,6 @@
         requestAnimationFrame(positionDownloadMenuPanel);
         window.addEventListener("resize", positionDownloadMenuPanel);
         window.addEventListener("scroll", positionDownloadMenuPanel, { passive: true });
-      }
-
-      function renderTtsMenu() {
-        if (!ttsMenuPanel) {
-          return;
-        }
-        ttsMenuPanel.innerHTML = "";
-        const label = document.createElement("div");
-        label.className = "menu-panel__label";
-        label.textContent = t("kanaStyleLabel");
-        ttsMenuPanel.appendChild(label);
-        const options = [
-          { value: "partial", label: t("kanaStylePartial") },
-          { value: "mixed", label: t("kanaStyleMixed") },
-        ];
-        options.forEach((option) => {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "btn";
-          if (option.value === state.kanaStyle) {
-            btn.classList.add("is-active");
-          }
-          btn.textContent = option.label;
-          btn.addEventListener("click", () => {
-            closeTtsMenu();
-            startSynth(option.value);
-          });
-          ttsMenuPanel.appendChild(btn);
-        });
-      }
-
-      function positionTtsMenuPanel() {
-        if (!ttsMenuPanel || !ttsMenuPanel.classList.contains("open")) {
-          return;
-        }
-        const panelRect = ttsMenuPanel.getBoundingClientRect();
-        const anchorRect = startTts.getBoundingClientRect();
-        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-        const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-        const margin = 16;
-        const anchorCenter = anchorRect.left + anchorRect.width / 2;
-        const idealLeft = anchorCenter - panelRect.width / 2;
-        const maxLeft = viewportWidth - panelRect.width - margin;
-        const left = Math.max(margin, Math.min(idealLeft, maxLeft));
-        let top = anchorRect.bottom + 8;
-        if (top + panelRect.height + margin > viewportHeight) {
-          const above = anchorRect.top - panelRect.height - 8;
-          if (above >= margin) {
-            top = above;
-          } else {
-            top = Math.max(margin, viewportHeight - panelRect.height - margin);
-          }
-        }
-        ttsMenuPanel.style.left = `${left}px`;
-        ttsMenuPanel.style.top = `${top}px`;
-        ttsMenuPanel.style.right = "auto";
-        ttsMenuPanel.style.bottom = "auto";
-        ttsMenuPanel.style.transform = "none";
-      }
-
-      function openTtsMenu() {
-        if (
-          !ttsMenuPanel ||
-          startTts.disabled ||
-          state.synthRunning ||
-          ttsMenuPanel.classList.contains("open")
-        ) {
-          return;
-        }
-        renderTtsMenu();
-        ttsMenuPanel.classList.add("open");
-        startTts.setAttribute("aria-expanded", "true");
-        requestAnimationFrame(positionTtsMenuPanel);
-        window.addEventListener("resize", positionTtsMenuPanel);
-        window.addEventListener("scroll", positionTtsMenuPanel, { passive: true });
-      }
-
-      function closeTtsMenu() {
-        if (!ttsMenuPanel) {
-          return;
-        }
-        ttsMenuPanel.classList.remove("open");
-        startTts.setAttribute("aria-expanded", "false");
-        window.removeEventListener("resize", positionTtsMenuPanel);
-        window.removeEventListener("scroll", positionTtsMenuPanel);
-      }
-
-      function toggleTtsMenu() {
-        if (!ttsMenuPanel) {
-          return;
-        }
-        if (state.synthRunning) {
-          closeTtsMenu();
-          stopSynth();
-          return;
-        }
-        if (ttsMenuPanel.classList.contains("open")) {
-          closeTtsMenu();
-        } else {
-          openTtsMenu();
-        }
-      }
-
-      function renderRegenMenu() {
-        if (!regenMenuPanel) {
-          return;
-        }
-        regenMenuPanel.innerHTML = "";
-        const label = document.createElement("div");
-        label.className = "menu-panel__label";
-        label.textContent = t("kanaStyleLabel");
-        regenMenuPanel.appendChild(label);
-        const options = [
-          { value: "partial", label: t("kanaStylePartial") },
-          { value: "mixed", label: t("kanaStyleMixed") },
-        ];
-        options.forEach((option) => {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "btn";
-          if (option.value === state.kanaStyle) {
-            btn.classList.add("is-active");
-          }
-          btn.textContent = option.label;
-          btn.addEventListener("click", () => {
-            closeRegenMenu();
-            regenerateChunk(option.value);
-          });
-          regenMenuPanel.appendChild(btn);
-        });
-      }
-
-      function positionRegenMenuPanel() {
-        if (!regenMenuPanel || !regenMenuPanel.classList.contains("open")) {
-          return;
-        }
-        const panelRect = regenMenuPanel.getBoundingClientRect();
-        const anchorRect = regenChunkBtn.getBoundingClientRect();
-        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-        const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-        const margin = 16;
-        const anchorCenter = anchorRect.left + anchorRect.width / 2;
-        const idealLeft = anchorCenter - panelRect.width / 2;
-        const maxLeft = viewportWidth - panelRect.width - margin;
-        const left = Math.max(margin, Math.min(idealLeft, maxLeft));
-        let top = anchorRect.bottom + 8;
-        if (top + panelRect.height + margin > viewportHeight) {
-          const above = anchorRect.top - panelRect.height - 8;
-          if (above >= margin) {
-            top = above;
-          } else {
-            top = Math.max(margin, viewportHeight - panelRect.height - margin);
-          }
-        }
-        regenMenuPanel.style.left = `${left}px`;
-        regenMenuPanel.style.top = `${top}px`;
-        regenMenuPanel.style.right = "auto";
-        regenMenuPanel.style.bottom = "auto";
-        regenMenuPanel.style.transform = "none";
-      }
-
-      function openRegenMenu() {
-        if (
-          !regenMenuPanel ||
-          regenChunkBtn.disabled ||
-          regenMenuPanel.classList.contains("open")
-        ) {
-          return;
-        }
-        renderRegenMenu();
-        regenMenuPanel.classList.add("open");
-        regenChunkBtn.setAttribute("aria-expanded", "true");
-        requestAnimationFrame(positionRegenMenuPanel);
-        window.addEventListener("resize", positionRegenMenuPanel);
-        window.addEventListener("scroll", positionRegenMenuPanel, { passive: true });
-      }
-
-      function closeRegenMenu() {
-        if (!regenMenuPanel) {
-          return;
-        }
-        regenMenuPanel.classList.remove("open");
-        regenChunkBtn.setAttribute("aria-expanded", "false");
-        window.removeEventListener("resize", positionRegenMenuPanel);
-        window.removeEventListener("scroll", positionRegenMenuPanel);
-      }
-
-      function toggleRegenMenu() {
-        if (!regenMenuPanel) {
-          return;
-        }
-        currentAudio.pause();
-        nextAudio.pause();
-        clearGapless();
-        clearPreload();
-        setPlayButton(false);
-        if (regenMenuPanel.classList.contains("open")) {
-          closeRegenMenu();
-        } else {
-          openRegenMenu();
-        }
       }
 
       function addBookmark(index) {
@@ -5517,11 +5291,6 @@
             : t("startTts");
           startTts.disabled = false;
           sampleTts.textContent = t("sample");
-        }
-        if (state.synthRunning) {
-          closeTtsMenu();
-        } else if (ttsMenuPanel && ttsMenuPanel.classList.contains("open")) {
-          renderTtsMenu();
         }
         const overall = data.overall_progress || null;
         state.mergeReady =
@@ -5959,12 +5728,9 @@
         window.removeEventListener("scroll", positionBookMenuPanel);
       }
 
-      async function startSynth(kanaStyle = null) {
+      async function startSynth() {
         if (!state.book) {
           return;
-        }
-        if (kanaStyle) {
-          setKanaStyle(kanaStyle);
         }
         if (state.advancedMode) {
           const saved = await saveVoiceMap();
@@ -7157,7 +6923,13 @@
         const file = uploadInput.files ? uploadInput.files[0] : null;
         ingestFile(file);
       });
-      startTts.addEventListener("click", toggleTtsMenu);
+      startTts.addEventListener("click", () => {
+        if (state.synthRunning) {
+          stopSynth();
+        } else {
+          startSynth();
+        }
+      });
       sampleTts.addEventListener("click", toggleSample);
       mergeBtn.addEventListener("click", () => {
         startMerge();
@@ -7194,30 +6966,6 @@
           return;
         }
         closeDownloadMenu();
-      });
-      document.addEventListener("click", (event) => {
-        if (!ttsMenuPanel || !ttsMenuPanel.classList.contains("open")) {
-          return;
-        }
-        const target = event.target;
-        if (target === startTts || ttsMenuPanel.contains(target)) {
-          return;
-        }
-        closeTtsMenu();
-      });
-      document.addEventListener("click", (event) => {
-        if (!regenMenuPanel || !regenMenuPanel.classList.contains("open")) {
-          return;
-        }
-        const target = event.target;
-        if (
-          target === regenChunkBtn ||
-          (regenChunkBtn && regenChunkBtn.contains(target)) ||
-          regenMenuPanel.contains(target)
-        ) {
-          return;
-        }
-        closeRegenMenu();
       });
       deleteBookBtn.addEventListener("click", deleteBook);
       deleteM4bBtn.addEventListener("click", deleteM4b);
@@ -7262,7 +7010,7 @@
         }
       });
       if (regenChunkBtn) {
-        regenChunkBtn.addEventListener("click", toggleRegenMenu);
+        regenChunkBtn.addEventListener("click", regenerateChunk);
       }
       bookmarkList.addEventListener("click", (event) => {
         const target = event.target;
