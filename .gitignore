@@ -34,3 +34,5 @@ voices/
 plans/
 *.epub
 *.wav
+
+.wireguard

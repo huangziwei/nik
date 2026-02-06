@@ -33,7 +33,7 @@ from rich.progress import (
 )
 
 from . import voice as voice_util
-from .text import read_clean_text
+from .text import SECTION_BREAK, normalize_section_breaks, read_clean_text, strip_section_breaks
 from .voice import VoiceConfig
 
 torch = None
@@ -86,6 +86,9 @@ _JP_QUOTE_CHARS = {
     "〞",
     "〟",
 }
+
+_SECTION_PAD_MULT = 3
+_CHAPTER_PAD_MULT = 6
 _JP_OPEN_QUOTES = {"「", "『", "《", "〈", "【", "〔", "［", "｢", "〝"}
 _JP_CLOSE_QUOTES = {"」", "』", "》", "〉", "】", "〕", "］", "｣", "〞", "〟"}
 _DASH_RUN_RE = re.compile(r"[‐‑‒–—―─━]{2,}")
@@ -533,15 +536,22 @@ def _generate_audio_mlx(
 
 def _normalize_text(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
+    if "\n\n\n" in text:
+        text = re.sub(r"\n{3,}", f"\n\n{SECTION_BREAK}\n\n", text)
+    text = normalize_section_breaks(text)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
 
+def _is_ws(ch: str) -> bool:
+    return ch.isspace() or ch == SECTION_BREAK
+
+
 def _trim_span(text: str, start: int, end: int) -> Optional[Tuple[int, int]]:
-    while start < end and text[start].isspace():
+    while start < end and _is_ws(text[start]):
         start += 1
-    while end > start and text[end - 1].isspace():
+    while end > start and _is_ws(text[end - 1]):
         end -= 1
     if start >= end:
         return None
@@ -550,9 +560,11 @@ def _trim_span(text: str, start: int, end: int) -> Optional[Tuple[int, int]]:
 
 def _span_has_content(text: str, start: int, end: int) -> bool:
     for ch in text[start:end]:
-        if ch.isspace():
+        if _is_ws(ch):
             continue
         if _is_japanese_char(ch):
+            return True
+        if ch.isdigit():
             return True
         if ch.isascii() and ch.isalnum():
             return True
@@ -562,7 +574,7 @@ def _span_has_content(text: str, start: int, end: int) -> bool:
 
 
 def _advance_ws(text: str, pos: int) -> int:
-    while pos < len(text) and text[pos].isspace():
+    while pos < len(text) and _is_ws(text[pos]):
         pos += 1
     return pos
 
@@ -617,6 +629,18 @@ def split_sentence_spans(text: str) -> List[Tuple[int, int]]:
             i = _advance_ws(text, i)
             continue
         if ch == "\n":
+            if _span_has_content(text, start, i):
+                span = _trim_span(text, start, i)
+                if span:
+                    spans.append(span)
+                i += 1
+                i = _advance_ws(text, i)
+                start = i
+                continue
+            i += 1
+            i = _advance_ws(text, i)
+            continue
+        if ch == SECTION_BREAK:
             if _span_has_content(text, start, i):
                 span = _trim_span(text, start, i)
                 if span:
@@ -2913,7 +2937,17 @@ def _prepare_manifest(
     manifest_chapters: List[dict] = []
     for ch in chapters:
         spans = make_chunk_spans(ch.text, max_chars=max_chars, chunk_mode="japanese")
-        chunks = [ch.text[start:end] for start, end in spans]
+        section_breaks = [idx for idx, chv in enumerate(ch.text) if chv == SECTION_BREAK]
+        chunk_section_breaks = [False] * len(spans)
+        if section_breaks and spans:
+            break_idx = 0
+            for idx, (_start, end) in enumerate(spans):
+                next_start = spans[idx + 1][0] if idx + 1 < len(spans) else len(ch.text)
+                while break_idx < len(section_breaks) and section_breaks[break_idx] < end:
+                    break_idx += 1
+                if break_idx < len(section_breaks) and section_breaks[break_idx] < next_start:
+                    chunk_section_breaks[idx] = True
+        chunks = [strip_section_breaks(ch.text[start:end]) for start, end in spans]
         if not chunks:
             raise ValueError(f"No chunks generated for chapter: {ch.id}")
         chapter_chunks.append(chunks)
@@ -2926,6 +2960,7 @@ def _prepare_manifest(
                 "text_sha256": sha256_str(ch.text),
                 "chunks": chunks,
                 "chunk_spans": [[start, end] for start, end in spans],
+                "chunk_section_breaks": chunk_section_breaks,
                 "durations_ms": [None] * len(chunks),
             }
         )
@@ -2935,6 +2970,8 @@ def _prepare_manifest(
         "voice": voice,
         "max_chars": int(max_chars),
         "pad_ms": int(pad_ms),
+        "section_pad_ms": int(pad_ms) * _SECTION_PAD_MULT,
+        "chapter_pad_ms": int(pad_ms) * _CHAPTER_PAD_MULT,
         "chunk_mode": "japanese",
         "chapters": manifest_chapters,
     }
@@ -3230,6 +3267,8 @@ def synthesize_book(
     if voice_map:
         manifest["voice_overrides"] = voice_overrides
     manifest["pad_ms"] = int(pad_ms)
+    manifest["section_pad_ms"] = int(pad_ms) * _SECTION_PAD_MULT
+    manifest["chapter_pad_ms"] = int(pad_ms) * _CHAPTER_PAD_MULT
     manifest["kana_normalize"] = kana_normalize
     manifest["kana_style"] = kana_style
     manifest["partial_mid_kanji"] = bool(partial_mid_kanji)
@@ -3306,6 +3345,13 @@ def synthesize_book(
             chapter_id = ch_entry.get("id") or "chapter"
             chapter_title = ch_entry.get("title") or chapter_id
             chapter_total = len(chunks)
+            chunk_section_breaks = ch_entry.get("chunk_section_breaks") or []
+            section_pad_ms = int(
+                manifest.get("section_pad_ms") or int(pad_ms) * _SECTION_PAD_MULT
+            )
+            chapter_pad_ms = int(
+                manifest.get("chapter_pad_ms") or int(pad_ms) * _CHAPTER_PAD_MULT
+            )
             if selected_ids and chapter_id not in selected_ids:
                 continue
             progress.update(
@@ -3411,8 +3457,15 @@ def synthesize_book(
                 else:
                     audio = np.concatenate([np.asarray(w).flatten() for w in wavs])
 
-                if pad_ms > 0:
-                    pad_samples = int(round(sample_rate * (pad_ms / 1000.0)))
+                extra_pad_ms = 0
+                if chunk_idx - 1 < len(chunk_section_breaks):
+                    if chunk_section_breaks[chunk_idx - 1]:
+                        extra_pad_ms += section_pad_ms
+                if chunk_idx == chapter_total:
+                    extra_pad_ms += chapter_pad_ms
+                pad_ms_total = int(pad_ms) + extra_pad_ms
+                if pad_ms_total > 0:
+                    pad_samples = int(round(sample_rate * (pad_ms_total / 1000.0)))
                     if pad_samples > 0:
                         pad = np.zeros(pad_samples, dtype=audio.dtype)
                         audio = np.concatenate([audio, pad])
@@ -3579,6 +3632,7 @@ def synthesize_chunk(
     if not isinstance(durations, list) or len(durations) != chunk_count:
         durations = [None] * chunk_count
         entry["durations_ms"] = durations
+    chunk_section_breaks = entry.get("chunk_section_breaks") or []
 
     default_voice = voice or entry.get("voice") or manifest.get("voice") or ""
     if not default_voice:
@@ -3716,8 +3770,21 @@ def synthesize_chunk(
         audio = np.concatenate([np.asarray(w).flatten() for w in wavs])
 
     pad_ms = int(manifest.get("pad_ms") or 0)
-    if pad_ms > 0:
-        pad_samples = int(round(sample_rate * (pad_ms / 1000.0)))
+    section_pad_ms = int(
+        manifest.get("section_pad_ms") or pad_ms * _SECTION_PAD_MULT
+    )
+    chapter_pad_ms = int(
+        manifest.get("chapter_pad_ms") or pad_ms * _CHAPTER_PAD_MULT
+    )
+    extra_pad_ms = 0
+    if chunk_index < len(chunk_section_breaks):
+        if chunk_section_breaks[chunk_index]:
+            extra_pad_ms += section_pad_ms
+    if chunk_index + 1 == chunk_count:
+        extra_pad_ms += chapter_pad_ms
+    pad_ms_total = pad_ms + extra_pad_ms
+    if pad_ms_total > 0:
+        pad_samples = int(round(sample_rate * (pad_ms_total / 1000.0)))
         if pad_samples > 0:
             pad = np.zeros(pad_samples, dtype=audio.dtype)
             audio = np.concatenate([audio, pad])

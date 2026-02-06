@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from nik import tts as tts_util
+from nik.text import SECTION_BREAK
 from nik import voice as voice_util
 
 
@@ -18,6 +19,20 @@ def test_chunking_splits_on_commas_and_linebreaks() -> None:
     spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
     chunks = [text[start:end] for start, end in spans]
     assert chunks == ["私は、猫です。", "次の行です。"]
+
+
+def test_chunking_splits_on_section_break() -> None:
+    text = f"一。\n\n{SECTION_BREAK}\n\n二。"
+    spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["一。", "二。"]
+
+
+def test_chunking_splits_on_fullwidth_digits() -> None:
+    text = "１\n\n本文です。"
+    spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["１", "本文です。"]
 
 
 def test_chunking_splits_on_commas_when_too_long() -> None:

@@ -10,6 +10,8 @@ from urllib.parse import unquote
 from bs4 import BeautifulSoup
 from ebooklib import ITEM_DOCUMENT, ITEM_IMAGE, epub
 
+from .text import SECTION_BREAK, normalize_section_breaks
+
 
 @dataclass(frozen=True)
 class TocEntry:
@@ -473,6 +475,7 @@ def _soup_to_text(
         "li",
         "blockquote",
         "pre",
+        "hr",
         "h1",
         "h2",
         "h3",
@@ -481,10 +484,56 @@ def _soup_to_text(
         "h6",
     }
 
+    def _class_key(tag: object) -> str:
+        classes = getattr(tag, "get", lambda *_args, **_kwargs: [])("class", [])
+        if isinstance(classes, str):
+            classes = [classes]
+        cleaned = [str(c).strip() for c in classes if str(c).strip()]
+        return " ".join(cleaned)
+
+    def _top_level_blocks(name: str) -> List[object]:
+        out: List[object] = []
+        for elem in root.find_all(name):
+            if any(getattr(parent, "name", None) in block_tags for parent in elem.parents):
+                continue
+            out.append(elem)
+        return out
+
+    p_class_counts: dict[str, int] = {}
+    for para in _top_level_blocks("p"):
+        key = _class_key(para)
+        if not key:
+            continue
+        text = para.get_text(separator="", strip=True)
+        if not text:
+            continue
+        p_class_counts[key] = p_class_counts.get(key, 0) + 1
+
+    normal_classes: set[str] = set()
+    if p_class_counts:
+        primary_count = max(p_class_counts.values())
+        if primary_count >= 8:
+            threshold = max(3, int(primary_count * 0.2))
+            normal_classes = {
+                key for key, count in p_class_counts.items() if count >= threshold
+            }
+        else:
+            normal_classes = set(p_class_counts.keys())
+
+    ornament_re = re.compile(
+        r"^(?:[＊*・…‥\u2026\-—=]{3,}|[◆◇■□●○]{3,}|"
+        r"(?:\*|\uFF0A)(?:\s*(?:\*|\uFF0A)){2,})$"
+    )
+
     blocks: List[str] = []
     for elem in root.find_all(block_tags):
         if any(getattr(parent, "name", None) in block_tags for parent in elem.parents):
             continue
+        if getattr(elem, "name", None) == "hr":
+            if blocks:
+                blocks.append(SECTION_BREAK)
+            continue
+
         for br in elem.find_all("br"):
             br.replace_with("\n")
         text = elem.get_text(separator="", strip=False)
@@ -493,8 +542,20 @@ def _soup_to_text(
         text = re.sub(r"\n{3,}", "\n\n", text)
         text = re.sub(r"[ \t]{2,}", " ", text)
         text = text.strip()
-        if text:
-            blocks.append(text)
+        if not text:
+            continue
+
+        if ornament_re.fullmatch(text):
+            if blocks:
+                blocks.append(SECTION_BREAK)
+            continue
+
+        if getattr(elem, "name", None) == "p":
+            key = _class_key(elem)
+            if key and key not in normal_classes and blocks:
+                blocks.append(SECTION_BREAK)
+
+        blocks.append(text)
 
     if blocks:
         return normalize_text("\n\n".join(blocks))
@@ -612,6 +673,9 @@ def normalize_text(text: str) -> str:
     )
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"[ \t]+\n", "\n", text)
+    if "\n\n\n" in text:
+        text = re.sub(r"\n{3,}", f"\n\n{SECTION_BREAK}\n\n", text)
+    text = normalize_section_breaks(text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ \t]{2,}", " ", text)
     text = re.sub(r"\.[ \t]*\.[ \t]*\.", "...", text)

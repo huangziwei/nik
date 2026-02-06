@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from nik import epub as epub_util
+from nik.text import SECTION_BREAK
 
 
 def test_slugify_japanese_fallback() -> None:
@@ -39,3 +40,11 @@ def test_html_to_text_with_ruby_spans() -> None:
     assert spans == [
         {"start": 1, "end": 3, "base": "漢字", "reading": "かんじ"}
     ]
+
+
+def test_html_to_text_inserts_section_break_for_rare_class() -> None:
+    html = "".join("<p class='main'>本文</p>" for _ in range(10))
+    html += "<p class='alt'>区切り</p>"
+    html += "<p class='main'>続き</p>"
+    text = epub_util.html_to_text(html.encode("utf-8"))
+    assert f"\n\n{SECTION_BREAK}\n\n" in text

@@ -5,6 +5,39 @@ from pathlib import Path
 from typing import Iterable
 
 
+SECTION_BREAK = "\uE000"
+
+
+def normalize_section_breaks(text: str) -> str:
+    if not text or SECTION_BREAK not in text:
+        return text
+    text = re.sub(
+        rf"[ \t]*{SECTION_BREAK}[ \t]*",
+        f"\n\n{SECTION_BREAK}\n\n",
+        text,
+    )
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(
+        rf"(?:\n\n{SECTION_BREAK}){{2,}}",
+        f"\n\n{SECTION_BREAK}",
+        text,
+    )
+    text = re.sub(
+        rf"(?:{SECTION_BREAK}\n\n){{2,}}",
+        f"{SECTION_BREAK}\n\n",
+        text,
+    )
+    text = re.sub(rf"^(?:\s*{SECTION_BREAK}\s*)+", "", text)
+    text = re.sub(rf"(?:\s*{SECTION_BREAK}\s*)+$", "", text)
+    return text
+
+
+def strip_section_breaks(text: str) -> str:
+    if not text or SECTION_BREAK not in text:
+        return text
+    return text.replace(SECTION_BREAK, "")
+
+
 def read_clean_text(path: Path) -> str:
     s = path.read_text(encoding="utf-8", errors="strict")
     s = s.replace("\u02bc", "'").replace("\u2018", "'").replace("\u2019", "'")

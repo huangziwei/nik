@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from . import tts as tts_util
-from .text import read_clean_text
+from .text import SECTION_BREAK, normalize_section_breaks, read_clean_text
 
 RULE_KEYS = (
     "drop_chapter_title_patterns",
@@ -587,6 +587,9 @@ def normalize_text(
     )
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"[ \t]+\n", "\n", text)
+    if "\n\n\n" in text:
+        text = re.sub(r"\n{3,}", f"\n\n{SECTION_BREAK}\n\n", text)
+    text = normalize_section_breaks(text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r'(^|[\s“("])\[(?P<l>[A-Za-z])\](?=[a-z])', r"\1\g<l>", text)
     text = re.sub(r"-\n(?=\w)", "-", text)

@@ -1115,6 +1115,13 @@
         margin: 0 0 16px;
       }
 
+      .chapter-text .section-break {
+        height: 1px;
+        background: var(--line);
+        margin: 18px 0;
+        opacity: 0.6;
+      }
+
       .chapter-text ruby {
         ruby-position: over;
         ruby-align: center;
@@ -4758,6 +4765,8 @@
         return chapter.clean_text.slice(span[0], span[1]);
       }
 
+      const SECTION_BREAK = "\ue000";
+
       function splitParagraphSpans(text) {
         const spans = [];
         const re = /\n\s*\n+/g;
@@ -6308,6 +6317,15 @@
         } else {
           chapterText.innerHTML = "";
           paragraphs.forEach(([paraStart, paraEnd]) => {
+            const paragraphText = cleanText
+              .slice(paraStart, paraEnd)
+              .trim();
+            if (paragraphText === SECTION_BREAK) {
+              const divider = document.createElement("div");
+              divider.className = "section-break";
+              chapterText.appendChild(divider);
+              return;
+            }
             const p = document.createElement("p");
             let cursor = paraStart;
 

@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from nik import sanitize as sanitize_util
+from nik.text import SECTION_BREAK
 
 
 def _write_book(tmp_path: Path) -> Path:
@@ -43,3 +44,9 @@ def test_refresh_chunks_creates_manifest(tmp_path: Path) -> None:
     sanitize_util.sanitize_book(book_dir=book_dir, overwrite=True)
     sanitize_util.refresh_chunks(book_dir=book_dir)
     assert (book_dir / "tts" / "manifest.json").exists()
+
+
+def test_normalize_text_preserves_section_break() -> None:
+    raw = f"一。\n\n{SECTION_BREAK}\n\n二。"
+    cleaned = sanitize_util.normalize_text(raw)
+    assert SECTION_BREAK in cleaned
