@@ -96,6 +96,45 @@ _KANJI_SAFE_MARKS = {"々", "〆", "ヶ", "ヵ", "ゝ", "ゞ"}
 _RUBY_YOON_LARGE = set("やゆよヤユヨ")
 _RUBY_YOON_SMALL_MAP = str.maketrans("やゆよヤユヨ", "ゃゅょャュョ")
 _RUBY_YOON_SMALL_KATA_MAP = str.maketrans("ヤユヨ", "ャュョ")
+_KYUJITAI_MAP = {
+    "覺": "覚",
+    "學": "学",
+    "國": "国",
+    "體": "体",
+    "會": "会",
+    "來": "来",
+    "讀": "読",
+    "變": "変",
+    "廣": "広",
+    "舊": "旧",
+    "兩": "両",
+    "圓": "円",
+    "寫": "写",
+    "觀": "観",
+    "價": "価",
+    "氣": "気",
+    "兒": "児",
+    "團": "団",
+    "靜": "静",
+    "眞": "真",
+    "應": "応",
+    "驅": "駆",
+    "歸": "帰",
+    "濟": "済",
+    "證": "証",
+    "醫": "医",
+    "壞": "壊",
+    "懷": "懐",
+    "圖": "図",
+    "樂": "楽",
+    "嶋": "島",
+    "噓": "嘘",
+    "亞": "亜",
+    "驛": "駅",
+    "畫": "画",
+    "點": "点",
+}
+_KYUJITAI_TRANSLATION = str.maketrans(_KYUJITAI_MAP)
 
 _SHORT_TAIL_PUNCT = "。"
 _SHORT_TAIL_MAX_CHARS = 12
@@ -2114,6 +2153,7 @@ def _normalize_kana_with_tagger(
 ) -> str:
     if not text:
         return text
+    text = text.translate(_KYUJITAI_TRANSLATION)
     kana_style = _normalize_kana_style(kana_style)
     out: List[str] = []
     tokens = list(tagger(text))
