@@ -513,6 +513,7 @@ def _synth(args: argparse.Namespace) -> int:
         backend=args.backend,
         kana_normalize=args.kana_normalize,
         kana_style=args.kana_style,
+        partial_mid_kanji=args.partial_mid_kanji,
     )
 
 
@@ -551,6 +552,7 @@ def _sample(args: argparse.Namespace) -> int:
         backend=args.backend,
         kana_normalize=args.kana_normalize,
         kana_style=args.kana_style,
+        partial_mid_kanji=args.partial_mid_kanji,
     )
 
 
@@ -715,7 +717,10 @@ def _kana(args: argparse.Namespace) -> int:
     if args.kana_normalize:
         try:
             tts_source = tts_util._normalize_kana_text(
-                tts_source, kana_style=args.kana_style, force_first_kanji=True
+                tts_source,
+                kana_style=args.kana_style,
+                force_first_kanji=True,
+                partial_mid_kanji=args.partial_mid_kanji,
             )
         except RuntimeError as exc:
             sys.stderr.write(f"{exc}\n")
@@ -870,6 +875,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Kana style when normalizing (default: partial; use off to keep kanji)",
     )
     synth.add_argument(
+        "--partial-mid-kanji",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Allow mid-sentence kanji->kana conversion in partial mode (default: disabled)",
+    )
+    synth.add_argument(
         "--model",
         default=None,
         help="Model id/path (defaults depend on backend)",
@@ -948,6 +959,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Kana style when normalizing (default: partial; use off to keep kanji)",
     )
     sample.add_argument(
+        "--partial-mid-kanji",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Allow mid-sentence kanji->kana conversion in partial mode (default: disabled)",
+    )
+    sample.add_argument(
         "--model",
         default=None,
         help="Model id/path (defaults depend on backend)",
@@ -993,6 +1010,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("partial", "hiragana", "katakana", "mixed", "off"),
         default="partial",
         help="Kana style when normalizing (default: partial; use off to keep kanji)",
+    )
+    kana.add_argument(
+        "--partial-mid-kanji",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Allow mid-sentence kanji->kana conversion in partial mode (default: disabled)",
     )
     kana.add_argument(
         "--debug",

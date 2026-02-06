@@ -404,6 +404,7 @@ def test_normalize_kana_with_stub_tagger_partial() -> None:
         DummyTagger(),
         kana_style="partial",
         zh_lexicon={"漢字"},
+        partial_mid_kanji=True,
     )
     assert out == "カンジ始まる"
 
@@ -440,6 +441,7 @@ def test_normalize_kana_with_stub_tagger_partial_common_noun(monkeypatch) -> Non
         DummyTagger(),
         kana_style="partial",
         zh_lexicon=set(),
+        partial_mid_kanji=True,
     )
     assert out == "自分"
 
@@ -473,6 +475,7 @@ def test_normalize_kana_with_stub_tagger_partial_honorific_prefix(monkeypatch) -
         DummyTagger(),
         kana_style="partial",
         zh_lexicon=set(),
+        partial_mid_kanji=True,
     )
     assert out == "ゴゾンジ"
 
@@ -543,6 +546,7 @@ def test_normalize_kana_with_stub_tagger_partial_honorific_prefix_go_o_choice(
         DummyTagger(),
         kana_style="partial",
         zh_lexicon=set(),
+        partial_mid_kanji=True,
     )
     assert out == "ゴゾンジ"
 
@@ -622,6 +626,7 @@ def test_normalize_kana_with_stub_tagger_partial_common_noun_guard(monkeypatch) 
         DummyTagger(),
         kana_style="partial",
         zh_lexicon=set(),
+        partial_mid_kanji=True,
     )
     assert out == "ゼンリャク"
 
@@ -657,6 +662,7 @@ def test_normalize_kana_with_stub_tagger_partial_rare() -> None:
         DummyTagger(),
         kana_style="partial",
         zh_lexicon={"妻子"},
+        partial_mid_kanji=True,
     )
     assert out == "サイシ"
 
@@ -709,7 +715,11 @@ def test_normalize_kana_with_stub_tagger_partial_kanji_run_convert() -> None:
             ]
 
     out = tts_util._normalize_kana_with_tagger(
-        "漢字", DummyTagger(), kana_style="partial", zh_lexicon={"漢字"}
+        "漢字",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon={"漢字"},
+        partial_mid_kanji=True,
     )
     assert out == "カンジ"
 
@@ -852,6 +862,7 @@ def test_synthesize_book_force_first_kanji(monkeypatch: pytest.MonkeyPatch, tmp_
         kana_style: str = "mixed",
         zh_lexicon: set[str] | None = None,
         force_first_kanji: bool = False,
+        partial_mid_kanji: bool = False,
     ) -> str:
         calls["force_first_kanji"] = force_first_kanji
         return text

@@ -883,6 +883,7 @@ class SynthRequest(BaseModel):
     use_voice_map: bool = False
     kana_normalize: bool = True
     kana_style: str = "partial"
+    partial_mid_kanji: bool = False
 
 
 class ChunkSynthRequest(BaseModel):
@@ -1691,6 +1692,10 @@ def create_app(root_dir: Path) -> FastAPI:
             cmd.append("--rechunk")
         if not payload.kana_normalize:
             cmd.append("--no-kana-normalize")
+        if payload.partial_mid_kanji:
+            cmd.append("--partial-mid-kanji")
+        else:
+            cmd.append("--no-partial-mid-kanji")
 
         env = os.environ.copy()
         process = subprocess.Popen(
@@ -1799,6 +1804,10 @@ def create_app(root_dir: Path) -> FastAPI:
             cmd.append("--rechunk")
         if not payload.kana_normalize:
             cmd.append("--no-kana-normalize")
+        if payload.partial_mid_kanji:
+            cmd.append("--partial-mid-kanji")
+        else:
+            cmd.append("--no-partial-mid-kanji")
 
         env = os.environ.copy()
         process = subprocess.Popen(

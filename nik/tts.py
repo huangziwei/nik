@@ -1984,6 +1984,7 @@ def _normalize_kana_with_tagger(
     kana_style: str = "mixed",
     zh_lexicon: Optional[set[str]] = None,
     force_first_kanji: bool = False,
+    partial_mid_kanji: bool = False,
 ) -> str:
     if not text:
         return text
@@ -1994,7 +1995,7 @@ def _normalize_kana_with_tagger(
     force_first_span: set[int] = set()
     first_kanji_done = False
     if kana_style == "partial" and tokens:
-        if zh_lexicon is None:
+        if partial_mid_kanji and zh_lexicon is None:
             zh_lexicon = _load_zh_lexicon()
         idx = 0
         while idx < len(tokens):
@@ -2024,7 +2025,7 @@ def _normalize_kana_with_tagger(
                 action = ""
                 if has_numeric and has_counter:
                     action = "convert"
-                elif run_surface and run_surface in (zh_lexicon or set()):
+                elif partial_mid_kanji and run_surface and run_surface in (zh_lexicon or set()):
                     action = "convert"
                 if action:
                     for pos in range(idx, end):
@@ -2096,7 +2097,7 @@ def _normalize_kana_with_tagger(
             if _should_convert_honorific_prefix(surface, reading_kata, attrs):
                 out.append(_apply_surface_kana(reading_kata, surface))
                 continue
-            if _should_partial_convert(surface, attrs, zh_lexicon or set()):
+            if partial_mid_kanji and _should_partial_convert(surface, attrs, zh_lexicon or set()):
                 out.append(_apply_surface_kana(reading_kata, surface))
             else:
                 out.append(surface)
@@ -2111,7 +2112,11 @@ def _normalize_kana_with_tagger(
 
 
 def _normalize_kana_text(
-    text: str, *, kana_style: str = "mixed", force_first_kanji: bool = False
+    text: str,
+    *,
+    kana_style: str = "mixed",
+    force_first_kanji: bool = False,
+    partial_mid_kanji: bool = False,
 ) -> str:
     kana_style = _normalize_kana_style(kana_style)
     if kana_style == "off":
@@ -2120,7 +2125,7 @@ def _normalize_kana_text(
         return text
     tagger = _get_kana_tagger()
     zh_lexicon: Optional[set[str]] = None
-    if kana_style == "partial":
+    if kana_style == "partial" and partial_mid_kanji:
         zh_lexicon = _load_zh_lexicon()
     parts = re.split(r"(\s+)", text)
     out: List[str] = []
@@ -2138,6 +2143,7 @@ def _normalize_kana_text(
                     kana_style=kana_style,
                     zh_lexicon=zh_lexicon,
                     force_first_kanji=force_first_kanji,
+                    partial_mid_kanji=partial_mid_kanji,
                 )
             )
         else:
@@ -3027,6 +3033,7 @@ def synthesize_book(
     backend: Optional[str] = None,
     kana_normalize: bool = True,
     kana_style: str = "mixed",
+    partial_mid_kanji: bool = False,
 ) -> int:
     chapters = load_book_chapters(book_dir)
     backend_name = _select_backend(backend)
@@ -3108,6 +3115,7 @@ def synthesize_book(
     manifest["pad_ms"] = int(pad_ms)
     manifest["kana_normalize"] = kana_normalize
     manifest["kana_style"] = kana_style
+    manifest["partial_mid_kanji"] = bool(partial_mid_kanji)
     atomic_write_json(manifest_path, manifest)
 
     voice_configs: Dict[str, VoiceConfig] = {}
@@ -3246,6 +3254,7 @@ def synthesize_book(
                             kana_tagger,
                             kana_style=kana_style,
                             force_first_kanji=True,
+                            partial_mid_kanji=partial_mid_kanji,
                         )
                     except Exception as exc:
                         sys.stderr.write(f"Failed kana normalization: {exc}\n")
@@ -3333,6 +3342,7 @@ def synthesize_book_sample(
     backend: Optional[str] = None,
     kana_normalize: bool = True,
     kana_style: str = "mixed",
+    partial_mid_kanji: bool = False,
 ) -> int:
     chapters = load_book_chapters(book_dir)
     if not chapters:
@@ -3379,6 +3389,7 @@ def synthesize_book_sample(
         backend=backend,
         kana_normalize=kana_normalize,
         kana_style=kana_style,
+        partial_mid_kanji=partial_mid_kanji,
     )
 
 
@@ -3396,6 +3407,7 @@ def synthesize_chunk(
     backend: Optional[str] = None,
     kana_normalize: Optional[bool] = None,
     kana_style: Optional[str] = None,
+    partial_mid_kanji: Optional[bool] = None,
 ) -> dict:
     if base_dir is None:
         base_dir = Path.cwd()
@@ -3459,6 +3471,8 @@ def synthesize_chunk(
         kana_normalize = bool(manifest.get("kana_normalize"))
     if kana_style is None:
         kana_style = manifest.get("kana_style")
+    if partial_mid_kanji is None:
+        partial_mid_kanji = bool(manifest.get("partial_mid_kanji", False))
     kana_style = _normalize_kana_style(kana_style)
     if kana_style == "off":
         kana_normalize = False
@@ -3533,7 +3547,10 @@ def synthesize_chunk(
     if kana_normalize:
         try:
             tts_source = _normalize_kana_text(
-                tts_source, kana_style=kana_style, force_first_kanji=True
+                tts_source,
+                kana_style=kana_style,
+                force_first_kanji=True,
+                partial_mid_kanji=partial_mid_kanji,
             )
         except RuntimeError as exc:
             raise ValueError(str(exc)) from exc
