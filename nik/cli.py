@@ -454,6 +454,50 @@ def _sanitize(args: argparse.Namespace) -> int:
     return 0
 
 
+def _rechunk(args: argparse.Namespace) -> int:
+    book_dir = Path(args.book)
+    manifest_path = book_dir / "tts" / "manifest.json"
+    max_chars = args.max_chars
+    pad_ms = args.pad_ms
+    chunk_mode = args.chunk_mode
+
+    if manifest_path.exists():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            manifest = {}
+        if max_chars is None:
+            max_chars = manifest.get("max_chars")
+        if pad_ms is None:
+            pad_ms = manifest.get("pad_ms")
+        if chunk_mode is None:
+            chunk_mode = manifest.get("chunk_mode")
+
+    if max_chars is None:
+        max_chars = 220
+    if pad_ms is None:
+        pad_ms = 195
+    if chunk_mode is None:
+        chunk_mode = "japanese"
+
+    try:
+        tts_cleared = sanitize_util.refresh_chunks(
+            book_dir=book_dir,
+            max_chars=int(max_chars),
+            pad_ms=int(pad_ms),
+            chunk_mode=str(chunk_mode),
+        )
+    except Exception as exc:
+        sys.stderr.write(f"Rechunk failed: {exc}\n")
+        return 2
+
+    if tts_cleared:
+        print("Cleared TTS cache and prepared chunks.")
+    else:
+        print("Prepared chunks for TTS.")
+    return 0
+
+
 def _merge(args: argparse.Namespace) -> int:
     book_dir = Path(args.book)
     output_path = Path(args.output)
@@ -769,6 +813,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--overwrite", action="store_true", help="Overwrite existing cleaned output"
     )
     sanitize.set_defaults(func=_sanitize)
+
+    rechunk = subparsers.add_parser(
+        "rechunk",
+        help="Rebuild TTS chunks without re-sanitizing",
+    )
+    rechunk.add_argument("--book", required=True, help="Book output directory")
+    rechunk.add_argument(
+        "--max-chars",
+        type=int,
+        default=None,
+        help="Max characters per chunk (default: reuse manifest or 220)",
+    )
+    rechunk.add_argument(
+        "--pad-ms",
+        type=int,
+        default=None,
+        help="Silence padding per chunk in ms (default: reuse manifest or 195)",
+    )
+    rechunk.add_argument(
+        "--chunk-mode",
+        choices=("japanese", "sentence"),
+        default=None,
+        help="Chunking mode (default: reuse manifest or japanese)",
+    )
+    rechunk.set_defaults(func=_rechunk)
 
     clone = subparsers.add_parser(
         "clone", help="Create a voice sample from audio + transcript"

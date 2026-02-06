@@ -12,7 +12,16 @@ def test_cli_has_expected_commands() -> None:
     ]
     assert subparsers
     choices = set(subparsers[0].choices.keys())
-    for name in ("ingest", "sanitize", "clone", "synth", "sample", "merge", "play"):
+    for name in (
+        "ingest",
+        "sanitize",
+        "rechunk",
+        "clone",
+        "synth",
+        "sample",
+        "merge",
+        "play",
+    ):
         assert name in choices
 
 

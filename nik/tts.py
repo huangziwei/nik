@@ -683,6 +683,18 @@ def _span_has_content(text: str, start: int, end: int) -> bool:
     return False
 
 
+def _span_has_line_content(text: str, start: int, end: int) -> bool:
+    if _span_has_content(text, start, end):
+        return True
+    for ch in text[start:end]:
+        if _is_ws(ch):
+            continue
+        category = unicodedata.category(ch)
+        if category.startswith("P") or category.startswith("S"):
+            return True
+    return False
+
+
 def _advance_ws(text: str, pos: int) -> int:
     while pos < len(text) and _is_ws(text[pos]):
         pos += 1
@@ -711,8 +723,8 @@ def _space_pause_split_indices(text: str) -> set[int]:
                     candidates.append(idx)
             if len(candidates) == 1:
                 has_punct = any(ch in _END_PUNCT or ch in _MID_PUNCT for ch in line)
-                has_ascii = any(ch.isascii() and ch.isalnum() for ch in line)
-                if not has_punct and not has_ascii:
+                has_ascii_letters = any(ch.isascii() and ch.isalpha() for ch in line)
+                if not has_punct and not has_ascii_letters:
                     splits.add(start + candidates[0])
         start = end + 1
     return splits
@@ -739,7 +751,7 @@ def split_sentence_spans(text: str) -> List[Tuple[int, int]]:
             i = _advance_ws(text, i)
             continue
         if ch == "\n":
-            if _span_has_content(text, start, i):
+            if _span_has_line_content(text, start, i):
                 span = _trim_span(text, start, i)
                 if span:
                     spans.append(span)
@@ -751,7 +763,7 @@ def split_sentence_spans(text: str) -> List[Tuple[int, int]]:
             i = _advance_ws(text, i)
             continue
         if ch == SECTION_BREAK:
-            if _span_has_content(text, start, i):
+            if _span_has_line_content(text, start, i):
                 span = _trim_span(text, start, i)
                 if span:
                     spans.append(span)
@@ -769,6 +781,14 @@ def split_sentence_spans(text: str) -> List[Tuple[int, int]]:
             while j < length and text[j] in _CLOSE_PUNCT:
                 j += 1
             if _span_has_content(text, start, j):
+                span = _trim_span(text, start, j)
+                if span:
+                    spans.append(span)
+                j = _advance_ws(text, j)
+                start = j
+                i = j
+                continue
+            if j < length and text[j] in {"\n", SECTION_BREAK}:
                 span = _trim_span(text, start, j)
                 if span:
                     spans.append(span)

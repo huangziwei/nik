@@ -35,6 +35,13 @@ def test_chunking_splits_on_fullwidth_digits() -> None:
     assert chunks == ["１", "本文です。"]
 
 
+def test_chunking_splits_on_space_with_digits() -> None:
+    text = "さくら荘のペットな彼女　全13巻"
+    spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["さくら荘のペットな彼女", "全13巻"]
+
+
 def test_chunking_splits_on_commas_when_too_long() -> None:
     text = "これはとても長い文章なので、途中で区切る必要があります。"
     spans = tts_util.make_chunk_spans(text, max_chars=15, chunk_mode="japanese")
@@ -47,6 +54,13 @@ def test_chunking_keeps_leading_ellipsis_with_sentence() -> None:
     spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
     chunks = [text[start:end] for start, end in spans]
     assert chunks == ["……なんで八奈見がここにいるんだ。"]
+
+
+def test_chunking_splits_on_punct_only_line() -> None:
+    text = "「……」\n\n「空太？」"
+    spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["「……」", "「空太？」"]
 
 
 def test_chunk_book_writes_manifest(tmp_path: Path) -> None:
