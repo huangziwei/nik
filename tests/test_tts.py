@@ -1116,6 +1116,11 @@ def test_normalize_numbers_kanji_digit_sequence_zero() -> None:
     assert tts_util._normalize_numbers(text) == "百の人間"
 
 
+def test_normalize_numbers_kanji_decimal() -> None:
+    text = "二．〇"
+    assert tts_util._normalize_numbers(text) == "二てんぜろ"
+
+
 def test_normalize_numbers_decimal() -> None:
     text = "3.14"
     assert tts_util._normalize_numbers(text) == "三てんいちよん"

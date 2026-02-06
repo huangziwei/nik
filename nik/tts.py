@@ -1645,6 +1645,18 @@ def _normalize_numbers(text: str) -> str:
         right_part = _digit_seq_to_kana(right)
         return f"{left_part}てん{right_part}"
 
+    def _replace_kanji_decimal(match: re.Match) -> str:
+        left = match.group("left") or ""
+        right = match.group("right") or ""
+        if not left or not right:
+            return match.group(0)
+        left_value = _parse_kanji_number(left)
+        if left_value is None:
+            return match.group(0)
+        left_part = _int_to_kanji(left_value)
+        right_part = _kanji_digit_seq_to_kana(right)
+        return f"{left_part}てん{right_part}"
+
     def _replace_percent(match: re.Match) -> str:
         num = match.group("num") or ""
         if not num:
@@ -1860,6 +1872,11 @@ def _normalize_numbers(text: str) -> str:
     text = re.sub(
         r"(?<!\d)(?P<left>\d+)\.(?P<right>\d+)(?!\d)",
         _replace_decimal,
+        text,
+    )
+    text = re.sub(
+        rf"(?P<left>{kanji_num_re})[\\.．](?P<right>[{kanji_digit_chars}]+)",
+        _replace_kanji_decimal,
         text,
     )
     counters = "|".join(sorted({re.escape(c) for c in _COUNTERS}, key=len, reverse=True))
