@@ -1614,6 +1614,23 @@ def _normalize_numbers(text: str) -> str:
             if value == 4:
                 return "よにん"
             return f"{_int_to_kana(value)}にん"
+        if counter == "日間":
+            if any(
+                ch in _KANJI_SMALL_UNIT_VALUES or ch in _KANJI_BIG_UNIT_VALUES for ch in num
+            ):
+                value = _parse_kanji_numeral(num)
+            elif any(ch in {"〇", "零"} for ch in num):
+                value = _kanji_digits_to_int(num)
+            else:
+                value = _kanji_digits_to_int(num)
+            if value is None:
+                return match.group(0)
+            if value == 1:
+                return "いちにちかん"
+            day_reading = _day_reading(value)
+            if day_reading:
+                return f"{day_reading}かん"
+            return f"{_int_to_kana(value)}にちかん"
         counter_reading = _KANA_COUNTER_READINGS.get(counter, counter)
         if any(
             ch in _KANJI_SMALL_UNIT_VALUES or ch in _KANJI_BIG_UNIT_VALUES for ch in num

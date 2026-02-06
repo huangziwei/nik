@@ -1111,6 +1111,16 @@ def test_normalize_numbers_person_readings() -> None:
     assert tts_util._normalize_numbers(text) == "ひとりでふたりとよにん"
 
 
+def test_normalize_numbers_day_span() -> None:
+    text = "二日間の旅"
+    assert tts_util._normalize_numbers(text) == "ふつかかんの旅"
+
+
+def test_normalize_numbers_day_span_single() -> None:
+    text = "一日間滞在"
+    assert tts_util._normalize_numbers(text) == "いちにちかん滞在"
+
+
 def test_normalize_numbers_slash_fraction() -> None:
     text = "北の夕鶴2/3の殺人"
     assert tts_util._normalize_numbers(text) == "北の夕鶴さんぶんのにの殺人"
