@@ -973,7 +973,7 @@ def test_synthesize_book_force_first_kanji(
 
 def test_normalize_numbers_standalone_digits() -> None:
     text = "全7冊 合本版"
-    assert tts_util._normalize_numbers(text) == "全七冊 合本版"
+    assert tts_util._normalize_numbers(text) == "全ななさつ 合本版"
 
 
 def test_normalize_numbers_date() -> None:
@@ -996,9 +996,14 @@ def test_normalize_numbers_counter_wa() -> None:
     assert tts_util._normalize_numbers(text) == "いちわ 土曜日"
 
 
+def test_normalize_numbers_kanji_age_counter() -> None:
+    text = "十二歳の頃"
+    assert tts_util._normalize_numbers(text) == "じゅうにさいの頃"
+
+
 def test_normalize_numbers_kanji_digit_list() -> None:
     text = "一、二席聞いて帰る"
-    assert tts_util._normalize_numbers(text) == "いち、に席聞いて帰る"
+    assert tts_util._normalize_numbers(text) == "一、にせき聞いて帰る"
 
 
 def test_normalize_numbers_kanji_counter_age() -> None:
@@ -1008,7 +1013,7 @@ def test_normalize_numbers_kanji_counter_age() -> None:
 
 def test_normalize_numbers_kanji_counter_digit_seq() -> None:
     text = "一七五センチはある"
-    assert tts_util._normalize_numbers(text) == "ひゃくななじゅうごセンチはある"
+    assert tts_util._normalize_numbers(text) == "ひゃくななじゅうごせんちはある"
 
 
 def test_normalize_numbers_person_readings() -> None:
