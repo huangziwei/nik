@@ -1,0 +1,40 @@
+name: Sutegana Tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "nik/tts.py"
+      - "tests/test_tts.py"
+      - ".github/workflows/sutegana-tests.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "nik/tts.py"
+      - "tests/test_tts.py"
+      - ".github/workflows/sutegana-tests.yml"
+
+jobs:
+  ruby-sutegana:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install minimal test deps (no torch/mlx)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest numpy soundfile rich
+
+      - name: Run sutegana normalization tests
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q tests/test_tts.py -k "normalize_ruby_reading_sutegana"
