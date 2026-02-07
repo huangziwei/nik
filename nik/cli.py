@@ -780,6 +780,13 @@ def _kana(args: argparse.Namespace) -> int:
                 f"kana={kana or ''}\tpron={pron or ''}\treading_raw={reading or ''}\n"
             )
 
+    if args.debug:
+        try:
+            mode = tts_util._first_token_mode(tts_source)
+        except Exception:
+            mode = "unknown"
+        _debug_dump("First token (pre-kana)", mode)
+
     if args.kana_normalize:
         try:
             tts_source = tts_util._normalize_kana_text(

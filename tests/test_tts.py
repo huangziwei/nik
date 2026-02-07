@@ -1120,7 +1120,7 @@ def test_normalize_kana_first_token_to_kana_lowercase_latin_fallback() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "アールオーエムを"
+    assert out == "ロムを"
 
 
 def test_normalize_kana_first_token_to_kana_leading_kanji() -> None:
@@ -1201,7 +1201,7 @@ def test_normalize_kana_first_token_to_kana_mixed_no_reading() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "アールオーエム取り出した"
+    assert out == "ロム取り出した"
 
 
 def test_normalize_kana_first_token_to_kana_skips_epub_noise() -> None:
@@ -1307,12 +1307,13 @@ def test_normalize_kana_first_token_to_kana_real_sakurasou_cases(
 
 
 @pytest.mark.parametrize(
-    ("text", "tokens"),
+    ("text", "tokens", "expected"),
     [
-        # Lowercase code words should remain unchanged.
+        # First-token lowercase should convert when followed by Japanese.
         (
             "ｉｆ』と『ｆｏｒ』の使い方は理解しているな。",
             [("ｉｆ", "イフ"), ("』と『ｆｏｒ』の使い方は理解しているな。", None)],
+            "イフ』と『ｆｏｒ』の使い方は理解しているな。",
         ),
         # Copyright metadata lead should remain unchanged.
         (
@@ -1328,11 +1329,12 @@ def test_normalize_kana_first_token_to_kana_real_sakurasou_cases(
                 (" ", None),
                 ("※2010年1月5日発行", None),
             ],
+            "C)2010-2014 HAJIME KAMOSHIDA ※2010年1月5日発行",
         ),
     ],
 )
 def test_normalize_kana_first_token_to_kana_real_sakurasou_non_targets(
-    text: str, tokens: list[tuple[str, str | None]]
+    text: str, tokens: list[tuple[str, str | None]], expected: str
 ) -> None:
     class DummyFeature:
         def __init__(self, kana: str | None) -> None:
@@ -1355,7 +1357,7 @@ def test_normalize_kana_first_token_to_kana_real_sakurasou_non_targets(
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == text
+    assert out == expected
 
 
 def test_normalize_kana_weekday_reading() -> None:

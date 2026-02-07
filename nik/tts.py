@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import soundfile as sf
+import jaconv
 from rich.progress import (
     BarColumn,
     Progress,
@@ -209,6 +210,10 @@ _LATIN_LETTER_KANA = {
     "X": "エックス",
     "Y": "ワイ",
     "Z": "ゼット",
+}
+
+_LATIN_WORD_KANA = {
+    "ROM": "ロム",
 }
 
 _KANJI_DIGITS = {
@@ -2553,6 +2558,9 @@ def _should_force_first_token_to_kana(
         return False
     if _FORCE_FIRST_TOKEN_NOISE_RE.fullmatch(leading):
         return False
+    compact = re.sub(r"\s+", "", normalized)
+    if _FORCE_FIRST_TOKEN_NOISE_RE.fullmatch(compact):
+        return False
     lower = normalized.lower()
     if lower.startswith(("http://", "https://", "www.")):
         return False
@@ -2563,8 +2571,6 @@ def _should_force_first_token_to_kana(
 
     if re.fullmatch(r"[A-Za-z][A-Za-z0-9+._/-]*", leading):
         if any(ch.islower() for ch in leading):
-            if leading.islower():
-                return False
             if not allow_lowercase:
                 return False
             return has_japanese_after
@@ -2579,7 +2585,7 @@ def _should_force_first_token_to_kana(
 
 
 def _latin_prefix_to_kana(surface: str) -> str:
-    normalized = unicodedata.normalize("NFKC", surface or "").strip()
+    normalized = unicodedata.normalize("NFKC", surface or "")
     if not normalized:
         return ""
 
@@ -2605,10 +2611,16 @@ def _latin_prefix_to_kana(surface: str) -> str:
     if not leading_chars:
         return ""
     leading = "".join(leading_chars)
-    if leading.islower():
-        return ""
     if not all(ch.isascii() and ch.isalpha() for ch in leading):
         return ""
+
+    mapped = _LATIN_WORD_KANA.get(leading.upper())
+    if mapped:
+        return mapped + normalized[idx:]
+
+    romanized = jaconv.alphabet2kana(leading.lower())
+    if romanized and _is_kana_reading(romanized):
+        return romanized + normalized[idx:]
 
     out: List[str] = []
     for ch in leading:
@@ -2618,6 +2630,94 @@ def _latin_prefix_to_kana(surface: str) -> str:
         out.append(kana)
     out.append(normalized[idx:])
     return "".join(out)
+
+
+def _force_first_latin_prefix(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", text or "")
+    if not normalized:
+        return text
+
+    leading_chars: List[str] = []
+    leading_start: Optional[int] = None
+    idx = 0
+    length = len(normalized)
+    while idx < length:
+        ch = normalized[idx]
+        if ch.isspace() or unicodedata.category(ch).startswith("P"):
+            if leading_chars:
+                break
+            idx += 1
+            continue
+        if (
+            _is_kana_char(ch)
+            or _is_kanji_char(ch)
+            or ch.isdigit()
+            or ch in _KANJI_NUMERAL_RANGE_CHARS
+        ):
+            break
+        if leading_start is None:
+            leading_start = idx
+        leading_chars.append(ch)
+        idx += 1
+
+    if not leading_chars:
+        return text
+    if leading_start is None:
+        leading_start = 0
+    leading = "".join(leading_chars)
+    if _FORCE_FIRST_TOKEN_NOISE_RE.fullmatch(leading):
+        return text
+    compact = re.sub(r"\s+", "", normalized)
+    if _FORCE_FIRST_TOKEN_NOISE_RE.fullmatch(compact):
+        return text
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9+._/-]*", leading):
+        return text
+    if not any(_is_kana_char(ch) or _is_kanji_char(ch) for ch in normalized[idx:]):
+        return text
+
+    converted = _latin_prefix_to_kana(normalized[leading_start:])
+    if not converted:
+        return text
+    return normalized[:leading_start] + converted
+
+
+def _first_token_mode(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", text or "").strip()
+    if not normalized:
+        return "empty"
+
+    leading_chars: List[str] = []
+    idx = 0
+    length = len(normalized)
+    while idx < length:
+        ch = normalized[idx]
+        if ch.isspace():
+            if leading_chars:
+                break
+            idx += 1
+            continue
+        if _is_kana_char(ch) or _is_kanji_char(ch) or ch.isdigit() or ch in _KANJI_NUMERAL_RANGE_CHARS:
+            break
+        if unicodedata.category(ch).startswith("P"):
+            if leading_chars:
+                break
+            return "punct-only"
+        leading_chars.append(ch)
+        idx += 1
+
+    if not leading_chars:
+        return "kanji-or-kana"
+    leading = "".join(leading_chars)
+    if _FORCE_FIRST_TOKEN_NOISE_RE.fullmatch(leading):
+        return "noise"
+    compact = re.sub(r"\s+", "", normalized)
+    if _FORCE_FIRST_TOKEN_NOISE_RE.fullmatch(compact):
+        return "noise"
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9+._/-]*", leading):
+        return "non-latin"
+    if not any(_is_kana_char(ch) or _is_kanji_char(ch) for ch in normalized[idx:]):
+        return "latin-no-jp-follow"
+    return "latin-first"
 
 
 def _plan_force_first_targets(
@@ -2824,6 +2924,8 @@ def _normalize_kana_text(
     if kana_style == "off":
         return text
     if not _has_kanji(text):
+        if force_first_token_to_kana:
+            return _force_first_latin_prefix(text)
         return text
     tagger = _get_kana_tagger()
     zh_lexicon: Optional[set[str]] = None
@@ -2850,7 +2952,10 @@ def _normalize_kana_text(
             )
         else:
             out.append(part)
-    return "".join(out)
+    normalized = "".join(out)
+    if force_first_token_to_kana:
+        normalized = _force_first_latin_prefix(normalized)
+    return normalized
 
 
 def _is_numeric_range_char(ch: str) -> bool:
