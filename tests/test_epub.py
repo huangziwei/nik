@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from ebooklib import epub
+
 from nik import epub as epub_util
 from nik.text import SECTION_BREAK
 
@@ -19,8 +21,33 @@ def test_title_from_text_uses_first_line_and_truncates() -> None:
     assert title == "これはとても長い章タ..."
 
 
-def test_extract_chapters_from_sample_epub() -> None:
-    epub_path = Path(__file__).parent / "data" / "異人たちとの夏.epub"
+def _write_sample_epub(epub_path: Path) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("test-book")
+    book.set_title("Sample Book")
+    book.set_language("ja")
+
+    chapters = []
+    for idx, title in enumerate(("序章", "第一章", "第二章", "終章"), start=1):
+        chapter = epub.EpubHtml(
+            title=title,
+            file_name=f"chapter-{idx}.xhtml",
+            lang="ja",
+        )
+        chapter.content = f"<h1>{title}</h1><p>本文{idx}です。</p>"
+        book.add_item(chapter)
+        chapters.append(chapter)
+
+    book.toc = tuple(chapters)
+    book.spine = ["nav", *chapters]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
+def test_extract_chapters_from_sample_epub(tmp_path: Path) -> None:
+    epub_path = tmp_path / "sample.epub"
+    _write_sample_epub(epub_path)
     book = epub_util.read_epub(epub_path)
     chapters = epub_util.extract_chapters(book, prefer_toc=True)
     assert len(chapters) > 3
