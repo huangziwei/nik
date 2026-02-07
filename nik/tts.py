@@ -180,6 +180,7 @@ _ROMAN_NUMERAL_CHARS = (
 _ASCII_ROMAN_NUMERAL_CHARS = "IVXLCDM"
 _ASCII_ROMAN_MAX_VALUE = 50
 _KANJI_NUMERAL_RANGE_CHARS = "〇零一二三四五六七八九十百千万億兆京"
+_FORCE_FIRST_TOKEN_NOISE_RE = re.compile(r"^[cC][0-9A-Za-z]{2,12}$")
 
 _KANJI_DIGITS = {
     1: "一",
@@ -2449,6 +2450,129 @@ def _should_convert_honorific_prefix(
     return True
 
 
+def _is_leading_skip_token(surface: str) -> bool:
+    if not surface:
+        return True
+    for ch in surface:
+        if ch.isspace():
+            continue
+        if unicodedata.category(ch).startswith("P"):
+            continue
+        return False
+    return True
+
+
+def _next_significant_surface(tokens: Sequence[Any], start_idx: int) -> str:
+    for idx in range(start_idx + 1, len(tokens)):
+        surface = str(getattr(tokens[idx], "surface", "") or "")
+        if _is_leading_skip_token(surface):
+            continue
+        return surface
+    return ""
+
+
+def _should_force_first_token_to_kana(surface: str, next_surface: str) -> bool:
+    normalized = unicodedata.normalize("NFKC", surface or "").strip()
+    if not normalized:
+        return False
+
+    leading_chars: List[str] = []
+    idx = 0
+    length = len(normalized)
+    while idx < length:
+        ch = normalized[idx]
+        if ch.isspace():
+            if leading_chars:
+                break
+            idx += 1
+            continue
+        if _is_kana_char(ch) or _is_kanji_char(ch) or ch.isdigit() or ch in _KANJI_NUMERAL_RANGE_CHARS:
+            break
+        if unicodedata.category(ch).startswith("P"):
+            if leading_chars:
+                break
+            return False
+        leading_chars.append(ch)
+        idx += 1
+
+    leading = "".join(leading_chars)
+    if not leading:
+        return False
+    if _FORCE_FIRST_TOKEN_NOISE_RE.fullmatch(leading):
+        return False
+    lower = normalized.lower()
+    if lower.startswith(("http://", "https://", "www.")):
+        return False
+
+    has_japanese_after = any(
+        _is_kana_char(ch) or _is_kanji_char(ch) for ch in normalized[idx:]
+    ) or (_has_kana(next_surface) or _has_kanji(next_surface))
+
+    if re.fullmatch(r"[A-Za-z][A-Za-z0-9+._/-]*", leading):
+        if any(ch.islower() for ch in leading):
+            return False
+        alpha_count = sum(1 for ch in leading if ch.isalpha())
+        if alpha_count <= 1:
+            return has_japanese_after
+        return True
+
+    if any(unicodedata.category(ch).startswith("S") for ch in leading):
+        return has_japanese_after
+    return False
+
+
+def _plan_force_first_targets(
+    tokens: Sequence[Any],
+    *,
+    force_first_kanji: bool,
+    force_first_token_to_kana: bool,
+) -> tuple[set[int], Optional[int]]:
+    force_first_kanji_indices: set[int] = set()
+    force_first_token_idx: Optional[int] = None
+    if not tokens:
+        return force_first_kanji_indices, force_first_token_idx
+
+    if force_first_kanji:
+        force_first_kanji_active = True
+        for token in tokens:
+            surface = getattr(token, "surface", "") or ""
+            if not surface:
+                continue
+            if _has_kana(surface) or _has_kanji(surface):
+                if _has_kana(surface) and not _has_kanji(surface):
+                    force_first_kanji_active = False
+                break
+        if force_first_kanji_active:
+            first_idx: Optional[int] = None
+            for idx, token in enumerate(tokens):
+                surface = getattr(token, "surface", "") or ""
+                if surface and _has_kanji(surface):
+                    first_idx = idx
+                    break
+            if first_idx is not None:
+                force_first_kanji_indices.add(first_idx)
+                surface = getattr(tokens[first_idx], "surface", "") or ""
+                if _is_kanji_only(surface):
+                    end = first_idx + 1
+                    while end < len(tokens):
+                        next_surface = getattr(tokens[end], "surface", "") or ""
+                        if not _is_kanji_only(next_surface):
+                            break
+                        force_first_kanji_indices.add(end)
+                        end += 1
+
+    if force_first_token_to_kana:
+        for idx, token in enumerate(tokens):
+            surface = getattr(token, "surface", "") or ""
+            if _is_leading_skip_token(surface):
+                continue
+            next_surface = _next_significant_surface(tokens, idx)
+            if _should_force_first_token_to_kana(surface, next_surface):
+                force_first_token_idx = idx
+            break
+    return force_first_kanji_indices, force_first_token_idx
+
+
 def _normalize_kana_with_tagger(
     text: str,
     tagger: Any,
@@ -2456,6 +2580,7 @@ def _normalize_kana_with_tagger(
     kana_style: str = "mixed",
     zh_lexicon: Optional[set[str]] = None,
     force_first_kanji: bool = False,
+    force_first_token_to_kana: bool = False,
     partial_mid_kanji: bool = False,
 ) -> str:
     if not text:
@@ -2465,18 +2590,14 @@ def _normalize_kana_with_tagger(
     out: List[str] = []
     tokens = list(tagger(text))
     run_action: List[str] = [""] * len(tokens)
-    force_first_span: set[int] = set()
-    first_kanji_done = False
-    force_first_kanji_active = force_first_kanji
-    if force_first_kanji and tokens:
-        for token in tokens:
-            surface = getattr(token, "surface", "") or ""
-            if not surface:
-                continue
-            if _has_kana(surface) or _has_kanji(surface):
-                if _has_kana(surface) and not _has_kanji(surface):
-                    force_first_kanji_active = False
-                break
+    force_first_kanji_indices: set[int] = set()
+    force_first_token_idx: Optional[int] = None
+    if kana_style == "partial":
+        force_first_kanji_indices, force_first_token_idx = _plan_force_first_targets(
+            tokens,
+            force_first_kanji=force_first_kanji,
+            force_first_token_to_kana=force_first_token_to_kana,
+        )
     if kana_style == "partial" and tokens:
         if partial_mid_kanji and zh_lexicon is None:
             zh_lexicon = _load_zh_lexicon()
@@ -2514,23 +2635,6 @@ def _normalize_kana_with_tagger(
                     for pos in range(idx, end):
                         run_action[pos] = action
             idx = end
-    if kana_style == "partial" and force_first_kanji_active and tokens:
-        first_idx = None
-        for idx, token in enumerate(tokens):
-            surface = getattr(token, "surface", "") or ""
-            if surface and _has_kanji(surface):
-                first_idx = idx
-                break
-        if first_idx is not None:
-            surface = getattr(tokens[first_idx], "surface", "") or ""
-            if _is_kanji_only(surface):
-                end = first_idx + 1
-                while end < len(tokens):
-                    next_surface = getattr(tokens[end], "surface", "") or ""
-                    if not _is_kanji_only(next_surface):
-                        break
-                    force_first_span.add(end)
-                    end += 1
     def _adjust_weekday_reading(idx: int, reading_kata: str) -> str:
         if not reading_kata:
             return reading_kata
@@ -2547,16 +2651,17 @@ def _normalize_kana_with_tagger(
         surface = getattr(token, "surface", "")
         if not surface:
             continue
+        force_first_non_kanji = kana_style == "partial" and idx == force_first_token_idx
         if not _has_kanji(surface):
+            if force_first_non_kanji:
+                reading = _extract_token_reading(token)
+                if reading and reading != "*":
+                    reading_kata = _hiragana_to_katakana(reading)
+                    out.append(_apply_surface_kana(reading_kata, surface))
+                    continue
             out.append(surface)
             continue
-        force_first = False
-        if not first_kanji_done:
-            first_kanji_done = True
-            if kana_style == "partial" and force_first_kanji_active:
-                force_first = True
-        if idx in force_first_span:
-            force_first = True
+        force_first = kana_style == "partial" and idx in force_first_kanji_indices
         reading = _extract_token_reading(token)
         if not reading or reading == "*":
             out.append(surface)
@@ -2612,6 +2717,7 @@ def _normalize_kana_text(
     *,
     kana_style: str = "mixed",
     force_first_kanji: bool = False,
+    force_first_token_to_kana: bool = False,
     partial_mid_kanji: bool = False,
 ) -> str:
     kana_style = _normalize_kana_style(kana_style)
@@ -2639,6 +2745,7 @@ def _normalize_kana_text(
                     kana_style=kana_style,
                     zh_lexicon=zh_lexicon,
                     force_first_kanji=force_first_kanji,
+                    force_first_token_to_kana=force_first_token_to_kana,
                     partial_mid_kanji=partial_mid_kanji,
                 )
             )
@@ -3940,6 +4047,7 @@ def synthesize_book(
                             kana_tagger,
                             kana_style=kana_style,
                             force_first_kanji=True,
+                            force_first_token_to_kana=True,
                             partial_mid_kanji=partial_mid_kanji,
                         )
                     except Exception as exc:
@@ -4244,6 +4352,7 @@ def synthesize_chunk(
                 tts_source,
                 kana_style=kana_style,
                 force_first_kanji=True,
+                force_first_token_to_kana=True,
                 partial_mid_kanji=partial_mid_kanji,
             )
         except RuntimeError as exc:

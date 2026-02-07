@@ -764,6 +764,7 @@ def _kana(args: argparse.Namespace) -> int:
                 tts_source,
                 kana_style=args.kana_style,
                 force_first_kanji=True,
+                force_first_token_to_kana=True,
                 partial_mid_kanji=args.partial_mid_kanji,
             )
         except RuntimeError as exc:

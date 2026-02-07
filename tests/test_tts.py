@@ -983,6 +983,158 @@ def test_normalize_kana_first_token_already_kana() -> None:
     assert out == "かな漢字"
 
 
+def test_normalize_kana_force_first_kanji_keeps_legacy_with_latin_prefix() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("TV", "ティーブイ"),
+                DummyToken("化", "カ"),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "TV化",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_kanji=True,
+        force_first_token_to_kana=False,
+    )
+    assert out == "TVか"
+
+
+def test_normalize_kana_first_token_to_kana_latin_starter() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("Ｖ", "ブイ"),
+                DummyToken("シリーズ", "シリーズ"),
+                DummyToken("全", "ゼン"),
+                DummyToken("十冊", "ジッサツ"),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "Ｖシリーズ全十冊",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_kanji=True,
+        force_first_token_to_kana=True,
+    )
+    assert out == "ブイシリーズ全十冊"
+
+
+def test_normalize_kana_first_token_to_kana_keeps_force_first_kanji_behavior() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("TV", "ティーブイ"),
+                DummyToken("アニメ", "アニメ"),
+                DummyToken("化", "カ"),
+            ]
+
+    out_old = tts_util._normalize_kana_with_tagger(
+        "TVアニメ化",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_kanji=True,
+    )
+    out_new = tts_util._normalize_kana_with_tagger(
+        "TVアニメ化",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_kanji=True,
+        force_first_token_to_kana=True,
+    )
+    assert out_old == "TVアニメ化"
+    assert out_new == "ティーブイアニメ化"
+
+
+def test_normalize_kana_first_token_to_kana_handles_mixed_single_token() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [DummyToken("TVアニメ", "ティーブイアニメ"), DummyToken("化", "カ")]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "TVアニメ化",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_kanji=True,
+        force_first_token_to_kana=True,
+    )
+    assert out == "ティーブイアニメ化"
+
+
+def test_normalize_kana_first_token_to_kana_skips_epub_noise() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("c1VZ1", "シーワンブイゼットワン"),
+                DummyToken("本文", "ホンブン"),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "c1VZ1本文",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_token_to_kana=True,
+    )
+    assert out == "c1VZ1本文"
+
+
 def test_normalize_kana_weekday_reading() -> None:
     class DummyFeature:
         def __init__(self, kana: str | None) -> None:
@@ -1085,9 +1237,11 @@ def test_synthesize_book_force_first_kanji(
         kana_style: str = "mixed",
         zh_lexicon: set[str] | None = None,
         force_first_kanji: bool = False,
+        force_first_token_to_kana: bool = False,
         partial_mid_kanji: bool = False,
     ) -> str:
         calls["force_first_kanji"] = force_first_kanji
+        calls["force_first_token_to_kana"] = force_first_token_to_kana
         return text
 
     def fake_prepare_manifest(**_kwargs):
@@ -1147,6 +1301,7 @@ def test_synthesize_book_force_first_kanji(
     )
     assert result == 0
     assert calls.get("force_first_kanji") is True
+    assert calls.get("force_first_token_to_kana") is True
 
 
 def test_normalize_numbers_standalone_digits() -> None:
