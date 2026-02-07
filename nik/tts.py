@@ -23,7 +23,6 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import soundfile as sf
-import jaconv
 from kyujipy import KyujitaiConverter
 from rich.progress import (
     BarColumn,
@@ -44,6 +43,8 @@ mlx_audio = None
 mlx_load_model = None
 fugashi = None
 wordfreq = None
+g2p_en = None
+_EN_G2P = None
 
 _KANA_TAGGER = None
 _KANA_TAGGER_DIR: Optional[Path] = None
@@ -172,6 +173,106 @@ _LATIN_LETTER_KANA = {
     "X": "エックス",
     "Y": "ワイ",
     "Z": "ゼット",
+}
+
+_LATIN_ACRONYM_KANA = {
+    "ROM": "ロム",
+    "RAM": "ラム",
+}
+
+_LATIN_WORD_OVERRIDES = {
+    "rom": "ロム",
+    "monkey": "モンキー",
+}
+
+_EN_VOWEL_BASE = {
+    "AA": "a",
+    "AE": "a",
+    "AH": "a",
+    "AO": "o",
+    "AW": "a",
+    "AY": "a",
+    "EH": "e",
+    "ER": "a",
+    "EY": "e",
+    "IH": "i",
+    "IY": "i",
+    "OW": "o",
+    "OY": "o",
+    "UH": "u",
+    "UW": "u",
+}
+
+_EN_VOWEL_TAIL = {
+    "AW": "ウ",
+    "AY": "イ",
+    "EY": "イ",
+    "IY": "ー",
+    "OW": "ー",
+    "OY": "イ",
+    "ER": "ー",
+    "UW": "ー",
+}
+
+_EN_VOWEL_KANA = {
+    "a": "ア",
+    "i": "イ",
+    "u": "ウ",
+    "e": "エ",
+    "o": "オ",
+}
+
+_EN_CONSONANT_KANA = {
+    "B": {"a": "バ", "i": "ビ", "u": "ブ", "e": "ベ", "o": "ボ"},
+    "CH": {"a": "チャ", "i": "チ", "u": "チュ", "e": "チェ", "o": "チョ"},
+    "D": {"a": "ダ", "i": "ディ", "u": "ドゥ", "e": "デ", "o": "ド"},
+    "DH": {"a": "ザ", "i": "ジ", "u": "ズ", "e": "ゼ", "o": "ゾ"},
+    "F": {"a": "ファ", "i": "フィ", "u": "フ", "e": "フェ", "o": "フォ"},
+    "G": {"a": "ガ", "i": "ギ", "u": "グ", "e": "ゲ", "o": "ゴ"},
+    "HH": {"a": "ハ", "i": "ヒ", "u": "フ", "e": "ヘ", "o": "ホ"},
+    "JH": {"a": "ジャ", "i": "ジ", "u": "ジュ", "e": "ジェ", "o": "ジョ"},
+    "K": {"a": "カ", "i": "キ", "u": "ク", "e": "ケ", "o": "コ"},
+    "L": {"a": "ラ", "i": "リ", "u": "ル", "e": "レ", "o": "ロ"},
+    "M": {"a": "マ", "i": "ミ", "u": "ム", "e": "メ", "o": "モ"},
+    "N": {"a": "ナ", "i": "ニ", "u": "ヌ", "e": "ネ", "o": "ノ"},
+    "P": {"a": "パ", "i": "ピ", "u": "プ", "e": "ペ", "o": "ポ"},
+    "R": {"a": "ラ", "i": "リ", "u": "ル", "e": "レ", "o": "ロ"},
+    "S": {"a": "サ", "i": "シ", "u": "ス", "e": "セ", "o": "ソ"},
+    "SH": {"a": "シャ", "i": "シ", "u": "シュ", "e": "シェ", "o": "ショ"},
+    "T": {"a": "タ", "i": "ティ", "u": "トゥ", "e": "テ", "o": "ト"},
+    "TH": {"a": "サ", "i": "シ", "u": "ス", "e": "セ", "o": "ソ"},
+    "V": {"a": "ヴァ", "i": "ヴィ", "u": "ヴ", "e": "ヴェ", "o": "ヴォ"},
+    "W": {"a": "ワ", "i": "ウィ", "u": "ウ", "e": "ウェ", "o": "ウォ"},
+    "Y": {"a": "ヤ", "i": "イ", "u": "ユ", "e": "イエ", "o": "ヨ"},
+    "Z": {"a": "ザ", "i": "ジ", "u": "ズ", "e": "ゼ", "o": "ゾ"},
+    "ZH": {"a": "ジャ", "i": "ジ", "u": "ジュ", "e": "ジェ", "o": "ジョ"},
+}
+
+_EN_CONSONANT_FINAL = {
+    "B": "ブ",
+    "CH": "ッチ",
+    "D": "ド",
+    "DH": "ズ",
+    "F": "フ",
+    "G": "グ",
+    "HH": "フ",
+    "JH": "ジ",
+    "K": "ック",
+    "L": "ル",
+    "M": "ム",
+    "N": "ン",
+    "NG": "ング",
+    "P": "ップ",
+    "R": "ル",
+    "S": "ス",
+    "SH": "シュ",
+    "T": "ット",
+    "TH": "ス",
+    "V": "ヴ",
+    "W": "ウ",
+    "Y": "イ",
+    "Z": "ズ",
+    "ZH": "ジュ",
 }
 
 _KANJI_DIGITS = {
@@ -2188,6 +2289,20 @@ def _lazy_import_wordfreq() -> None:
     wordfreq = _wordfreq
 
 
+def _lazy_import_g2p_en() -> None:
+    global g2p_en, _EN_G2P
+    if _EN_G2P is not None:
+        return
+    try:
+        from g2p_en import G2p as _G2p
+    except Exception as exc:  # pragma: no cover - optional runtime dependency
+        raise RuntimeError(
+            "English G2P requires g2p_en. Install it with `uv sync`."
+        ) from exc
+    g2p_en = _G2p
+    _EN_G2P = _G2p()
+
+
 def _jp_zipf_frequency(word: str) -> float:
     cached = _JP_FREQ_CACHE.get(word)
     if cached is not None:
@@ -2577,6 +2692,90 @@ def _append_kana_debug(
     debug_sources.append(f"{surface} -> {output} ({detail})")
 
 
+def _strip_arpabet_stress(phone: str) -> str:
+    if not phone:
+        return ""
+    return re.sub(r"\d", "", phone.upper())
+
+
+def _phones_to_kana(phones: Sequence[str]) -> str:
+    out: List[str] = []
+    idx = 0
+    while idx < len(phones):
+        phone = _strip_arpabet_stress(phones[idx])
+        if not phone:
+            idx += 1
+            continue
+        if phone in _EN_VOWEL_BASE:
+            base = _EN_VOWEL_BASE[phone]
+            tail = _EN_VOWEL_TAIL.get(phone, "")
+            out.append(_EN_VOWEL_KANA[base] + tail)
+            idx += 1
+            continue
+        if phone == "NG":
+            if idx + 1 >= len(phones):
+                out.append("ング")
+            else:
+                next_phone = _strip_arpabet_stress(phones[idx + 1])
+                if next_phone in _EN_VOWEL_BASE:
+                    out.append("ング")
+                else:
+                    out.append("ン")
+            idx += 1
+            continue
+        if phone in _EN_CONSONANT_KANA:
+            next_phone = _strip_arpabet_stress(phones[idx + 1]) if idx + 1 < len(phones) else ""
+            if next_phone in _EN_VOWEL_BASE:
+                base = _EN_VOWEL_BASE[next_phone]
+                tail = _EN_VOWEL_TAIL.get(next_phone, "")
+                kana = _EN_CONSONANT_KANA[phone].get(base)
+                if kana:
+                    out.append(kana + tail)
+                idx += 2
+                continue
+            final = _EN_CONSONANT_FINAL.get(phone, "")
+            if final:
+                out.append(final)
+            idx += 1
+            continue
+        idx += 1
+    return "".join(out)
+
+
+def _english_word_to_kana(word: str) -> str:
+    cleaned = (word or "").strip()
+    if not cleaned:
+        return ""
+    override = _LATIN_WORD_OVERRIDES.get(cleaned.lower())
+    if override:
+        return override
+    _lazy_import_g2p_en()
+    normalized = unicodedata.normalize("NFD", cleaned)
+    normalized = "".join(
+        ch for ch in normalized if unicodedata.category(ch) != "Mn"
+    )
+    normalized = re.sub(r"[^A-Za-z]", "", normalized).lower()
+    if not normalized:
+        return ""
+    phones: List[str] = []
+    try:
+        cmu = getattr(_EN_G2P, "cmu", None)
+        if cmu and normalized in cmu:
+            phones = list(cmu[normalized][0])
+        else:
+            phones = list(_EN_G2P.predict(normalized))
+    except LookupError:
+        phones = list(_EN_G2P.predict(normalized))
+    filtered: List[str] = []
+    for phone in phones:
+        stripped = _strip_arpabet_stress(str(phone))
+        if stripped in _EN_VOWEL_BASE or stripped in _EN_CONSONANT_KANA or stripped == "NG":
+            filtered.append(stripped)
+    if not filtered:
+        return ""
+    return _phones_to_kana(filtered)
+
+
 def _latin_prefix_to_kana_with_source(surface: str) -> tuple[str, str]:
     normalized = unicodedata.normalize("NFKC", surface or "")
     if not normalized:
@@ -2607,14 +2806,31 @@ def _latin_prefix_to_kana_with_source(surface: str) -> tuple[str, str]:
     if not all(ch.isascii() and ch.isalpha() for ch in leading):
         return "", ""
 
-    romanized = jaconv.alphabet2kana(leading.lower())
-    if romanized and _is_kana_reading(romanized):
-        romanized_kata = _hiragana_to_katakana(romanized)
-        source = "latin-map:jaconv"
-        if leading.lower().endswith("m") and romanized_kata.endswith("ン"):
-            romanized_kata = romanized_kata[:-1] + "ム"
-            source = "latin-map:jaconv+final-m"
-        return romanized_kata + normalized[idx:], source
+    override = _LATIN_WORD_OVERRIDES.get(leading.lower())
+    if override:
+        return override + normalized[idx:], "latin-map:override"
+
+    if len(leading) == 1:
+        kana = _LATIN_LETTER_KANA.get(leading.upper(), "")
+        if kana:
+            return kana + normalized[idx:], "latin-map:letters"
+
+    if leading.isupper() and len(leading) > 1:
+        acronym = _LATIN_ACRONYM_KANA.get(leading)
+        if acronym:
+            return acronym + normalized[idx:], "latin-map:override"
+        out: List[str] = []
+        for ch in leading:
+            kana = _LATIN_LETTER_KANA.get(ch.upper(), "")
+            if not kana:
+                return "", ""
+            out.append(kana)
+        out.append(normalized[idx:])
+        return "".join(out), "latin-map:letters"
+
+    converted = _english_word_to_kana(leading)
+    if converted:
+        return converted + normalized[idx:], "latin-map:g2p"
 
     out: List[str] = []
     for ch in leading:
