@@ -1526,12 +1526,11 @@ def test_synthesize_book_force_first_token_to_kana(
 
     def fake_normalize(
         text: str,
-        _tagger: object,
         *,
         kana_style: str = "mixed",
-        zh_lexicon: set[str] | None = None,
         force_first_token_to_kana: bool = False,
         partial_mid_kanji: bool = False,
+        debug_sources: list[str] | None = None,
     ) -> str:
         calls["force_first_token_to_kana"] = force_first_token_to_kana
         return text
@@ -1554,7 +1553,7 @@ def test_synthesize_book_force_first_token_to_kana(
     unidic_dir.mkdir()
     (unidic_dir / "dicrc").write_text("stub", encoding="utf-8")
 
-    monkeypatch.setattr(tts_util, "_normalize_kana_with_tagger", fake_normalize)
+    monkeypatch.setattr(tts_util, "_normalize_kana_text", fake_normalize)
     monkeypatch.setattr(tts_util, "_prepare_manifest", fake_prepare_manifest)
     monkeypatch.setattr(tts_util, "_select_backend", lambda _backend: "torch")
     monkeypatch.setattr(tts_util, "_resolve_model_name", lambda _name, _backend: "dummy")

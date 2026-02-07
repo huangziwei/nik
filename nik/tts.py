@@ -4636,11 +4636,10 @@ def synthesize_book(
                     tts_source = chunk_text
                 tts_source = _apply_reading_overrides_for_tts(tts_source, merged_overrides)
                 tts_source = _normalize_numbers(tts_source)
-                if kana_normalize and kana_tagger and _has_kanji(tts_source):
+                if kana_normalize:
                     try:
-                        tts_source = _normalize_kana_with_tagger(
+                        tts_source = _normalize_kana_text(
                             tts_source,
-                            kana_tagger,
                             kana_style=kana_style,
                             force_first_token_to_kana=True,
                             partial_mid_kanji=partial_mid_kanji,
