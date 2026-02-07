@@ -247,10 +247,36 @@ def test_apply_reading_overrides_regex() -> None:
     assert tts_util.apply_reading_overrides(text, overrides) == "ご存知でした。ご迷惑でした。"
 
 
+def test_apply_reading_overrides_for_tts_katakanizes_readings() -> None:
+    text = "私は漢字と東京。"
+    overrides = [
+        {"base": "漢字", "reading": "かんじ"},
+        {"base": "東京", "reading": "とうきょう"},
+    ]
+    assert (
+        tts_util._apply_reading_overrides_for_tts(text, overrides)
+        == "私はカンジとトウキョウ。"
+    )
+
+
 def test_apply_ruby_spans() -> None:
     text = "前漢字後"
     spans = [{"start": 1, "end": 3, "base": "漢字", "reading": "かんじ"}]
     assert tts_util.apply_ruby_spans(text, spans) == "前かんじ後"
+
+
+def test_apply_ruby_evidence_to_chunk_katakanizes_readings() -> None:
+    chunk_text = "前漢字後"
+    chunk_span = (0, len(chunk_text))
+    chapter_spans = [{"start": 1, "end": 3, "base": "漢字", "reading": "かんじ"}]
+    ruby_data = {"global": [{"base": "後", "reading": "あと"}]}
+    out = tts_util._apply_ruby_evidence_to_chunk(
+        chunk_text,
+        chunk_span,
+        chapter_spans,
+        ruby_data,
+    )
+    assert out == "前カンジアト"
 
 
 def test_normalize_kana_with_stub_tagger() -> None:

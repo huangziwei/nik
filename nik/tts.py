@@ -1259,6 +1259,25 @@ def _apply_surface_kana(reading_kata: str, surface: str) -> str:
     return "".join(out)
 
 
+def _to_katakana_reading(reading: str) -> str:
+    if not reading:
+        return reading
+    return _hiragana_to_katakana(unicodedata.normalize("NFKC", reading))
+
+
+def _katakanize_reading_entries(entries: Sequence[dict]) -> List[dict]:
+    out: List[dict] = []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        updated = dict(item)
+        reading = str(updated.get("reading") or "")
+        if reading:
+            updated["reading"] = _to_katakana_reading(reading)
+        out.append(updated)
+    return out
+
+
 def _japanese_space_to_pause(text: str, *, allow_full_stop: bool = True) -> str:
     if not text or " " not in text:
         return text
@@ -2657,7 +2676,8 @@ def _normalize_kana_with_tagger(
                 reading = _extract_token_reading(token)
                 if reading and reading != "*":
                     reading_kata = _hiragana_to_katakana(reading)
-                    out.append(_apply_surface_kana(reading_kata, surface))
+                    converted = _apply_surface_kana(reading_kata, surface)
+                    out.append(_hiragana_to_katakana(converted))
                     continue
             out.append(surface)
             continue
@@ -2690,10 +2710,7 @@ def _normalize_kana_with_tagger(
                 continue
             if force_first:
                 converted = _apply_surface_kana(reading_kata, surface)
-                if _has_katakana(surface):
-                    out.append(converted)
-                else:
-                    out.append(_katakana_to_hiragana(converted))
+                out.append(_hiragana_to_katakana(converted))
                 continue
             if _should_convert_honorific_prefix(surface, reading_kata, attrs):
                 out.append(_apply_surface_kana(reading_kata, surface))
@@ -2868,10 +2885,12 @@ def _apply_ruby_evidence(
     spans = _select_ruby_spans(chapter_id, text, ruby_data)
     if spans:
         spans = _maybe_normalize_ruby_entries(spans)
+        spans = _katakanize_reading_entries(spans)
         text = apply_ruby_spans(text, spans)
     ruby_global = _ruby_global_overrides(ruby_data)
     if ruby_global:
         ruby_global = _maybe_normalize_ruby_entries(ruby_global)
+        ruby_global = _katakanize_reading_entries(ruby_global)
         if skip_bases:
             ruby_global = [
                 item
@@ -2933,10 +2952,12 @@ def _apply_ruby_evidence_to_chunk(
     spans = _chunk_ruby_spans(chunk_span, chapter_spans)
     if spans:
         spans = _maybe_normalize_ruby_entries(spans)
+        spans = _katakanize_reading_entries(spans)
         text = apply_ruby_spans(text, spans)
     ruby_global = _ruby_global_overrides(ruby_data)
     if ruby_global:
         ruby_global = _maybe_normalize_ruby_entries(ruby_global)
+        ruby_global = _katakanize_reading_entries(ruby_global)
         if skip_bases:
             ruby_global = [
                 item
@@ -3301,6 +3322,14 @@ def apply_reading_overrides(
         except re.error:
             continue
     return out
+
+
+def _apply_reading_overrides_for_tts(
+    text: str, overrides: Sequence[dict[str, str]]
+) -> str:
+    if not overrides:
+        return text
+    return apply_reading_overrides(text, _katakanize_reading_entries(overrides))
 
 
 def _reading_override_spans(
@@ -4038,7 +4067,7 @@ def synthesize_book(
                     )
                 else:
                     tts_source = chunk_text
-                tts_source = apply_reading_overrides(tts_source, merged_overrides)
+                tts_source = _apply_reading_overrides_for_tts(tts_source, merged_overrides)
                 tts_source = _normalize_numbers(tts_source)
                 if kana_normalize and kana_tagger and _has_kanji(tts_source):
                     try:
@@ -4344,7 +4373,7 @@ def synthesize_chunk(
             ruby_data,
             skip_bases=override_bases,
         )
-    tts_source = apply_reading_overrides(chunk_text, merged_overrides)
+    tts_source = _apply_reading_overrides_for_tts(chunk_text, merged_overrides)
     tts_source = _normalize_numbers(tts_source)
     if kana_normalize:
         try:

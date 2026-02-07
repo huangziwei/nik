@@ -729,7 +729,7 @@ def _kana(args: argparse.Namespace) -> int:
                 ruby_data,
                 skip_bases=override_bases,
             )
-    tts_source = tts_util.apply_reading_overrides(text, merged_overrides)
+    tts_source = tts_util._apply_reading_overrides_for_tts(text, merged_overrides)
     if args.debug:
         _debug_dump("After overrides", tts_source)
 
