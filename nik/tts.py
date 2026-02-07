@@ -1610,11 +1610,13 @@ def _normalize_numbers(text: str) -> str:
             year, month, day = ci, ai, bi
         else:
             year, month, day = ai, bi, ci
+        # Avoid treating address-like triples (e.g. 2-13-3) as dates.
+        if not (1 <= month <= 12 and 1 <= day <= 31):
+            return match.group(0)
         year_part = f"{_int_to_kanji(year)}年"
         month_part = _month_reading(month) or f"{_int_to_kanji(month)}月"
         day_part = _day_reading(day) or f"{_int_to_kanji(day)}日"
         return f"{year_part}{month_part}{day_part}"
-        return match.group(0)
 
     def _replace_slash_md_weekday(match: re.Match) -> str:
         month = _safe_int(match.group("month") or "")
@@ -1730,6 +1732,16 @@ def _normalize_numbers(text: str) -> str:
         counter = match.group("counter") or ""
         if not num or not counter:
             return match.group(0)
+        # Guard common place names like 千代田 from counter conversion.
+        if counter == "代" and num == "千":
+            start = match.start()
+            end = match.end()
+            prev_ch = match.string[start - 1 : start] if start > 0 else ""
+            next_ch = match.string[end : end + 1]
+            if (prev_ch and _is_kanji_char(prev_ch)) or (
+                next_ch and _is_kanji_char(next_ch)
+            ):
+                return match.group(0)
         if counter in {"年", "月", "日"}:
             return match.group(0)
         if counter == "人":

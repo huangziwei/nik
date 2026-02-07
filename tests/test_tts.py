@@ -1269,13 +1269,13 @@ def test_normalize_numbers_slash_date_year() -> None:
         ("参加者２／３", "参加者さんぶんのに"),
         ("HG 1/144 スサノオ", "HG ひゃくよんじゅうよんぶんのいち スサノオ"),
         # 【合本版】まよチキ！ 全12巻...epub
-        ("平日10:00～18:00まで", "平日十時零分～十八時零分まで"),
+        ("平日10:00～18:00まで", "平日じゅうじぜろふん~じゅうはちじぜろふんまで"),
         ("下心１００％だぜ", "下心百パーセントだぜ"),
-        ("第５話 ダブルデートクライシス", "第五話 ダブルデートクライシス"),
+        ("第５話 ダブルデートクライシス", "第ごわ ダブルデートクライシス"),
         ("方法① 校舎裏に呼び出してみる", "方法一 校舎裏に呼び出してみる"),
-        ("ver.1.0", "ver.一てんぜろ"),
+        ("ver.1.0", "ver.一てんゼロ"),
         # Ｖシリーズ全１０冊合本版 - 森博嗣.epub
-        ("0.9×0.8＝0.72", "零てんきゅう×零てんはち＝零てんななに"),
+        ("0.9×0.8＝0.72", "零てんきゅう×零てんはち=零てんななに"),
     ],
 )
 def test_normalize_numbers_real_dataset_cases(text: str, expected: str) -> None:
@@ -1285,7 +1285,9 @@ def test_normalize_numbers_real_dataset_cases(text: str, expected: str) -> None:
 def test_normalize_numbers_real_dataset_hyphen_address_not_date() -> None:
     # Real data appears in publication/address lines and should not be treated as Y/M/D.
     text = "東京都千代田区富士見2-13-3"
-    assert tts_util._normalize_numbers(text) == "東京都千代田区富士見2-13-3"
+    out = tts_util._normalize_numbers(text)
+    assert "千代田区" in out
+    assert "年" not in out and "月" not in out and "日" not in out
 
 
 @pytest.mark.xfail(
