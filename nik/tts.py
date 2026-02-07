@@ -2512,6 +2512,44 @@ def _maybe_normalize_ruby_entries(entries: Sequence[dict]) -> List[dict]:
     return _normalize_ruby_entries(entries, tagger)
 
 
+_RUBY_SPAN_LONG_READING_MIN = 24
+_RUBY_SPAN_LONG_READING_RATIO = 6
+
+
+def _is_suspicious_ruby_span(base: str, reading: str) -> bool:
+    if not base or not reading:
+        return True
+    if not base.strip() or not reading.strip():
+        return True
+    if "\n" in base or "\n" in reading:
+        return True
+    if SECTION_BREAK in base or SECTION_BREAK in reading:
+        return True
+    base_len = len(base)
+    if base_len <= 0:
+        return True
+    reading_len = len(reading)
+    if reading_len > max(
+        _RUBY_SPAN_LONG_READING_MIN,
+        base_len * _RUBY_SPAN_LONG_READING_RATIO,
+    ):
+        return True
+    return False
+
+
+def _filter_ruby_spans(spans: Sequence[dict]) -> List[dict]:
+    filtered: List[dict] = []
+    for item in spans:
+        if not isinstance(item, dict):
+            continue
+        base = str(item.get("base") or "")
+        reading = str(item.get("reading") or "")
+        if _is_suspicious_ruby_span(base, reading):
+            continue
+        filtered.append(item)
+    return filtered
+
+
 def _should_partial_convert(
     surface: str, attrs: Dict[str, str], zh_lexicon: set[str]
 ) -> bool:
@@ -3389,11 +3427,13 @@ def _select_ruby_spans(
     clean_hash = entry.get("clean_sha256")
     if isinstance(clean_hash, str) and clean_hash == text_hash:
         spans = entry.get("clean_spans")
-        return spans if isinstance(spans, list) else []
+        spans = spans if isinstance(spans, list) else []
+        return _filter_ruby_spans(spans)
     raw_hash = entry.get("raw_sha256")
     if isinstance(raw_hash, str) and raw_hash == text_hash:
         spans = entry.get("raw_spans")
-        return spans if isinstance(spans, list) else []
+        spans = spans if isinstance(spans, list) else []
+        return _filter_ruby_spans(spans)
     return []
 
 
@@ -3407,9 +3447,11 @@ def _apply_ruby_evidence(
         return text
     spans = _select_ruby_spans(chapter_id, text, ruby_data)
     if spans:
-        spans = _maybe_normalize_ruby_entries(spans)
-        spans = _katakanize_reading_entries(spans)
-        text = apply_ruby_spans(text, spans)
+        spans = _filter_ruby_spans(spans)
+        if spans:
+            spans = _maybe_normalize_ruby_entries(spans)
+            spans = _katakanize_reading_entries(spans)
+            text = apply_ruby_spans(text, spans)
     ruby_global = _ruby_global_overrides(ruby_data)
     if ruby_global:
         ruby_global = _maybe_normalize_ruby_entries(ruby_global)
@@ -3474,9 +3516,11 @@ def _apply_ruby_evidence_to_chunk(
     text = chunk_text
     spans = _chunk_ruby_spans(chunk_span, chapter_spans)
     if spans:
-        spans = _maybe_normalize_ruby_entries(spans)
-        spans = _katakanize_reading_entries(spans)
-        text = apply_ruby_spans(text, spans)
+        spans = _filter_ruby_spans(spans)
+        if spans:
+            spans = _maybe_normalize_ruby_entries(spans)
+            spans = _katakanize_reading_entries(spans)
+            text = apply_ruby_spans(text, spans)
     ruby_global = _ruby_global_overrides(ruby_data)
     if ruby_global:
         ruby_global = _maybe_normalize_ruby_entries(ruby_global)

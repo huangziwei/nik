@@ -292,6 +292,42 @@ def test_apply_ruby_evidence_to_chunk_skips_single_kanji_global() -> None:
     assert out == chunk_text
 
 
+def test_apply_ruby_evidence_to_chunk_drops_suspicious_span() -> None:
+    chunk_text = "本町に西田医院という耳鼻科があったのを覚えているか。"
+    chunk_span = (0, len(chunk_text))
+    chapter_spans = [
+        {"start": 0, "end": 2, "base": "本町", "reading": "ほんちょう"},
+        {
+            "start": 7,
+            "end": 10,
+            "base": "という",
+            "reading": "あ" * 30,
+        },
+    ]
+    out = tts_util._apply_ruby_evidence_to_chunk(
+        chunk_text,
+        chunk_span,
+        chapter_spans,
+        {},
+    )
+    assert out == "ホンチョウに西田医院という耳鼻科があったのを覚えているか。"
+
+
+def test_apply_ruby_evidence_to_chunk_keeps_non_kanji_span() -> None:
+    chunk_text = "TTSを試す。"
+    chunk_span = (0, len(chunk_text))
+    chapter_spans = [
+        {"start": 0, "end": 3, "base": "TTS", "reading": "ティーティーエス"}
+    ]
+    out = tts_util._apply_ruby_evidence_to_chunk(
+        chunk_text,
+        chunk_span,
+        chapter_spans,
+        {},
+    )
+    assert out == "ティーティーエスを試す。"
+
+
 def test_normalize_kana_with_stub_tagger() -> None:
     class DummyFeature:
         def __init__(self, kana: str | None) -> None:

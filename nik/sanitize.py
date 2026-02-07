@@ -726,7 +726,16 @@ def _diff_ruby_spans(plain: str, ruby: str) -> List[dict]:
         split_spans = _split_ruby_span_on_kana(i1, base, reading)
         if split_spans is not None:
             if split_spans:
-                spans.extend(split_spans)
+                for span in split_spans:
+                    span_base = str(span.get("base") or "")
+                    span_reading = str(span.get("reading") or "")
+                    if tts_util._is_suspicious_ruby_span(
+                        span_base, span_reading
+                    ):
+                        continue
+                    spans.append(span)
+            continue
+        if tts_util._is_suspicious_ruby_span(base, reading):
             continue
         spans.append({"start": i1, "end": i2, "base": base, "reading": reading})
     return spans

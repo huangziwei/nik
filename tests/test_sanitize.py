@@ -58,3 +58,11 @@ def test_diff_ruby_spans_splits_kana_boundary() -> None:
         {"start": 0, "end": 1, "base": "荘", "reading": "そう"},
         {"start": 2, "end": 4, "base": "監視", "reading": "かんし"},
     ]
+
+
+def test_diff_ruby_spans_drops_suspicious_long_reading() -> None:
+    spans = sanitize_util._diff_ruby_spans(
+        "と",
+        "がべつの女性と結婚するという。母は、若いころに別の",
+    )
+    assert spans == []
