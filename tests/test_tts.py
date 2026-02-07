@@ -696,7 +696,9 @@ def test_normalize_kana_with_stub_tagger_partial_rare() -> None:
     assert out == "サイシ"
 
 
-def test_normalize_ruby_reading_small_yoon() -> None:
+def _normalize_ruby_reading_with_stub(
+    base: str, reading: str, base_reading_kata: str
+) -> str:
     class DummyFeature:
         def __init__(self, kana: str | None) -> None:
             self.kana = kana
@@ -709,52 +711,36 @@ def test_normalize_ruby_reading_small_yoon() -> None:
 
     class DummyTagger:
         def __call__(self, _text: str):
-            return [DummyToken("京極堂", "キョウゴクドウ")]
+            return [DummyToken(base, base_reading_kata)]
 
-    out = tts_util._normalize_ruby_reading(
-        "京極堂", "きようごくどう", DummyTagger()
+    return tts_util._normalize_ruby_reading(base, reading, DummyTagger())
+
+
+@pytest.mark.parametrize(
+    ("base", "reading", "base_reading_kata", "expected"),
+    [
+        ("京極堂", "きようごくどう", "キョウゴクドウ", "きょうごくどう"),
+        ("野球屋", "やきゆうや", "ヤキュウヤ", "やきゅうや"),
+        ("学校通信", "がつこうつうしん", "ガッコウツウシン", "がっこうつうしん"),
+        ("未知語", "ふあいる", "ファイル", "ふぁいる"),
+        ("未知語", "ていあ", "ティア", "てぃあ"),
+        ("未知語", "くわい", "クヮイ", "くゎい"),
+        ("未知語", "かかく", "ヵカク", "ゕかく"),
+        ("未知語", "カカク", "ヵカク", "ヵカク"),
+    ],
+)
+def test_normalize_ruby_reading_sutegana_pairs(
+    base: str, reading: str, base_reading_kata: str, expected: str
+) -> None:
+    out = _normalize_ruby_reading_with_stub(base, reading, base_reading_kata)
+    assert out == expected
+
+
+def test_normalize_ruby_reading_sutegana_keeps_unmatched() -> None:
+    out = _normalize_ruby_reading_with_stub(
+        "野球屋", "やきゆうや", "ヤキュウバ"
     )
-    assert out == "きょうごくどう"
-
-
-def test_normalize_ruby_reading_mixed_yoon_positions() -> None:
-    class DummyFeature:
-        def __init__(self, kana: str | None) -> None:
-            self.kana = kana
-            self.pron = kana
-
-    class DummyToken:
-        def __init__(self, surface: str, kana: str | None) -> None:
-            self.surface = surface
-            self.feature = DummyFeature(kana)
-
-    class DummyTagger:
-        def __call__(self, _text: str):
-            return [DummyToken("野球屋", "ヤキュウヤ")]
-
-    out = tts_util._normalize_ruby_reading("野球屋", "やきゆうや", DummyTagger())
-    assert out == "やきゅうや"
-
-
-def test_normalize_ruby_reading_mixed_sokuon_positions() -> None:
-    class DummyFeature:
-        def __init__(self, kana: str | None) -> None:
-            self.kana = kana
-            self.pron = kana
-
-    class DummyToken:
-        def __init__(self, surface: str, kana: str | None) -> None:
-            self.surface = surface
-            self.feature = DummyFeature(kana)
-
-    class DummyTagger:
-        def __call__(self, _text: str):
-            return [DummyToken("学校通信", "ガッコウツウシン")]
-
-    out = tts_util._normalize_ruby_reading(
-        "学校通信", "がつこうつうしん", DummyTagger()
-    )
-    assert out == "がっこうつうしん"
+    assert out == "やきゆうや"
 
 
 def test_normalize_kana_with_stub_tagger_partial_kanji_run_convert() -> None:

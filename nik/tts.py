@@ -93,14 +93,15 @@ _JP_OPEN_QUOTES = {"「", "『", "《", "〈", "【", "〔", "［", "｢", "〝"
 _JP_CLOSE_QUOTES = {"」", "』", "》", "〉", "】", "〕", "］", "｣", "〞", "〟"}
 _DASH_RUN_RE = re.compile(r"[‐‑‒–—―─━]{2,}")
 _KANJI_SAFE_MARKS = {"々", "〆", "ヶ", "ヵ", "ゝ", "ゞ"}
-_RUBY_SMALLABLE_LARGE = set("やゆよつヤユヨツ")
-_RUBY_LARGE_TO_SMALL_MAP = str.maketrans("やゆよつヤユヨツ", "ゃゅょっャュョッ")
-_RUBY_LARGE_KATA_TO_SMALL_KATA = {
-    "ヤ": "ャ",
-    "ユ": "ュ",
-    "ヨ": "ョ",
-    "ツ": "ッ",
-}
+_RUBY_SUTEGANA_LARGE_CHARS = "あいうえおつやゆよわかけアイウエオツヤユヨワカケ"
+_RUBY_SUTEGANA_SMALL_CHARS = "ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶ"
+_RUBY_SUTEGANA_LARGE = set(_RUBY_SUTEGANA_LARGE_CHARS)
+_RUBY_SUTEGANA_LARGE_TO_SMALL_MAP = str.maketrans(
+    _RUBY_SUTEGANA_LARGE_CHARS, _RUBY_SUTEGANA_SMALL_CHARS
+)
+_RUBY_SUTEGANA_KATA_LARGE_TO_SMALL = dict(
+    zip("アイウエオツヤユヨワカケ", "ァィゥェォッャュョヮヵヶ")
+)
 _KYUJITAI_MAP = {
     "覺": "覚",
     "學": "学",
@@ -2189,7 +2190,7 @@ def _base_reading_kata(base: str, tagger: Any) -> str:
 def _normalize_ruby_reading(base: str, reading: str, tagger: Any) -> str:
     if not base or not reading:
         return reading
-    if not any(ch in _RUBY_SMALLABLE_LARGE for ch in reading):
+    if not any(ch in _RUBY_SUTEGANA_LARGE for ch in reading):
         return reading
     base_reading = _base_reading_kata(base, tagger)
     if not base_reading:
@@ -2204,9 +2205,9 @@ def _normalize_ruby_reading(base: str, reading: str, tagger: Any) -> str:
     changed = False
     for idx, ch in enumerate(reading_nfkc):
         ch_kata = _hiragana_to_katakana(ch)
-        small_kata = _RUBY_LARGE_KATA_TO_SMALL_KATA.get(ch_kata)
+        small_kata = _RUBY_SUTEGANA_KATA_LARGE_TO_SMALL.get(ch_kata)
         if small_kata and base_reading[idx] == small_kata:
-            small_ch = ch.translate(_RUBY_LARGE_TO_SMALL_MAP)
+            small_ch = ch.translate(_RUBY_SUTEGANA_LARGE_TO_SMALL_MAP)
             fixed_chars.append(small_ch)
             changed = changed or (small_ch != ch)
             continue
@@ -2229,7 +2230,7 @@ def _normalize_ruby_entries(entries: Sequence[dict], tagger: Any) -> List[dict]:
         if not base or not reading:
             out.append(item)
             continue
-        if not any(ch in _RUBY_SMALLABLE_LARGE for ch in reading):
+        if not any(ch in _RUBY_SUTEGANA_LARGE for ch in reading):
             out.append(item)
             continue
         normalized = _normalize_ruby_reading(base, reading, tagger)
@@ -2250,7 +2251,7 @@ def _maybe_normalize_ruby_entries(entries: Sequence[dict]) -> List[dict]:
         if not isinstance(item, dict):
             continue
         reading = str(item.get("reading") or "")
-        if any(ch in _RUBY_SMALLABLE_LARGE for ch in reading):
+        if any(ch in _RUBY_SUTEGANA_LARGE for ch in reading):
             needs_fix = True
             break
     if not needs_fix:
