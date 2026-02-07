@@ -93,9 +93,14 @@ _JP_OPEN_QUOTES = {"「", "『", "《", "〈", "【", "〔", "［", "｢", "〝"
 _JP_CLOSE_QUOTES = {"」", "』", "》", "〉", "】", "〕", "］", "｣", "〞", "〟"}
 _DASH_RUN_RE = re.compile(r"[‐‑‒–—―─━]{2,}")
 _KANJI_SAFE_MARKS = {"々", "〆", "ヶ", "ヵ", "ゝ", "ゞ"}
-_RUBY_YOON_LARGE = set("やゆよヤユヨ")
-_RUBY_YOON_SMALL_MAP = str.maketrans("やゆよヤユヨ", "ゃゅょャュョ")
-_RUBY_YOON_SMALL_KATA_MAP = str.maketrans("ヤユヨ", "ャュョ")
+_RUBY_SMALLABLE_LARGE = set("やゆよつヤユヨツ")
+_RUBY_LARGE_TO_SMALL_MAP = str.maketrans("やゆよつヤユヨツ", "ゃゅょっャュョッ")
+_RUBY_LARGE_KATA_TO_SMALL_KATA = {
+    "ヤ": "ャ",
+    "ユ": "ュ",
+    "ヨ": "ョ",
+    "ツ": "ッ",
+}
 _KYUJITAI_MAP = {
     "覺": "覚",
     "學": "学",
@@ -2184,18 +2189,34 @@ def _base_reading_kata(base: str, tagger: Any) -> str:
 def _normalize_ruby_reading(base: str, reading: str, tagger: Any) -> str:
     if not base or not reading:
         return reading
-    if not any(ch in _RUBY_YOON_LARGE for ch in reading):
+    if not any(ch in _RUBY_SMALLABLE_LARGE for ch in reading):
         return reading
     base_reading = _base_reading_kata(base, tagger)
     if not base_reading:
         return reading
-    reading_kata = _hiragana_to_katakana(unicodedata.normalize("NFKC", reading))
+    reading_nfkc = unicodedata.normalize("NFKC", reading)
+    reading_kata = _hiragana_to_katakana(reading_nfkc)
     if reading_kata == base_reading:
         return reading
-    smallified_kata = reading_kata.translate(_RUBY_YOON_SMALL_KATA_MAP)
-    if smallified_kata != base_reading:
+    if len(reading_kata) != len(base_reading):
         return reading
-    return reading.translate(_RUBY_YOON_SMALL_MAP)
+    fixed_chars: List[str] = []
+    changed = False
+    for idx, ch in enumerate(reading_nfkc):
+        ch_kata = _hiragana_to_katakana(ch)
+        small_kata = _RUBY_LARGE_KATA_TO_SMALL_KATA.get(ch_kata)
+        if small_kata and base_reading[idx] == small_kata:
+            small_ch = ch.translate(_RUBY_LARGE_TO_SMALL_MAP)
+            fixed_chars.append(small_ch)
+            changed = changed or (small_ch != ch)
+            continue
+        fixed_chars.append(ch)
+    if not changed:
+        return reading
+    fixed = "".join(fixed_chars)
+    if _hiragana_to_katakana(fixed) != base_reading:
+        return reading
+    return fixed
 
 
 def _normalize_ruby_entries(entries: Sequence[dict], tagger: Any) -> List[dict]:
@@ -2208,7 +2229,7 @@ def _normalize_ruby_entries(entries: Sequence[dict], tagger: Any) -> List[dict]:
         if not base or not reading:
             out.append(item)
             continue
-        if not any(ch in _RUBY_YOON_LARGE for ch in reading):
+        if not any(ch in _RUBY_SMALLABLE_LARGE for ch in reading):
             out.append(item)
             continue
         normalized = _normalize_ruby_reading(base, reading, tagger)
@@ -2229,7 +2250,7 @@ def _maybe_normalize_ruby_entries(entries: Sequence[dict]) -> List[dict]:
         if not isinstance(item, dict):
             continue
         reading = str(item.get("reading") or "")
-        if any(ch in _RUBY_YOON_LARGE for ch in reading):
+        if any(ch in _RUBY_SMALLABLE_LARGE for ch in reading):
             needs_fix = True
             break
     if not needs_fix:

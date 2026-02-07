@@ -716,6 +716,47 @@ def test_normalize_ruby_reading_small_yoon() -> None:
     )
     assert out == "きょうごくどう"
 
+
+def test_normalize_ruby_reading_mixed_yoon_positions() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [DummyToken("野球屋", "ヤキュウヤ")]
+
+    out = tts_util._normalize_ruby_reading("野球屋", "やきゆうや", DummyTagger())
+    assert out == "やきゅうや"
+
+
+def test_normalize_ruby_reading_mixed_sokuon_positions() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [DummyToken("学校通信", "ガッコウツウシン")]
+
+    out = tts_util._normalize_ruby_reading(
+        "学校通信", "がつこうつうしん", DummyTagger()
+    )
+    assert out == "がっこうつうしん"
+
+
 def test_normalize_kana_with_stub_tagger_partial_kanji_run_convert() -> None:
     class DummyFeature:
         def __init__(
