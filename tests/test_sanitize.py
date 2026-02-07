@@ -50,3 +50,11 @@ def test_normalize_text_preserves_section_break() -> None:
     raw = f"一。\n\n{SECTION_BREAK}\n\n二。"
     cleaned = sanitize_util.normalize_text(raw)
     assert SECTION_BREAK in cleaned
+
+
+def test_diff_ruby_spans_splits_kana_boundary() -> None:
+    spans = sanitize_util._diff_ruby_spans("荘で監視", "そうでかんし")
+    assert spans == [
+        {"start": 0, "end": 1, "base": "荘", "reading": "そう"},
+        {"start": 2, "end": 4, "base": "監視", "reading": "かんし"},
+    ]

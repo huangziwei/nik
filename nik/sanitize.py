@@ -6,6 +6,7 @@ import re
 import shutil
 import time
 import warnings
+import unicodedata
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -638,6 +639,80 @@ def apply_remove_patterns(
     return text, stats
 
 
+def _split_ruby_span_on_kana(
+    start: int,
+    base: str,
+    reading: str,
+) -> Optional[List[dict]]:
+    if not base or not reading:
+        return None
+    if not tts_util._has_kanji(base):
+        return None
+    if not any(tts_util._is_kana_char(ch) for ch in base):
+        return None
+
+    segments: List[tuple[bool, str, int, int]] = []
+    idx = 0
+    length = len(base)
+    while idx < length:
+        ch = base[idx]
+        is_kana = tts_util._is_kana_char(ch)
+        start_idx = idx
+        idx += 1
+        while idx < length and tts_util._is_kana_char(base[idx]) == is_kana:
+            idx += 1
+        segments.append((is_kana, base[start_idx:idx], start_idx, idx))
+
+    reading_nfkc = unicodedata.normalize("NFKC", reading)
+    reading_hira = tts_util._katakana_to_hiragana(reading_nfkc)
+    spans: List[dict] = []
+    reading_pos = 0
+    pending: Optional[tuple[str, int, int]] = None
+
+    def flush_pending(end_pos: int) -> bool:
+        nonlocal pending
+        if pending is None:
+            return True
+        segment_text, segment_start, segment_end = pending
+        segment_reading = reading_hira[reading_pos:end_pos]
+        pending = None
+        if not segment_reading:
+            return False
+        if not tts_util._has_kanji(segment_text):
+            return True
+        spans.append(
+            {
+                "start": start + segment_start,
+                "end": start + segment_end,
+                "base": segment_text,
+                "reading": segment_reading,
+            }
+        )
+        return True
+
+    for is_kana, segment_text, segment_start, segment_end in segments:
+        if is_kana:
+            target = tts_util._katakana_to_hiragana(segment_text)
+            found = reading_hira.find(target, reading_pos)
+            if found == -1:
+                return []
+            if not flush_pending(found):
+                return []
+            reading_pos = found + len(target)
+        else:
+            if pending is None:
+                pending = (segment_text, segment_start, segment_end)
+            else:
+                prev_text, prev_start, _prev_end = pending
+                pending = (prev_text + segment_text, prev_start, segment_end)
+
+    if pending is not None:
+        if not flush_pending(len(reading_hira)):
+            return []
+
+    return spans
+
+
 def _diff_ruby_spans(plain: str, ruby: str) -> List[dict]:
     spans: List[dict] = []
     matcher = difflib.SequenceMatcher(None, plain, ruby)
@@ -647,6 +722,11 @@ def _diff_ruby_spans(plain: str, ruby: str) -> List[dict]:
         base = plain[i1:i2]
         reading = ruby[j1:j2]
         if not base or not reading:
+            continue
+        split_spans = _split_ruby_span_on_kana(i1, base, reading)
+        if split_spans is not None:
+            if split_spans:
+                spans.extend(split_spans)
             continue
         spans.append({"start": i1, "end": i2, "base": base, "reading": reading})
     return spans
