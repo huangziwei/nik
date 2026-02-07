@@ -1135,6 +1135,131 @@ def test_normalize_kana_first_token_to_kana_skips_epub_noise() -> None:
     assert out == "c1VZ1本文"
 
 
+@pytest.mark.parametrize(
+    ("text", "tokens", "expected"),
+    [
+        # 【合本版】さくら荘のペットな彼女 全13巻（電子特典付き）
+        (
+            "ＨＲ前の教室では、クラスメイトの女子から何度も同じ質問をされた。",
+            [
+                ("ＨＲ", "エイチアール"),
+                ("前の教室では、クラスメイトの女子から何度も同じ質問をされた。", None),
+            ],
+            "エイチアール前の教室では、クラスメイトの女子から何度も同じ質問をされた。",
+        ),
+        (
+            "ＴＶの前では、よく美咲と一緒にゲームをした。",
+            [("ＴＶ", "ティーブイ"), ("の前では、よく美咲と一緒にゲームをした。", None)],
+            "ティーブイの前では、よく美咲と一緒にゲームをした。",
+        ),
+        (
+            "ＰＣの前に座って龍之介に疑問をぶつける。",
+            [("ＰＣ", "ピーシー"), ("の前に座って龍之介に疑問をぶつける。", None)],
+            "ピーシーの前に座って龍之介に疑問をぶつける。",
+        ),
+        (
+            "ＯＳが起動すると、まずはさくら荘の自室に設置してあるサーバーに接続する。",
+            [
+                ("ＯＳ", "オーエス"),
+                ("が起動すると、まずはさくら荘の自室に設置してあるサーバーに接続する。", None),
+            ],
+            "オーエスが起動すると、まずはさくら荘の自室に設置してあるサーバーに接続する。",
+        ),
+        (
+            "ＳＤの何倍も時間がかかるんだもん！",
+            [("ＳＤ", "エスディー"), ("の何倍も時間がかかるんだもん！", None)],
+            "エスディーの何倍も時間がかかるんだもん！",
+        ),
+        (
+            "ＡＩにもてあそばれる俺って……",
+            [("ＡＩ", "エーアイ"), ("にもてあそばれる俺って……", None)],
+            "エーアイにもてあそばれる俺って……",
+        ),
+        (
+            "Ｕターンした車は、札幌駅のある方へと曲がっていく。",
+            [("Ｕ", "ユー"), ("ターンした車は、札幌駅のある方へと曲がっていく。", None)],
+            "ユーターンした車は、札幌駅のある方へと曲がっていく。",
+        ),
+    ],
+)
+def test_normalize_kana_first_token_to_kana_real_sakurasou_cases(
+    text: str, tokens: list[tuple[str, str | None]], expected: str
+) -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [DummyToken(surface, kana) for surface, kana in tokens]
+
+    out = tts_util._normalize_kana_with_tagger(
+        text,
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_kanji=True,
+        force_first_token_to_kana=True,
+    )
+    assert out == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "tokens"),
+    [
+        # Lowercase code words should remain unchanged.
+        (
+            "ｉｆ』と『ｆｏｒ』の使い方は理解しているな。",
+            [("ｉｆ", "イフ"), ("』と『ｆｏｒ』の使い方は理解しているな。", None)],
+        ),
+        # Copyright metadata lead should remain unchanged.
+        (
+            "C)2010-2014 HAJIME KAMOSHIDA ※2010年1月5日発行",
+            [
+                ("C", "シー"),
+                (")", None),
+                ("2010-2014", None),
+                ("HAJIME", None),
+                ("KAMOSHIDA", None),
+                ("※2010年1月5日発行", None),
+            ],
+        ),
+    ],
+)
+def test_normalize_kana_first_token_to_kana_real_sakurasou_non_targets(
+    text: str, tokens: list[tuple[str, str | None]]
+) -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [DummyToken(surface, kana) for surface, kana in tokens]
+
+    out = tts_util._normalize_kana_with_tagger(
+        text,
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_kanji=True,
+        force_first_token_to_kana=True,
+    )
+    assert out == text
+
+
 def test_normalize_kana_weekday_reading() -> None:
     class DummyFeature:
         def __init__(self, kana: str | None) -> None:
