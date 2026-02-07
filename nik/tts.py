@@ -3763,9 +3763,9 @@ def _ruby_global_overrides(ruby_data: dict) -> List[dict[str, str]]:
             base = str(item.get("base") or "").strip()
             reading = str(item.get("reading") or "").strip()
             if base and reading:
-                entry = {"base": base, "reading": reading}
                 if len(base) == 1:
-                    entry["mode"] = "isolated"
+                    continue
+                entry = {"base": base, "reading": reading}
                 overrides.append(entry)
     return overrides
 

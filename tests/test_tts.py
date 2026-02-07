@@ -266,17 +266,30 @@ def test_apply_ruby_spans() -> None:
 
 
 def test_apply_ruby_evidence_to_chunk_katakanizes_readings() -> None:
-    chunk_text = "前日本。後。"
+    chunk_text = "前日本。後半。"
     chunk_span = (0, len(chunk_text))
     chapter_spans = [{"start": 1, "end": 3, "base": "日本", "reading": "にほん"}]
-    ruby_data = {"global": [{"base": "後", "reading": "あと"}]}
+    ruby_data = {"global": [{"base": "後半", "reading": "こうはん"}]}
     out = tts_util._apply_ruby_evidence_to_chunk(
         chunk_text,
         chunk_span,
         chapter_spans,
         ruby_data,
     )
-    assert out == "前ニホン。アト。"
+    assert out == "前ニホン。コウハン。"
+
+
+def test_apply_ruby_evidence_to_chunk_skips_single_kanji_global() -> None:
+    chunk_text = "全13巻。"
+    chunk_span = (0, len(chunk_text))
+    ruby_data = {"global": [{"base": "巻", "reading": "ま"}]}
+    out = tts_util._apply_ruby_evidence_to_chunk(
+        chunk_text,
+        chunk_span,
+        [],
+        ruby_data,
+    )
+    assert out == chunk_text
 
 
 def test_normalize_kana_with_stub_tagger() -> None:
