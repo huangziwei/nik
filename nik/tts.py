@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import soundfile as sf
 import jaconv
+from kyujipy import KyujitaiConverter
 from rich.progress import (
     BarColumn,
     Progress,
@@ -49,6 +50,7 @@ _KANA_TAGGER_DIR: Optional[Path] = None
 _ZH_LEXICON: Optional[set[str]] = None
 _JP_FREQ_CACHE: Dict[str, float] = {}
 _RUBY_BASE_READING_CACHE: Dict[str, str] = {}
+_KYUJITAI_CONVERTER: Optional[KyujitaiConverter] = None
 
 _END_PUNCT = set("。！？?!…")
 _MID_PUNCT = set("、，,;；:：")
@@ -104,46 +106,6 @@ _RUBY_SUTEGANA_KATA_LARGE_TO_SMALL = dict(
     zip("アイウエオツヤユヨワカケ", "ァィゥェォッャュョヮヵヶ")
 )
 _RUBY_SUTEGANA_TRIGGER_LARGE = set("つやゆよわかけツヤユヨワカケ")
-_KYUJITAI_MAP = {
-    "覺": "覚",
-    "學": "学",
-    "國": "国",
-    "體": "体",
-    "會": "会",
-    "來": "来",
-    "讀": "読",
-    "變": "変",
-    "廣": "広",
-    "舊": "旧",
-    "兩": "両",
-    "圓": "円",
-    "寫": "写",
-    "觀": "観",
-    "價": "価",
-    "氣": "気",
-    "兒": "児",
-    "團": "団",
-    "靜": "静",
-    "眞": "真",
-    "應": "応",
-    "驅": "駆",
-    "歸": "帰",
-    "濟": "済",
-    "證": "証",
-    "醫": "医",
-    "壞": "壊",
-    "懷": "懐",
-    "圖": "図",
-    "樂": "楽",
-    "嶋": "島",
-    "噓": "嘘",
-    "亞": "亜",
-    "驛": "駅",
-    "畫": "画",
-    "點": "点",
-}
-_KYUJITAI_TRANSLATION = str.maketrans(_KYUJITAI_MAP)
-
 _SHORT_TAIL_PUNCT = "。"
 _SHORT_TAIL_MAX_CHARS = 12
 try:
@@ -1092,6 +1054,25 @@ def _normalize_kana_style(value: Optional[str]) -> str:
     if normalized in {"katakana", "kata", "k"}:
         return "katakana"
     return "mixed"
+
+
+def _normalize_kyujitai(
+    text: str, *, debug_sources: Optional[List[str]] = None
+) -> str:
+    if not text or not _has_kanji(text):
+        return text
+    converter = _get_kyujitai_converter()
+    normalized = converter.kyujitai_to_shinjitai(text)
+    if debug_sources is not None and normalized != text:
+        debug_sources.append("kyujitai-normalize (source=kyujipy)")
+    return normalized
+
+
+def _get_kyujitai_converter() -> KyujitaiConverter:
+    global _KYUJITAI_CONVERTER
+    if _KYUJITAI_CONVERTER is None:
+        _KYUJITAI_CONVERTER = KyujitaiConverter()
+    return _KYUJITAI_CONVERTER
 
 
 def _katakana_to_hiragana(text: str) -> str:
@@ -2808,7 +2789,7 @@ def _normalize_kana_with_tagger(
 ) -> str:
     if not text:
         return text
-    text = text.translate(_KYUJITAI_TRANSLATION)
+    text = _normalize_kyujitai(text, debug_sources=debug_sources)
     kana_style = _normalize_kana_style(kana_style)
     out: List[str] = []
     tokens = list(tagger(text))
@@ -3152,6 +3133,7 @@ def prepare_tts_text(text: str, *, add_short_punct: bool = False) -> str:
     if not text:
         return ""
     text = unicodedata.normalize("NFKC", text)
+    text = _normalize_kyujitai(text)
     has_dash_run = bool(_DASH_RUN_RE.search(text))
     text = _DASH_RUN_RE.sub(" ", text)
     text = _strip_format_chars(text)
