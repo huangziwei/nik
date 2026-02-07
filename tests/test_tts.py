@@ -720,6 +720,29 @@ def _normalize_ruby_reading_with_stub(
 @pytest.mark.parametrize(
     ("base", "reading", "base_reading_kata", "expected"),
     [
+        # Real ruby entries curated from tests/data EPUB fixtures.
+        ("京介", "きようすけ", "キョウスケ", "きょうすけ"),
+        ("魔女", "まじよ", "マジョ", "まじょ"),
+        ("合本版", "がつぽんばん", "ガッポンバン", "がっぽんばん"),
+        ("冊収録", "さつしゆうろく", "サツシュウロク", "さつしゅうろく"),
+        ("禁書目録", "インデツクス", "インデックス", "インデックス"),
+        ("専門家", "プロフエツシヨナル", "プロフェッショナル", "プロフェッショナル"),
+        ("学園生活", "にちじよう", "ニチジョウ", "にちじょう"),
+        ("戦々恐々", "せんせんきようきよう", "センセンキヨウキョウ", "せんせんきようきょう"),
+        ("京介", "きょうすけ", "キョウスケ", "きょうすけ"),
+    ],
+)
+def test_normalize_ruby_reading_sutegana_real_pairs(
+    base: str, reading: str, base_reading_kata: str, expected: str
+) -> None:
+    out = _normalize_ruby_reading_with_stub(base, reading, base_reading_kata)
+    assert out == expected
+
+
+@pytest.mark.parametrize(
+    ("base", "reading", "base_reading_kata", "expected"),
+    [
+        # Synthetic coverage to validate the full sutegana mapping surface.
         ("京極堂", "きようごくどう", "キョウゴクドウ", "きょうごくどう"),
         ("野球屋", "やきゆうや", "ヤキュウヤ", "やきゅうや"),
         ("学校通信", "がつこうつうしん", "ガッコウツウシン", "がっこうつうしん"),
@@ -730,18 +753,25 @@ def _normalize_ruby_reading_with_stub(
         ("未知語", "カカク", "ヵカク", "ヵカク"),
     ],
 )
-def test_normalize_ruby_reading_sutegana_pairs(
+def test_normalize_ruby_reading_sutegana_dummy_pairs(
     base: str, reading: str, base_reading_kata: str, expected: str
 ) -> None:
     out = _normalize_ruby_reading_with_stub(base, reading, base_reading_kata)
     assert out == expected
 
 
-def test_normalize_ruby_reading_sutegana_keeps_unmatched() -> None:
-    out = _normalize_ruby_reading_with_stub(
-        "野球屋", "やきゆうや", "ヤキュウバ"
-    )
-    assert out == "やきゆうや"
+@pytest.mark.parametrize(
+    ("base", "reading", "base_reading_kata"),
+    [
+        ("京介", "きようすけ", "キョウズケ"),
+        ("野球屋", "やきゆうや", "ヤキュウバ"),
+    ],
+)
+def test_normalize_ruby_reading_sutegana_keeps_unmatched(
+    base: str, reading: str, base_reading_kata: str
+) -> None:
+    out = _normalize_ruby_reading_with_stub(base, reading, base_reading_kata)
+    assert out == reading
 
 
 def test_normalize_kana_with_stub_tagger_partial_kanji_run_convert() -> None:
