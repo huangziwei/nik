@@ -102,6 +102,7 @@ _RUBY_SUTEGANA_LARGE_TO_SMALL_MAP = str.maketrans(
 _RUBY_SUTEGANA_KATA_LARGE_TO_SMALL = dict(
     zip("アイウエオツヤユヨワカケ", "ァィゥェォッャュョヮヵヶ")
 )
+_RUBY_SUTEGANA_TRIGGER_LARGE = set("つやゆよわかけツヤユヨワカケ")
 _KYUJITAI_MAP = {
     "覺": "覚",
     "學": "学",
@@ -2251,7 +2252,7 @@ def _maybe_normalize_ruby_entries(entries: Sequence[dict]) -> List[dict]:
         if not isinstance(item, dict):
             continue
         reading = str(item.get("reading") or "")
-        if any(ch in _RUBY_SUTEGANA_LARGE for ch in reading):
+        if any(ch in _RUBY_SUTEGANA_TRIGGER_LARGE for ch in reading):
             needs_fix = True
             break
     if not needs_fix:
