@@ -1258,6 +1258,44 @@ def test_normalize_numbers_slash_date_year() -> None:
     assert tts_util._normalize_numbers(text) == "二千二十四年にがつみっか"
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # GOSICK 全９冊合本版 (角川文庫) - 桜庭 一樹.epub
+        ("平成26年7月25日 発行", "平成二十六年しちがつにじゅうごにち 発行"),
+        ("平成21年9月25日初版発行", "平成二十一年くがつにじゅうごにち初版発行"),
+        # 【合本版】俺の妹がこんなに可愛いわけがない...epub
+        ("参加者１／２", "参加者にぶんのいち"),
+        ("参加者２／３", "参加者さんぶんのに"),
+        ("HG 1/144 スサノオ", "HG ひゃくよんじゅうよんぶんのいち スサノオ"),
+        # 【合本版】まよチキ！ 全12巻...epub
+        ("平日10:00～18:00まで", "平日十時零分～十八時零分まで"),
+        ("下心１００％だぜ", "下心百パーセントだぜ"),
+        ("第５話 ダブルデートクライシス", "第五話 ダブルデートクライシス"),
+        ("方法① 校舎裏に呼び出してみる", "方法一 校舎裏に呼び出してみる"),
+        ("ver.1.0", "ver.一てんぜろ"),
+        # Ｖシリーズ全１０冊合本版 - 森博嗣.epub
+        ("0.9×0.8＝0.72", "零てんきゅう×零てんはち＝零てんななに"),
+    ],
+)
+def test_normalize_numbers_real_dataset_cases(text: str, expected: str) -> None:
+    assert tts_util._normalize_numbers(text) == expected
+
+
+def test_normalize_numbers_real_dataset_hyphen_address_not_date() -> None:
+    # Real data appears in publication/address lines and should not be treated as Y/M/D.
+    text = "東京都千代田区富士見2-13-3"
+    assert tts_util._normalize_numbers(text) == "東京都千代田区富士見2-13-3"
+
+
+@pytest.mark.xfail(
+    reason="Roman numeral normalization to kana is not implemented yet.",
+    strict=True,
+)
+def test_normalize_numbers_roman_numeral_to_kana_todo() -> None:
+    assert tts_util._normalize_numbers("GOSICK Ⅷ 上") == "GOSICK はち 上"
+
+
 def test_prepare_tts_text_strips_japanese_quotes() -> None:
     assert (
         tts_util.prepare_tts_text("「聖書」『旧約』《新約》“Test” 'OK'〝注〟don't")
