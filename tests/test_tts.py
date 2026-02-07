@@ -948,7 +948,7 @@ def test_normalize_kana_first_token_partial() -> None:
         DummyTagger(),
         kana_style="partial",
         zh_lexicon=set(),
-        force_first_kanji=True,
+        force_first_token_to_kana=True,
     )
     assert out == "ナゲツケ好き"
 
@@ -976,7 +976,7 @@ def test_normalize_kana_first_token_partial_kanji_run() -> None:
         DummyTagger(),
         kana_style="partial",
         zh_lexicon=set(),
-        force_first_kanji=True,
+        force_first_token_to_kana=True,
     )
     assert out == "ジテンシャ"
 
@@ -1379,7 +1379,7 @@ def test_normalize_kana_with_tagger_normalizes_kyujitai_uso() -> None:
     assert out == "ウソ"
 
 
-def test_synthesize_book_force_first_kanji(
+def test_synthesize_book_force_first_token_to_kana(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     calls: dict[str, bool] = {}
@@ -1454,7 +1454,7 @@ def test_synthesize_book_force_first_kanji(
         kana_style="partial",
     )
     assert result == 0
-    assert calls.get("force_first_kanji") is True
+    assert calls.get("force_first_kanji") is False
     assert calls.get("force_first_token_to_kana") is True
 
 

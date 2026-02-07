@@ -2551,6 +2551,38 @@ def _plan_force_first_targets(
     if not tokens:
         return force_first_kanji_indices, force_first_token_idx
 
+    def _add_force_first_kanji_run(start_idx: int) -> None:
+        surface = str(getattr(tokens[start_idx], "surface", "") or "")
+        if not surface or not _has_kanji(surface):
+            return
+        force_first_kanji_indices.add(start_idx)
+        if not _is_kanji_only(surface):
+            return
+        end = start_idx + 1
+        while end < len(tokens):
+            next_surface = str(getattr(tokens[end], "surface", "") or "")
+            if not _is_kanji_only(next_surface):
+                break
+            force_first_kanji_indices.add(end)
+            end += 1
+
+    # New policy: force_first_token_to_kana supersedes force_first_kanji.
+    # If the first significant token is kanji, apply the legacy first-kanji run logic.
+    # Otherwise, apply the non-kanji first-token conversion heuristics.
+    if force_first_token_to_kana:
+        for idx, token in enumerate(tokens):
+            surface = str(getattr(token, "surface", "") or "")
+            if _is_leading_skip_token(surface):
+                continue
+            if _has_kanji(surface):
+                _add_force_first_kanji_run(idx)
+                return force_first_kanji_indices, force_first_token_idx
+            next_surface = _next_significant_surface(tokens, idx)
+            if _should_force_first_token_to_kana(surface, next_surface):
+                force_first_token_idx = idx
+            return force_first_kanji_indices, force_first_token_idx
+        return force_first_kanji_indices, force_first_token_idx
+
     if force_first_kanji:
         force_first_kanji_active = True
         for token in tokens:
@@ -2569,26 +2601,7 @@ def _plan_force_first_targets(
                     first_idx = idx
                     break
             if first_idx is not None:
-                force_first_kanji_indices.add(first_idx)
-                surface = getattr(tokens[first_idx], "surface", "") or ""
-                if _is_kanji_only(surface):
-                    end = first_idx + 1
-                    while end < len(tokens):
-                        next_surface = getattr(tokens[end], "surface", "") or ""
-                        if not _is_kanji_only(next_surface):
-                            break
-                        force_first_kanji_indices.add(end)
-                        end += 1
-
-    if force_first_token_to_kana:
-        for idx, token in enumerate(tokens):
-            surface = getattr(token, "surface", "") or ""
-            if _is_leading_skip_token(surface):
-                continue
-            next_surface = _next_significant_surface(tokens, idx)
-            if _should_force_first_token_to_kana(surface, next_surface):
-                force_first_token_idx = idx
-            break
+                _add_force_first_kanji_run(first_idx)
     return force_first_kanji_indices, force_first_token_idx
 
 
@@ -4075,7 +4088,6 @@ def synthesize_book(
                             tts_source,
                             kana_tagger,
                             kana_style=kana_style,
-                            force_first_kanji=True,
                             force_first_token_to_kana=True,
                             partial_mid_kanji=partial_mid_kanji,
                         )
@@ -4380,7 +4392,6 @@ def synthesize_chunk(
             tts_source = _normalize_kana_text(
                 tts_source,
                 kana_style=kana_style,
-                force_first_kanji=True,
                 force_first_token_to_kana=True,
                 partial_mid_kanji=partial_mid_kanji,
             )
