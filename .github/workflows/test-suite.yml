@@ -21,7 +21,7 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Install test dependencies
+      - name: Install lightweight test dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install \
@@ -35,10 +35,25 @@ jobs:
             fastapi \
             jinja2 \
             python-multipart \
-            pydantic
+            pydantic \
+            fugashi \
+            mecab-python3 \
+            ipadic \
+            wordfreq
+
+      - name: Verify heavy inference deps are not installed
+        run: |
+          python - <<'PY'
+          import importlib.util
+          heavy = ("torch", "mlx_audio", "whisper")
+          found = [name for name in heavy if importlib.util.find_spec(name) is not None]
+          if found:
+              raise SystemExit(f"unexpected heavy deps installed: {', '.join(found)}")
+          print("ok: heavy deps absent")
+          PY
 
       - name: Run full test suite
         env:
           PYTHONPATH: .
         run: |
-          pytest -q tests
+          python -m pytest -q tests

@@ -950,7 +950,7 @@ def test_normalize_kana_first_token_partial() -> None:
         zh_lexicon=set(),
         force_first_kanji=True,
     )
-    assert out == "なげつけ好き"
+    assert out == "ナゲツケ好き"
 
 
 def test_normalize_kana_first_token_partial_kanji_run() -> None:
@@ -978,7 +978,7 @@ def test_normalize_kana_first_token_partial_kanji_run() -> None:
         zh_lexicon=set(),
         force_first_kanji=True,
     )
-    assert out == "じてんしゃ"
+    assert out == "ジテンシャ"
 
 
 def test_normalize_kana_first_token_already_kana() -> None:
@@ -1035,7 +1035,7 @@ def test_normalize_kana_force_first_kanji_keeps_legacy_with_latin_prefix() -> No
         force_first_kanji=True,
         force_first_token_to_kana=False,
     )
-    assert out == "TVか"
+    assert out == "TVカ"
 
 
 def test_normalize_kana_first_token_to_kana_latin_starter() -> None:
@@ -1314,7 +1314,7 @@ def test_normalize_kana_weekday_reading() -> None:
         zh_lexicon=set(),
         force_first_kanji=True,
     )
-    assert out == "どようび"
+    assert out == "ドヨウビ"
 
 
 def test_normalize_kana_with_tagger_normalizes_kyujitai() -> None:
@@ -1345,7 +1345,7 @@ def test_normalize_kana_with_tagger_normalizes_kyujitai() -> None:
         force_first_kanji=True,
     )
     assert tagger.last_input == "目覚め"
-    assert out == "めざめ"
+    assert out == "メザメ"
 
 
 def test_normalize_kana_with_tagger_normalizes_kyujitai_uso() -> None:
@@ -1376,7 +1376,7 @@ def test_normalize_kana_with_tagger_normalizes_kyujitai_uso() -> None:
         force_first_kanji=True,
     )
     assert tagger.last_input == "嘘"
-    assert out == "うそ"
+    assert out == "ウソ"
 
 
 def test_synthesize_book_force_first_kanji(
