@@ -713,6 +713,7 @@ def _normalize_ruby_reading_with_stub(
         def __call__(self, _text: str):
             return [DummyToken(base, base_reading_kata)]
 
+    tts_util._RUBY_BASE_READING_CACHE.clear()
     return tts_util._normalize_ruby_reading(base, reading, DummyTagger())
 
 
