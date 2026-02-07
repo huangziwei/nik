@@ -40,5 +40,7 @@ jobs:
       - name: Run full test suite
         env:
           PYTHONPATH: .
+          # CI must not bootstrap/download UniDic during tests.
+          NIK_UNIDIC_DIR: /tmp/nik-unidic-disabled
         run: |
           python -m pytest -q tests

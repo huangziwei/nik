@@ -266,9 +266,9 @@ def test_apply_ruby_spans() -> None:
 
 
 def test_apply_ruby_evidence_to_chunk_katakanizes_readings() -> None:
-    chunk_text = "前漢字後"
+    chunk_text = "前日本。後。"
     chunk_span = (0, len(chunk_text))
-    chapter_spans = [{"start": 1, "end": 3, "base": "漢字", "reading": "かんじ"}]
+    chapter_spans = [{"start": 1, "end": 3, "base": "日本", "reading": "にほん"}]
     ruby_data = {"global": [{"base": "後", "reading": "あと"}]}
     out = tts_util._apply_ruby_evidence_to_chunk(
         chunk_text,
@@ -276,7 +276,7 @@ def test_apply_ruby_evidence_to_chunk_katakanizes_readings() -> None:
         chapter_spans,
         ruby_data,
     )
-    assert out == "前カンジアト"
+    assert out == "前ニホン。アト。"
 
 
 def test_normalize_kana_with_stub_tagger() -> None:
