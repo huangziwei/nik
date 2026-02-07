@@ -66,3 +66,52 @@ def test_diff_ruby_spans_drops_suspicious_long_reading() -> None:
         "がべつの女性と結婚するという。母は、若いころに別の",
     )
     assert spans == []
+
+
+def test_sanitize_dropped_chapter_clears_ruby_clean_spans(tmp_path: Path) -> None:
+    book_dir = _write_book(tmp_path)
+    rules_path = tmp_path / "rules.json"
+    rules_path.write_text(
+        json.dumps(
+            {
+                "replace_defaults": False,
+                "drop_chapter_title_patterns": ["^Chapter 1$"],
+                "section_cutoff_patterns": [],
+                "remove_patterns": [],
+                "paragraph_breaks": "double",
+            }
+        ),
+        encoding="utf-8",
+    )
+    overrides_path = book_dir / "reading-overrides.json"
+    overrides_path.write_text(
+        json.dumps(
+            {
+                "ruby": {
+                    "chapters": {
+                        "0001-chapter": {
+                            "raw_sha256": "dummy",
+                            "raw_spans": [],
+                            "clean_spans": [
+                                {
+                                    "start": 0,
+                                    "end": 1,
+                                    "base": "A",
+                                    "reading": "B",
+                                }
+                            ],
+                            "clean_sha256": "dummy",
+                        }
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    sanitize_util.sanitize_book(
+        book_dir=book_dir, rules_path=rules_path, overwrite=True
+    )
+    updated = json.loads(overrides_path.read_text(encoding="utf-8"))
+    entry = updated["ruby"]["chapters"]["0001-chapter"]
+    assert "clean_spans" not in entry
+    assert "clean_sha256" not in entry

@@ -824,6 +824,17 @@ def sanitize_book(
 
         drop_reason = should_drop_title(title, drop_patterns)
         if drop_reason:
+            if ruby_chapters:
+                chapter_id = tts_util.chapter_id_from_path(
+                    int(entry.get("index", len(report_entries) + 1)),
+                    title,
+                    raw_rel,
+                )
+                ruby_entry = ruby_chapters.get(chapter_id)
+                if isinstance(ruby_entry, dict):
+                    ruby_entry.pop("clean_spans", None)
+                    ruby_entry.pop("clean_sha256", None)
+                    ruby_updated = True
             dropped += 1
             report_entries.append(
                 ChapterResult(
@@ -841,6 +852,17 @@ def sanitize_book(
             continue
 
         if not raw_path.exists():
+            if ruby_chapters:
+                chapter_id = tts_util.chapter_id_from_path(
+                    int(entry.get("index", len(report_entries) + 1)),
+                    title,
+                    raw_rel,
+                )
+                ruby_entry = ruby_chapters.get(chapter_id)
+                if isinstance(ruby_entry, dict):
+                    ruby_entry.pop("clean_spans", None)
+                    ruby_entry.pop("clean_sha256", None)
+                    ruby_updated = True
             report_entries.append(
                 ChapterResult(
                     index=int(entry.get("index", len(report_entries) + 1)),
