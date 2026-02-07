@@ -9,7 +9,7 @@ on:
       - ".github/workflows/sutegana-tests.yml"
   push:
     branches:
-      - main
+      - "**"
     paths:
       - "nik/tts.py"
       - "tests/test_tts.py"
