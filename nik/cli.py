@@ -645,6 +645,25 @@ def _kana(args: argparse.Namespace) -> int:
         if stem.isdigit():
             chunk_index = int(stem) - 1
 
+    manifest: dict = {}
+    manifest_entry: Optional[dict] = None
+    if using_file and book_dir and chapter_id and chunk_index is not None:
+        manifest_path = book_dir / "tts" / "manifest.json"
+        if manifest_path.exists():
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                manifest = {}
+            chapters_meta = manifest.get("chapters") if isinstance(manifest, dict) else []
+            if isinstance(chapters_meta, list):
+                for entry in chapters_meta:
+                    if isinstance(entry, dict) and (entry.get("id") or "") == chapter_id:
+                        manifest_entry = entry
+                        chunks = entry.get("chunks")
+                        if isinstance(chunks, list) and len(chunks) > chunk_index:
+                            text = str(chunks[chunk_index])
+                        break
+
     global_overrides = []
     merged_overrides = []
     chapter_count = 0
@@ -655,31 +674,34 @@ def _kana(args: argparse.Namespace) -> int:
         global_overrides, chapter_overrides = tts_util._load_reading_overrides(book_dir)
         ruby_data = tts_util._load_ruby_data(book_dir)
         if ruby_data and chapter_id and chunk_index is not None:
-            manifest_path = book_dir / "tts" / "manifest.json"
-            manifest: dict = {}
-            if manifest_path.exists():
-                try:
-                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                except json.JSONDecodeError:
-                    manifest = {}
-            chapters_meta = manifest.get("chapters") if isinstance(manifest, dict) else []
-            if isinstance(chapters_meta, list):
-                for entry in chapters_meta:
-                    if isinstance(entry, dict) and (entry.get("id") or "") == chapter_id:
-                        rel_path = entry.get("path")
-                        if rel_path:
-                            chapter_path = (book_dir / rel_path).resolve()
-                            if chapter_path.exists():
-                                chapter_text = tts_util._normalize_text(
-                                    read_clean_text(chapter_path)
-                                )
-                                chapter_ruby_spans = tts_util._select_ruby_spans(
-                                    chapter_id, chapter_text, ruby_data
-                                )
-                        span_list = entry.get("chunk_spans")
-                        if isinstance(span_list, list) and len(span_list) > chunk_index:
-                            chunk_span = span_list[chunk_index]
-                        break
+            entry = manifest_entry
+            if entry is None:
+                manifest_path = book_dir / "tts" / "manifest.json"
+                if manifest_path.exists():
+                    try:
+                        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    except json.JSONDecodeError:
+                        manifest = {}
+                chapters_meta = manifest.get("chapters") if isinstance(manifest, dict) else []
+                if isinstance(chapters_meta, list):
+                    for candidate in chapters_meta:
+                        if isinstance(candidate, dict) and (candidate.get("id") or "") == chapter_id:
+                            entry = candidate
+                            break
+            if entry is not None:
+                rel_path = entry.get("path")
+                if rel_path:
+                    chapter_path = (book_dir / rel_path).resolve()
+                    if chapter_path.exists():
+                        chapter_text = tts_util._normalize_text(
+                            read_clean_text(chapter_path)
+                        )
+                        chapter_ruby_spans = tts_util._select_ruby_spans(
+                            chapter_id, chapter_text, ruby_data
+                        )
+                span_list = entry.get("chunk_spans")
+                if isinstance(span_list, list) and len(span_list) > chunk_index:
+                    chunk_span = span_list[chunk_index]
         if chapter_id:
             chapter_entries = chapter_overrides.get(chapter_id, [])
             chapter_count = len(chapter_entries)

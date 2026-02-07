@@ -182,6 +182,35 @@ _ASCII_ROMAN_MAX_VALUE = 50
 _KANJI_NUMERAL_RANGE_CHARS = "〇零一二三四五六七八九十百千万億兆京"
 _FORCE_FIRST_TOKEN_NOISE_RE = re.compile(r"^[cC][0-9A-Za-z]{2,12}$")
 
+_LATIN_LETTER_KANA = {
+    "A": "エー",
+    "B": "ビー",
+    "C": "シー",
+    "D": "ディー",
+    "E": "イー",
+    "F": "エフ",
+    "G": "ジー",
+    "H": "エイチ",
+    "I": "アイ",
+    "J": "ジェー",
+    "K": "ケー",
+    "L": "エル",
+    "M": "エム",
+    "N": "エヌ",
+    "O": "オー",
+    "P": "ピー",
+    "Q": "キュー",
+    "R": "アール",
+    "S": "エス",
+    "T": "ティー",
+    "U": "ユー",
+    "V": "ブイ",
+    "W": "ダブリュー",
+    "X": "エックス",
+    "Y": "ワイ",
+    "Z": "ゼット",
+}
+
 _KANJI_DIGITS = {
     1: "一",
     2: "二",
@@ -2490,7 +2519,12 @@ def _next_significant_surface(tokens: Sequence[Any], start_idx: int) -> str:
     return ""
 
 
-def _should_force_first_token_to_kana(surface: str, next_surface: str) -> bool:
+def _should_force_first_token_to_kana(
+    surface: str,
+    next_surface: str,
+    *,
+    allow_lowercase: bool = False,
+) -> bool:
     normalized = unicodedata.normalize("NFKC", surface or "").strip()
     if not normalized:
         return False
@@ -2529,7 +2563,11 @@ def _should_force_first_token_to_kana(surface: str, next_surface: str) -> bool:
 
     if re.fullmatch(r"[A-Za-z][A-Za-z0-9+._/-]*", leading):
         if any(ch.islower() for ch in leading):
-            return False
+            if leading.islower():
+                return False
+            if not allow_lowercase:
+                return False
+            return has_japanese_after
         alpha_count = sum(1 for ch in leading if ch.isalpha())
         if alpha_count <= 1:
             return has_japanese_after
@@ -2540,10 +2578,51 @@ def _should_force_first_token_to_kana(surface: str, next_surface: str) -> bool:
     return False
 
 
+def _latin_prefix_to_kana(surface: str) -> str:
+    normalized = unicodedata.normalize("NFKC", surface or "").strip()
+    if not normalized:
+        return ""
+
+    leading_chars: List[str] = []
+    idx = 0
+    length = len(normalized)
+    while idx < length:
+        ch = normalized[idx]
+        if ch.isspace():
+            if leading_chars:
+                break
+            idx += 1
+            continue
+        if _is_kana_char(ch) or _is_kanji_char(ch) or ch.isdigit() or ch in _KANJI_NUMERAL_RANGE_CHARS:
+            break
+        if unicodedata.category(ch).startswith("P"):
+            if leading_chars:
+                break
+            return ""
+        leading_chars.append(ch)
+        idx += 1
+
+    if not leading_chars:
+        return ""
+    leading = "".join(leading_chars)
+    if leading.islower():
+        return ""
+    if not all(ch.isascii() and ch.isalpha() for ch in leading):
+        return ""
+
+    out: List[str] = []
+    for ch in leading:
+        kana = _LATIN_LETTER_KANA.get(ch.upper(), "")
+        if not kana:
+            return ""
+        out.append(kana)
+    out.append(normalized[idx:])
+    return "".join(out)
+
+
 def _plan_force_first_targets(
     tokens: Sequence[Any],
     *,
-    force_first_kanji: bool,
     force_first_token_to_kana: bool,
 ) -> tuple[set[int], Optional[int]]:
     force_first_kanji_indices: set[int] = set()
@@ -2566,9 +2645,7 @@ def _plan_force_first_targets(
             force_first_kanji_indices.add(end)
             end += 1
 
-    # New policy: force_first_token_to_kana supersedes force_first_kanji.
-    # If the first significant token is kanji, apply the legacy first-kanji run logic.
-    # Otherwise, apply the non-kanji first-token conversion heuristics.
+    # First-token forcing handles both kanji and non-kanji starts.
     if force_first_token_to_kana:
         for idx, token in enumerate(tokens):
             surface = str(getattr(token, "surface", "") or "")
@@ -2578,30 +2655,17 @@ def _plan_force_first_targets(
                 _add_force_first_kanji_run(idx)
                 return force_first_kanji_indices, force_first_token_idx
             next_surface = _next_significant_surface(tokens, idx)
-            if _should_force_first_token_to_kana(surface, next_surface):
+            reading = _extract_token_reading(token)
+            has_reading = bool(reading and _is_kana_reading(reading))
+            allow_lowercase = has_reading or bool(_latin_prefix_to_kana(surface))
+            if _should_force_first_token_to_kana(
+                surface,
+                next_surface,
+                allow_lowercase=allow_lowercase,
+            ):
                 force_first_token_idx = idx
             return force_first_kanji_indices, force_first_token_idx
         return force_first_kanji_indices, force_first_token_idx
-
-    if force_first_kanji:
-        force_first_kanji_active = True
-        for token in tokens:
-            surface = getattr(token, "surface", "") or ""
-            if not surface:
-                continue
-            if _has_kana(surface) or _has_kanji(surface):
-                if _has_kana(surface) and not _has_kanji(surface):
-                    force_first_kanji_active = False
-                break
-        if force_first_kanji_active:
-            first_idx: Optional[int] = None
-            for idx, token in enumerate(tokens):
-                surface = getattr(token, "surface", "") or ""
-                if surface and _has_kanji(surface):
-                    first_idx = idx
-                    break
-            if first_idx is not None:
-                _add_force_first_kanji_run(first_idx)
     return force_first_kanji_indices, force_first_token_idx
 
 
@@ -2611,7 +2675,6 @@ def _normalize_kana_with_tagger(
     *,
     kana_style: str = "mixed",
     zh_lexicon: Optional[set[str]] = None,
-    force_first_kanji: bool = False,
     force_first_token_to_kana: bool = False,
     partial_mid_kanji: bool = False,
 ) -> str:
@@ -2627,7 +2690,6 @@ def _normalize_kana_with_tagger(
     if kana_style == "partial":
         force_first_kanji_indices, force_first_token_idx = _plan_force_first_targets(
             tokens,
-            force_first_kanji=force_first_kanji,
             force_first_token_to_kana=force_first_token_to_kana,
         )
     if kana_style == "partial" and tokens:
@@ -2692,11 +2754,20 @@ def _normalize_kana_with_tagger(
                     converted = _apply_surface_kana(reading_kata, surface)
                     out.append(_hiragana_to_katakana(converted))
                     continue
+                fallback = _latin_prefix_to_kana(surface)
+                if fallback:
+                    out.append(fallback)
+                    continue
             out.append(surface)
             continue
         force_first = kana_style == "partial" and idx in force_first_kanji_indices
         reading = _extract_token_reading(token)
         if not reading or reading == "*":
+            if force_first:
+                fallback = _latin_prefix_to_kana(surface)
+                if fallback:
+                    out.append(fallback)
+                    continue
             out.append(surface)
             continue
         reading_kata = _hiragana_to_katakana(reading)
@@ -2746,7 +2817,6 @@ def _normalize_kana_text(
     text: str,
     *,
     kana_style: str = "mixed",
-    force_first_kanji: bool = False,
     force_first_token_to_kana: bool = False,
     partial_mid_kanji: bool = False,
 ) -> str:
@@ -2774,7 +2844,6 @@ def _normalize_kana_text(
                     tagger,
                     kana_style=kana_style,
                     zh_lexicon=zh_lexicon,
-                    force_first_kanji=force_first_kanji,
                     force_first_token_to_kana=force_first_token_to_kana,
                     partial_mid_kanji=partial_mid_kanji,
                 )
