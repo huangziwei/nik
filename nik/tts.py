@@ -535,6 +535,15 @@ class ChapterInput:
     path: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class TtsPipeline:
+    ruby_text: str
+    after_overrides: str
+    after_numbers: str
+    after_kana: str
+    prepared: str
+
+
 def sha256_str(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
@@ -3410,6 +3419,69 @@ def prepare_tts_text(text: str, *, add_short_punct: bool = False) -> str:
     return text
 
 
+def _prepare_tts_pipeline(
+    chunk_text: str,
+    *,
+    chapter_id: Optional[str] = None,
+    chunk_span: Optional[Sequence[int]] = None,
+    chapter_ruby_spans: Optional[Sequence[dict]] = None,
+    ruby_data: Optional[dict] = None,
+    merged_overrides: Optional[Sequence[dict]] = None,
+    skip_bases: Optional[set[str]] = None,
+    allow_full_ruby: bool = False,
+    kana_normalize: bool = True,
+    allow_kana_failure: bool = False,
+    kana_style: str = "mixed",
+    partial_mid_kanji: bool = False,
+    add_short_punct: bool = True,
+    debug_sources: Optional[List[str]] = None,
+) -> TtsPipeline:
+    text = chunk_text
+    if ruby_data:
+        spans = chapter_ruby_spans or []
+        if chunk_span is not None and spans:
+            text = _apply_ruby_evidence_to_chunk(
+                text,
+                chunk_span,
+                spans,
+                ruby_data,
+                skip_bases=skip_bases,
+            )
+        elif allow_full_ruby:
+            text = _apply_ruby_evidence(
+                text,
+                chapter_id,
+                ruby_data,
+                skip_bases=skip_bases,
+            )
+    overrides = list(merged_overrides) if merged_overrides else []
+    after_overrides = _apply_reading_overrides_for_tts(text, overrides)
+    after_numbers = _normalize_numbers(after_overrides)
+    after_kana = after_numbers
+    if kana_normalize:
+        try:
+            after_kana = _normalize_kana_text(
+                after_kana,
+                kana_style=kana_style,
+                force_first_token_to_kana=True,
+                partial_mid_kanji=partial_mid_kanji,
+                debug_sources=debug_sources,
+            )
+        except Exception as exc:
+            if not allow_kana_failure:
+                raise
+            sys.stderr.write(f"Failed kana normalization: {exc}\n")
+            after_kana = after_numbers
+    prepared = prepare_tts_text(after_kana, add_short_punct=add_short_punct)
+    return TtsPipeline(
+        ruby_text=text,
+        after_overrides=after_overrides,
+        after_numbers=after_numbers,
+        after_kana=after_kana,
+        prepared=prepared,
+    )
+
+
 def _select_ruby_spans(
     chapter_id: Optional[str],
     text: str,
@@ -4435,7 +4507,6 @@ def synthesize_book(
     out_dir.mkdir(parents=True, exist_ok=True)
     if base_dir is None:
         base_dir = Path.cwd()
-    kana_tagger = None
     if kana_normalize:
         dict_dir = _resolve_unidic_dir()
         if not (dict_dir / "dicrc").exists():
@@ -4443,7 +4514,7 @@ def synthesize_book(
         else:
             write_status(out_dir, "unidic", "Loading UniDic dictionary...")
         try:
-            kana_tagger = _get_kana_tagger()
+            _get_kana_tagger()
         except RuntimeError as exc:
             sys.stderr.write(f"{exc}\n")
             return 2
@@ -4619,34 +4690,28 @@ def synthesize_book(
                     progress.advance(overall_task, 1)
                     continue
 
+                chunk_span = None
+                ruby_spans: Sequence[dict] = []
                 if ruby_data:
-                    chunk_span = None
                     span_list = ch_entry.get("chunk_spans")
                     if isinstance(span_list, list) and len(span_list) >= chunk_idx:
                         chunk_span = span_list[chunk_idx - 1]
                     ruby_spans = chapter_ruby_spans.get(chapter_id, [])
-                    tts_source = _apply_ruby_evidence_to_chunk(
-                        chunk_text,
-                        chunk_span,
-                        ruby_spans,
-                        ruby_data,
-                        skip_bases=override_bases,
-                    )
-                else:
-                    tts_source = chunk_text
-                tts_source = _apply_reading_overrides_for_tts(tts_source, merged_overrides)
-                tts_source = _normalize_numbers(tts_source)
-                if kana_normalize:
-                    try:
-                        tts_source = _normalize_kana_text(
-                            tts_source,
-                            kana_style=kana_style,
-                            force_first_token_to_kana=True,
-                            partial_mid_kanji=partial_mid_kanji,
-                        )
-                    except Exception as exc:
-                        sys.stderr.write(f"Failed kana normalization: {exc}\n")
-                tts_text = prepare_tts_text(tts_source, add_short_punct=True)
+                pipeline = _prepare_tts_pipeline(
+                    chunk_text,
+                    chapter_id=chapter_id,
+                    chunk_span=chunk_span,
+                    chapter_ruby_spans=ruby_spans,
+                    ruby_data=ruby_data,
+                    merged_overrides=merged_overrides,
+                    skip_bases=override_bases,
+                    kana_normalize=kana_normalize,
+                    allow_kana_failure=True,
+                    kana_style=kana_style,
+                    partial_mid_kanji=partial_mid_kanji,
+                    add_short_punct=True,
+                )
+                tts_text = pipeline.prepared
                 if not tts_text:
                     ch_entry["durations_ms"][chunk_idx - 1] = 0
                     atomic_write_json(manifest_path, manifest)
@@ -4938,19 +5003,24 @@ def synthesize_chunk(
             ruby_data,
             skip_bases=override_bases,
         )
-    tts_source = _apply_reading_overrides_for_tts(chunk_text, merged_overrides)
-    tts_source = _normalize_numbers(tts_source)
-    if kana_normalize:
-        try:
-            tts_source = _normalize_kana_text(
-                tts_source,
-                kana_style=kana_style,
-                force_first_token_to_kana=True,
-                partial_mid_kanji=partial_mid_kanji,
-            )
-        except RuntimeError as exc:
-            raise ValueError(str(exc)) from exc
-    tts_text = prepare_tts_text(tts_source, add_short_punct=True)
+    try:
+        pipeline = _prepare_tts_pipeline(
+            chunk_text,
+            chapter_id=chapter_id,
+            chunk_span=chunk_span,
+            chapter_ruby_spans=ruby_spans,
+            ruby_data=ruby_data,
+            merged_overrides=merged_overrides,
+            skip_bases=override_bases,
+            kana_normalize=bool(kana_normalize),
+            allow_kana_failure=False,
+            kana_style=kana_style,
+            partial_mid_kanji=partial_mid_kanji,
+            add_short_punct=True,
+        )
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+    tts_text = pipeline.prepared
     seg_path = out_dir / "segments" / chapter_id / f"{chunk_index + 1:06d}.wav"
     seg_path.parent.mkdir(parents=True, exist_ok=True)
 

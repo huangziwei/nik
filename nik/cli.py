@@ -735,29 +735,31 @@ def _kana(args: argparse.Namespace) -> int:
         for item in merged_overrides
         if isinstance(item, dict) and str(item.get("base") or "").strip()
     }
-    if ruby_data:
-        if chunk_span is not None and chapter_ruby_spans:
-            text = tts_util._apply_ruby_evidence_to_chunk(
-                text,
-                chunk_span,
-                chapter_ruby_spans,
-                ruby_data,
-                skip_bases=override_bases,
-            )
-        else:
-            text = tts_util._apply_ruby_evidence(
-                text,
-                chapter_id,
-                ruby_data,
-                skip_bases=override_bases,
-            )
-    tts_source = tts_util._apply_reading_overrides_for_tts(text, merged_overrides)
-    if args.debug:
-        _debug_dump("After overrides", tts_source)
+    kana_sources = [] if args.debug else None
+    try:
+        pipeline = tts_util._prepare_tts_pipeline(
+            text,
+            chapter_id=chapter_id,
+            chunk_span=chunk_span,
+            chapter_ruby_spans=chapter_ruby_spans,
+            ruby_data=ruby_data,
+            merged_overrides=merged_overrides,
+            skip_bases=override_bases,
+            allow_full_ruby=True,
+            kana_normalize=bool(args.kana_normalize),
+            allow_kana_failure=False,
+            kana_style=args.kana_style,
+            partial_mid_kanji=args.partial_mid_kanji,
+            add_short_punct=True,
+            debug_sources=kana_sources,
+        )
+    except RuntimeError as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 2
 
-    tts_source = tts_util._normalize_numbers(tts_source)
     if args.debug:
-        _debug_dump("After numbers", tts_source)
+        _debug_dump("After overrides", pipeline.after_overrides)
+        _debug_dump("After numbers", pipeline.after_numbers)
 
     if args.tokens:
         try:
@@ -766,7 +768,7 @@ def _kana(args: argparse.Namespace) -> int:
             sys.stderr.write(f"{exc}\n")
             return 2
         sys.stderr.write("Tokens (kanji only):\n")
-        for token in tagger(tts_source):
+        for token in tagger(pipeline.after_numbers):
             surface = getattr(token, "surface", "")
             if not surface or not tts_util._has_kanji(surface):
                 continue
@@ -782,32 +784,19 @@ def _kana(args: argparse.Namespace) -> int:
 
     if args.debug:
         try:
-            mode = tts_util._first_token_mode(tts_source)
+            mode = tts_util._first_token_mode(pipeline.after_numbers)
         except Exception:
             mode = "unknown"
         _debug_dump("First token (pre-kana)", mode)
 
-    if args.kana_normalize:
-        kana_sources = [] if args.debug else None
-        try:
-            tts_source = tts_util._normalize_kana_text(
-                tts_source,
-                kana_style=args.kana_style,
-                force_first_token_to_kana=True,
-                partial_mid_kanji=args.partial_mid_kanji,
-                debug_sources=kana_sources,
-            )
-        except RuntimeError as exc:
-            sys.stderr.write(f"{exc}\n")
-            return 2
-        if args.debug:
-            _debug_dump("After kana", tts_source)
-            if kana_sources:
-                sys.stderr.write("Kana sources:\n")
-                for line in kana_sources:
-                    sys.stderr.write(f"  {line}\n")
+    if args.kana_normalize and args.debug:
+        _debug_dump("After kana", pipeline.after_kana)
+        if kana_sources:
+            sys.stderr.write("Kana sources:\n")
+            for line in kana_sources:
+                sys.stderr.write(f"  {line}\n")
 
-    tts_text = tts_util.prepare_tts_text(tts_source, add_short_punct=True)
+    tts_text = pipeline.prepared
     if args.debug:
         _debug_dump("Prepared", tts_text)
 
