@@ -6707,10 +6707,10 @@
 
       function gaplessTailSeconds() {
         const padMs = Number(state.padMs) || 0;
-        if (!padMs) {
+        if (padMs > 0) {
           return 0;
         }
-        return Math.min(0.2, padMs / 1000);
+        return 0.05;
       }
 
       function armGapless(index) {
