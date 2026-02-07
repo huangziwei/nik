@@ -179,6 +179,7 @@ _ROMAN_NUMERAL_CHARS = (
 )
 _ASCII_ROMAN_NUMERAL_CHARS = "IVXLCDM"
 _ASCII_ROMAN_MAX_VALUE = 50
+_KANJI_NUMERAL_RANGE_CHARS = "〇零一二三四五六七八九十百千万億兆京"
 
 _KANJI_DIGITS = {
     1: "一",
@@ -1551,6 +1552,12 @@ def _normalize_numbers(text: str) -> str:
         text,
     )
     text = unicodedata.normalize("NFKC", text)
+    text = re.sub(r"(?<=\d)\s*~\s*(?=\d)", "から", text)
+    text = re.sub(
+        rf"(?<=[{_KANJI_NUMERAL_RANGE_CHARS}])\s*~\s*(?=[{_KANJI_NUMERAL_RANGE_CHARS}])",
+        "から",
+        text,
+    )
 
     def _safe_int(raw: str) -> Optional[int]:
         cleaned = raw.replace(",", "")
@@ -2640,6 +2647,66 @@ def _normalize_kana_text(
     return "".join(out)
 
 
+def _is_numeric_range_char(ch: str) -> bool:
+    if not ch:
+        return False
+    if ch.isdigit():
+        return True
+    return ch in _KANJI_NUMERAL_RANGE_CHARS
+
+
+def _normalize_wave_dashes_for_tts(text: str) -> str:
+    if not text:
+        return text
+    text = text.replace("～", "~").replace("〜", "~")
+    if "~" not in text:
+        return text
+    text = re.sub(r"~{2,}", "~", text)
+    out: List[str] = []
+    length = len(text)
+    for idx, ch in enumerate(text):
+        if ch != "~":
+            out.append(ch)
+            continue
+        prev = text[idx - 1] if idx > 0 else ""
+        next_ch = text[idx + 1] if idx + 1 < length else ""
+        has_left_space = bool(prev) and prev.isspace()
+        has_right_space = bool(next_ch) and next_ch.isspace()
+        left_idx = idx - 1
+        while left_idx >= 0 and text[left_idx].isspace():
+            left_idx -= 1
+        left = text[left_idx] if left_idx >= 0 else ""
+        right_idx = idx + 1
+        while right_idx < length and text[right_idx].isspace():
+            right_idx += 1
+        right = text[right_idx] if right_idx < length else ""
+
+        if has_left_space or has_right_space:
+            if _is_japanese_char(left) and _is_japanese_char(right):
+                out.append("、")
+            continue
+        if _is_numeric_range_char(left) and _is_numeric_range_char(right):
+            out.append("から")
+            continue
+        if _is_kana_char(left) and _is_kana_char(right):
+            out.append("ー")
+            continue
+        if (_is_kana_char(left) and _is_japanese_char(right)) or (
+            _is_japanese_char(left) and _is_kana_char(right)
+        ):
+            out.append("ー")
+            continue
+        if _is_japanese_char(left) and (
+            not right or right in _END_PUNCT or right in _MID_PUNCT or right in _CLOSE_PUNCT
+        ):
+            out.append("ー")
+            continue
+        if _is_japanese_char(left) and _is_japanese_char(right):
+            out.append("、")
+            continue
+    return "".join(out)
+
+
 def prepare_tts_text(text: str, *, add_short_punct: bool = False) -> str:
     if not text:
         return ""
@@ -2650,6 +2717,7 @@ def prepare_tts_text(text: str, *, add_short_punct: bool = False) -> str:
     text = _strip_jp_quotes(text)
     text = _strip_double_quotes(text)
     text = _strip_single_quotes(text)
+    text = _normalize_wave_dashes_for_tts(text)
     text = re.sub(r"\s+", " ", text).strip()
     text = _japanese_space_to_pause(text, allow_full_stop=not has_dash_run)
     if add_short_punct:
