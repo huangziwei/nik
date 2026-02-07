@@ -173,6 +173,13 @@ _DIGIT_KANA = {
     "9": "きゅう",
 }
 
+_ROMAN_NUMERAL_CHARS = (
+    "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫⅬⅭⅮⅯ"
+    "ⅰⅱⅲⅳⅴⅵⅶⅷⅸⅹⅺⅻⅼⅽⅾⅿ"
+)
+_ASCII_ROMAN_NUMERAL_CHARS = "IVXLCDM"
+_ASCII_ROMAN_MAX_VALUE = 50
+
 _KANJI_DIGITS = {
     1: "一",
     2: "二",
@@ -1464,9 +1471,85 @@ def _day_reading(value: int) -> str:
     return _DAY_READINGS.get(value, "")
 
 
+def _int_to_roman(value: int) -> str:
+    if value <= 0 or value > 3999:
+        return ""
+    table = (
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    )
+    out: List[str] = []
+    remaining = value
+    for number, symbol in table:
+        if remaining <= 0:
+            break
+        count, remaining = divmod(remaining, number)
+        if count:
+            out.append(symbol * count)
+    return "".join(out)
+
+
+def _roman_to_int(roman: str) -> Optional[int]:
+    if not roman:
+        return None
+    values = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
+    text = roman.upper()
+    total = 0
+    prev = 0
+    for ch in reversed(text):
+        value = values.get(ch)
+        if value is None:
+            return None
+        if value < prev:
+            total -= value
+        else:
+            total += value
+            prev = value
+    if _int_to_roman(total) != text:
+        return None
+    return total
+
+
 def _normalize_numbers(text: str) -> str:
     if not text:
         return text
+
+    roman_chars = re.escape(_ROMAN_NUMERAL_CHARS)
+    ascii_roman_chars = re.escape(_ASCII_ROMAN_NUMERAL_CHARS)
+
+    def _replace_roman_numeral(match: re.Match, *, ascii_only: bool) -> str:
+        raw = match.group("roman") or ""
+        if not raw:
+            return match.group(0)
+        roman = unicodedata.normalize("NFKC", raw).upper()
+        value = _roman_to_int(roman)
+        if value is None:
+            return match.group(0)
+        if ascii_only and value > _ASCII_ROMAN_MAX_VALUE:
+            return match.group(0)
+        return _int_to_kana(value)
+
+    text = re.sub(
+        rf"(?P<roman>[{roman_chars}]+)",
+        lambda m: _replace_roman_numeral(m, ascii_only=False),
+        text,
+    )
+    text = re.sub(
+        rf"(?<![A-Za-z])(?P<roman>[{ascii_roman_chars}]{{2,}})(?![A-Za-z])",
+        lambda m: _replace_roman_numeral(m, ascii_only=True),
+        text,
+    )
     text = unicodedata.normalize("NFKC", text)
 
     def _safe_int(raw: str) -> Optional[int]:

@@ -1280,6 +1280,8 @@ def test_normalize_numbers_slash_date_year() -> None:
         # GOSICK 全９冊合本版 (角川文庫) - 桜庭 一樹.epub
         ("平成26年7月25日 発行", "平成二十六年しちがつにじゅうごにち 発行"),
         ("平成21年9月25日初版発行", "平成二十一年くがつにじゅうごにち初版発行"),
+        ("GOSICK Ⅷ 上", "GOSICK はち 上"),
+        ("GOSICK VIII 上", "GOSICK はち 上"),
         # 【合本版】俺の妹がこんなに可愛いわけがない...epub
         ("参加者１／２", "参加者にぶんのいち"),
         ("参加者２／３", "参加者さんぶんのに"),
@@ -1317,12 +1319,20 @@ def test_normalize_numbers_real_dataset_hyphen_address_not_date() -> None:
     assert "年" not in out and "月" not in out and "日" not in out
 
 
-@pytest.mark.xfail(
-    reason="Roman numeral normalization to kana is not implemented yet.",
-    strict=True,
-)
-def test_normalize_numbers_roman_numeral_to_kana_todo() -> None:
+def test_normalize_numbers_roman_numeral_to_kana() -> None:
     assert tts_util._normalize_numbers("GOSICK Ⅷ 上") == "GOSICK はち 上"
+
+
+def test_normalize_numbers_ascii_roman_to_kana() -> None:
+    assert tts_util._normalize_numbers("GOSICK VIII 上") == "GOSICK はち 上"
+    assert tts_util._normalize_numbers("滅義怒羅怨II。") == "滅義怒羅怨に。"
+
+
+def test_normalize_numbers_ascii_roman_acronyms_not_misconverted() -> None:
+    assert tts_util._normalize_numbers("ドラマCD") == "ドラマCD"
+    assert tts_util._normalize_numbers("TV CM") == "TV CM"
+    assert tts_util._normalize_numbers("情報交換ML") == "情報交換ML"
+    assert tts_util._normalize_numbers("東京MX") == "東京MX"
 
 
 def test_prepare_tts_text_strips_japanese_quotes() -> None:
