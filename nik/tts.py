@@ -212,10 +212,6 @@ _LATIN_LETTER_KANA = {
     "Z": "ゼット",
 }
 
-_LATIN_WORD_KANA = {
-    "ROM": "ロム",
-}
-
 _KANJI_DIGITS = {
     1: "一",
     2: "二",
@@ -2584,10 +2580,26 @@ def _should_force_first_token_to_kana(
     return False
 
 
-def _latin_prefix_to_kana(surface: str) -> str:
+def _append_kana_debug(
+    debug_sources: Optional[List[str]],
+    surface: str,
+    output: str,
+    *,
+    source: str,
+    reading: str | None = None,
+) -> None:
+    if debug_sources is None:
+        return
+    detail = f"source={source}"
+    if reading:
+        detail += f" reading={reading}"
+    debug_sources.append(f"{surface} -> {output} ({detail})")
+
+
+def _latin_prefix_to_kana_with_source(surface: str) -> tuple[str, str]:
     normalized = unicodedata.normalize("NFKC", surface or "")
     if not normalized:
-        return ""
+        return "", ""
 
     leading_chars: List[str] = []
     idx = 0
@@ -2609,30 +2621,38 @@ def _latin_prefix_to_kana(surface: str) -> str:
         idx += 1
 
     if not leading_chars:
-        return ""
+        return "", ""
     leading = "".join(leading_chars)
     if not all(ch.isascii() and ch.isalpha() for ch in leading):
-        return ""
-
-    mapped = _LATIN_WORD_KANA.get(leading.upper())
-    if mapped:
-        return mapped + normalized[idx:]
+        return "", ""
 
     romanized = jaconv.alphabet2kana(leading.lower())
     if romanized and _is_kana_reading(romanized):
-        return romanized + normalized[idx:]
+        romanized_kata = _hiragana_to_katakana(romanized)
+        source = "latin-map:jaconv"
+        if leading.lower().endswith("m") and romanized_kata.endswith("ン"):
+            romanized_kata = romanized_kata[:-1] + "ム"
+            source = "latin-map:jaconv+final-m"
+        return romanized_kata + normalized[idx:], source
 
     out: List[str] = []
     for ch in leading:
         kana = _LATIN_LETTER_KANA.get(ch.upper(), "")
         if not kana:
-            return ""
+            return "", ""
         out.append(kana)
     out.append(normalized[idx:])
-    return "".join(out)
+    return "".join(out), "latin-map:letters"
 
 
-def _force_first_latin_prefix(text: str) -> str:
+def _latin_prefix_to_kana(surface: str) -> str:
+    converted, _ = _latin_prefix_to_kana_with_source(surface)
+    return converted
+
+
+def _force_first_latin_prefix(
+    text: str, *, debug_sources: Optional[List[str]] = None
+) -> str:
     normalized = unicodedata.normalize("NFKC", text or "")
     if not normalized:
         return text
@@ -2675,10 +2695,17 @@ def _force_first_latin_prefix(text: str) -> str:
     if not any(_is_kana_char(ch) or _is_kanji_char(ch) for ch in normalized[idx:]):
         return text
 
-    converted = _latin_prefix_to_kana(normalized[leading_start:])
+    converted, source = _latin_prefix_to_kana_with_source(normalized[leading_start:])
     if not converted:
         return text
-    return normalized[:leading_start] + converted
+    out = normalized[:leading_start] + converted
+    _append_kana_debug(
+        debug_sources,
+        f"first-token-fallback:{text}",
+        out,
+        source=source or "latin-map",
+    )
+    return out
 
 
 def _first_token_mode(text: str) -> str:
@@ -2777,6 +2804,7 @@ def _normalize_kana_with_tagger(
     zh_lexicon: Optional[set[str]] = None,
     force_first_token_to_kana: bool = False,
     partial_mid_kanji: bool = False,
+    debug_sources: Optional[List[str]] = None,
 ) -> str:
     if not text:
         return text
@@ -2845,6 +2873,7 @@ def _normalize_kana_with_tagger(
         surface = getattr(token, "surface", "")
         if not surface:
             continue
+        surface_original = surface
         force_first_non_kanji = kana_style == "partial" and idx == force_first_token_idx
         if not _has_kanji(surface):
             if force_first_non_kanji:
@@ -2852,23 +2881,55 @@ def _normalize_kana_with_tagger(
                 if reading and reading != "*":
                     reading_kata = _hiragana_to_katakana(reading)
                     converted = _apply_surface_kana(reading_kata, surface)
-                    out.append(_hiragana_to_katakana(converted))
+                    output = _hiragana_to_katakana(converted)
+                    out.append(output)
+                    _append_kana_debug(
+                        debug_sources,
+                        surface_original,
+                        output,
+                        source="unidic",
+                        reading=reading_kata,
+                    )
                     continue
-                fallback = _latin_prefix_to_kana(surface)
+                fallback, source = _latin_prefix_to_kana_with_source(surface)
                 if fallback:
                     out.append(fallback)
+                    _append_kana_debug(
+                        debug_sources,
+                        surface_original,
+                        fallback,
+                        source=source or "latin-map",
+                    )
                     continue
             out.append(surface)
+            _append_kana_debug(
+                debug_sources,
+                surface_original,
+                surface,
+                source="keep",
+            )
             continue
         force_first = kana_style == "partial" and idx in force_first_kanji_indices
         reading = _extract_token_reading(token)
         if not reading or reading == "*":
             if force_first:
-                fallback = _latin_prefix_to_kana(surface)
+                fallback, source = _latin_prefix_to_kana_with_source(surface)
                 if fallback:
                     out.append(fallback)
+                    _append_kana_debug(
+                        debug_sources,
+                        surface_original,
+                        fallback,
+                        source=source or "latin-map",
+                    )
                     continue
             out.append(surface)
+            _append_kana_debug(
+                debug_sources,
+                surface_original,
+                surface,
+                source="keep:no-reading",
+            )
             continue
         reading_kata = _hiragana_to_katakana(reading)
         reading_kata = _adjust_weekday_reading(idx, reading_kata)
@@ -2888,28 +2949,95 @@ def _normalize_kana_with_tagger(
             surface = _maybe_canonicalize_surface(surface, token, reading_kata)
             if action == "keep":
                 out.append(surface)
+                _append_kana_debug(
+                    debug_sources,
+                    surface_original,
+                    surface,
+                    source="keep" if surface == surface_original else "normalize:surface",
+                )
                 continue
             if action == "convert":
-                out.append(_apply_surface_kana(reading_kata, surface))
+                output = _apply_surface_kana(reading_kata, surface)
+                out.append(output)
+                _append_kana_debug(
+                    debug_sources,
+                    surface_original,
+                    output,
+                    source="unidic:run-action",
+                    reading=reading_kata,
+                )
                 continue
             if force_first:
                 converted = _apply_surface_kana(reading_kata, surface)
-                out.append(_hiragana_to_katakana(converted))
+                output = _hiragana_to_katakana(converted)
+                out.append(output)
+                _append_kana_debug(
+                    debug_sources,
+                    surface_original,
+                    output,
+                    source="unidic:first-token",
+                    reading=reading_kata,
+                )
                 continue
             if _should_convert_honorific_prefix(surface, reading_kata, attrs):
-                out.append(_apply_surface_kana(reading_kata, surface))
+                output = _apply_surface_kana(reading_kata, surface)
+                out.append(output)
+                _append_kana_debug(
+                    debug_sources,
+                    surface_original,
+                    output,
+                    source="unidic:honorific",
+                    reading=reading_kata,
+                )
                 continue
             if partial_mid_kanji and _should_partial_convert(surface, attrs, zh_lexicon or set()):
-                out.append(_apply_surface_kana(reading_kata, surface))
+                output = _apply_surface_kana(reading_kata, surface)
+                out.append(output)
+                _append_kana_debug(
+                    debug_sources,
+                    surface_original,
+                    output,
+                    source="unidic:partial-mid",
+                    reading=reading_kata,
+                )
             else:
                 out.append(surface)
+                _append_kana_debug(
+                    debug_sources,
+                    surface_original,
+                    surface,
+                    source="keep" if surface == surface_original else "normalize:surface",
+                )
             continue
         if kana_style == "katakana":
             out.append(reading_kata)
+            _append_kana_debug(
+                debug_sources,
+                surface_original,
+                reading_kata,
+                source="unidic",
+                reading=reading_kata,
+            )
         elif kana_style == "hiragana":
-            out.append(_katakana_to_hiragana(reading_kata))
+            output = _katakana_to_hiragana(reading_kata)
+            out.append(output)
+            _append_kana_debug(
+                debug_sources,
+                surface_original,
+                output,
+                source="unidic",
+                reading=reading_kata,
+            )
         else:
-            out.append(_apply_surface_kana(reading_kata, surface))
+            output = _apply_surface_kana(reading_kata, surface)
+            out.append(output)
+            _append_kana_debug(
+                debug_sources,
+                surface_original,
+                output,
+                source="unidic",
+                reading=reading_kata,
+            )
     return "".join(out)
 
 
@@ -2919,13 +3047,14 @@ def _normalize_kana_text(
     kana_style: str = "mixed",
     force_first_token_to_kana: bool = False,
     partial_mid_kanji: bool = False,
+    debug_sources: Optional[List[str]] = None,
 ) -> str:
     kana_style = _normalize_kana_style(kana_style)
     if kana_style == "off":
         return text
     if not _has_kanji(text):
         if force_first_token_to_kana:
-            return _force_first_latin_prefix(text)
+            return _force_first_latin_prefix(text, debug_sources=debug_sources)
         return text
     tagger = _get_kana_tagger()
     zh_lexicon: Optional[set[str]] = None
@@ -2948,13 +3077,14 @@ def _normalize_kana_text(
                     zh_lexicon=zh_lexicon,
                     force_first_token_to_kana=force_first_token_to_kana,
                     partial_mid_kanji=partial_mid_kanji,
+                    debug_sources=debug_sources,
                 )
             )
         else:
             out.append(part)
     normalized = "".join(out)
     if force_first_token_to_kana:
-        normalized = _force_first_latin_prefix(normalized)
+        normalized = _force_first_latin_prefix(normalized, debug_sources=debug_sources)
     return normalized
 
 

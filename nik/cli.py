@@ -788,18 +788,24 @@ def _kana(args: argparse.Namespace) -> int:
         _debug_dump("First token (pre-kana)", mode)
 
     if args.kana_normalize:
+        kana_sources = [] if args.debug else None
         try:
             tts_source = tts_util._normalize_kana_text(
                 tts_source,
                 kana_style=args.kana_style,
                 force_first_token_to_kana=True,
                 partial_mid_kanji=args.partial_mid_kanji,
+                debug_sources=kana_sources,
             )
         except RuntimeError as exc:
             sys.stderr.write(f"{exc}\n")
             return 2
         if args.debug:
             _debug_dump("After kana", tts_source)
+            if kana_sources:
+                sys.stderr.write("Kana sources:\n")
+                for line in kana_sources:
+                    sys.stderr.write(f"  {line}\n")
 
     tts_text = tts_util.prepare_tts_text(tts_source, add_short_punct=True)
     if args.debug:
