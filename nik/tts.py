@@ -2631,62 +2631,62 @@ def _latin_prefix_to_kana(surface: str) -> str:
     return converted
 
 
-def _force_first_latin_prefix(
+def _force_first_latin_phrase(
     text: str, *, debug_sources: Optional[List[str]] = None
-) -> str:
+) -> tuple[str, bool]:
     normalized = unicodedata.normalize("NFKC", text or "")
     if not normalized:
-        return text
+        return text, False
 
-    leading_chars: List[str] = []
-    leading_start: Optional[int] = None
     idx = 0
     length = len(normalized)
     while idx < length:
         ch = normalized[idx]
         if ch.isspace() or unicodedata.category(ch).startswith("P"):
-            if leading_chars:
-                break
             idx += 1
             continue
-        if (
-            _is_kana_char(ch)
-            or _is_kanji_char(ch)
-            or ch.isdigit()
-            or ch in _KANJI_NUMERAL_RANGE_CHARS
-        ):
-            break
-        if leading_start is None:
-            leading_start = idx
-        leading_chars.append(ch)
-        idx += 1
+        break
 
-    if not leading_chars:
-        return text
-    if leading_start is None:
-        leading_start = 0
-    leading = "".join(leading_chars)
-    if _FORCE_FIRST_TOKEN_NOISE_RE.fullmatch(leading):
-        return text
-    compact = re.sub(r"\s+", "", normalized)
-    if _FORCE_FIRST_TOKEN_NOISE_RE.fullmatch(compact):
-        return text
-    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9+._/-]*", leading):
-        return text
+    if idx >= length or not (normalized[idx].isascii() and normalized[idx].isalpha()):
+        return text, False
+
     if not any(_is_kana_char(ch) or _is_kanji_char(ch) for ch in normalized[idx:]):
-        return text
+        return text, True
 
-    converted, source = _latin_prefix_to_kana_with_source(normalized[leading_start:])
-    if not converted:
-        return text
-    out = normalized[:leading_start] + converted
-    _append_kana_debug(
-        debug_sources,
-        f"first-token-fallback:{text}",
-        out,
-        source=source or "latin-map",
-    )
-    return out
+    out: List[str] = [normalized[:idx]]
+    consumed = True
+    while idx < length:
+        if not (normalized[idx].isascii() and normalized[idx].isalpha()):
+            break
+        word_start = idx
+        while idx < length and normalized[idx].isascii() and normalized[idx].isalpha():
+            idx += 1
+        word = normalized[word_start:idx]
+        if _FORCE_FIRST_TOKEN_NOISE_RE.fullmatch(word):
+            out.append(word)
+        else:
+            converted, source = _latin_prefix_to_kana_with_source(word)
+            if converted:
+                out.append(converted)
+                _append_kana_debug(
+                    debug_sources,
+                    word,
+                    converted,
+                    source=source or "latin-map",
+                )
+            else:
+                out.append(word)
+
+        space_start = idx
+        while idx < length and normalized[idx].isspace():
+            idx += 1
+        if idx > space_start:
+            out.append(normalized[space_start:idx])
+        if idx >= length or not (normalized[idx].isascii() and normalized[idx].isalpha()):
+            break
+
+    out.append(normalized[idx:])
+    return "".join(out), consumed
 
 
 def _first_token_mode(text: str) -> str:
@@ -3033,9 +3033,12 @@ def _normalize_kana_text(
     kana_style = _normalize_kana_style(kana_style)
     if kana_style == "off":
         return text
+    first_token_consumed = False
+    if force_first_token_to_kana:
+        text, first_token_consumed = _force_first_latin_phrase(
+            text, debug_sources=debug_sources
+        )
     if not _has_kanji(text):
-        if force_first_token_to_kana:
-            return _force_first_latin_prefix(text, debug_sources=debug_sources)
         return text
     tagger = _get_kana_tagger()
     zh_lexicon: Optional[set[str]] = None
@@ -3043,29 +3046,34 @@ def _normalize_kana_text(
         zh_lexicon = _load_zh_lexicon()
     parts = re.split(r"(\s+)", text)
     out: List[str] = []
+    first_token_available = force_first_token_to_kana and not first_token_consumed
     for part in parts:
         if not part:
             continue
         if part.isspace():
             out.append(part)
             continue
+        if first_token_available and _is_leading_skip_token(part):
+            out.append(part)
+            continue
         if _has_kanji(part):
+            apply_first_token = first_token_available
             out.append(
                 _normalize_kana_with_tagger(
                     part,
                     tagger,
                     kana_style=kana_style,
                     zh_lexicon=zh_lexicon,
-                    force_first_token_to_kana=force_first_token_to_kana,
+                    force_first_token_to_kana=apply_first_token,
                     partial_mid_kanji=partial_mid_kanji,
                     debug_sources=debug_sources,
                 )
             )
         else:
             out.append(part)
+        if first_token_available and not _is_leading_skip_token(part):
+            first_token_available = False
     normalized = "".join(out)
-    if force_first_token_to_kana:
-        normalized = _force_first_latin_prefix(normalized, debug_sources=debug_sources)
     return normalized
 
 

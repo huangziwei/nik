@@ -1067,6 +1067,28 @@ def test_normalize_kana_first_token_to_kana_latin_starter() -> None:
     assert out == "ブイシリーズ全十冊"
 
 
+def test_normalize_kana_text_force_first_latin_phrase() -> None:
+    text = "The Yellow Monkey「天国旅行」"
+    out = tts_util._normalize_kana_text(
+        text,
+        kana_style="partial",
+        force_first_token_to_kana=True,
+    )
+    prefix = out.split("「")[0]
+    assert "天国旅行" in out
+    assert not any(ch.isascii() and ch.isalpha() for ch in prefix)
+
+
+def test_normalize_kana_text_force_first_token_chunk_only() -> None:
+    text = "あ The Monkey「天国旅行」"
+    out = tts_util._normalize_kana_text(
+        text,
+        kana_style="partial",
+        force_first_token_to_kana=True,
+    )
+    assert "The" in out
+
+
 def test_normalize_kana_first_token_to_kana_lowercase_latin_uses_reading() -> None:
     class DummyFeature:
         def __init__(self, kana: str | None) -> None:
