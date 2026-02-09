@@ -1937,11 +1937,22 @@ def _normalize_numbers(text: str) -> str:
             return match.group(0)
         return f"{_int_to_kanji(value)}パーセント"
 
+    def _allow_hatachi(match: re.Match) -> bool:
+        next_ch = match.string[match.end() : match.end() + 1]
+        return next_ch not in {"代", "台"}
+
     def _replace_counter(match: re.Match) -> str:
         num = match.group("num") or ""
         counter = match.group("counter") or ""
         if not num or not counter:
             return match.group(0)
+        if counter in {"歳", "才"}:
+            try:
+                value = int(num)
+            except ValueError:
+                return match.group(0)
+            if value == 20 and _allow_hatachi(match):
+                return "はたち"
         if counter == "話" and num == "1":
             return "いちわ"
         if counter == "人":
@@ -1975,10 +1986,12 @@ def _normalize_numbers(text: str) -> str:
                 return match.group(0)
         if counter in {"年", "月", "日"}:
             return match.group(0)
+        value = _parse_kanji_number(num)
+        if value is None:
+            return match.group(0)
+        if counter in {"歳", "才"} and value == 20 and _allow_hatachi(match):
+            return "はたち"
         if counter == "人":
-            value = _parse_kanji_number(num)
-            if value is None:
-                return match.group(0)
             if value == 1:
                 return "ひとり"
             if value == 2:
@@ -1987,9 +2000,6 @@ def _normalize_numbers(text: str) -> str:
                 return "よにん"
             return f"{_int_to_kana(value)}にん"
         if counter == "日間":
-            value = _parse_kanji_number(num)
-            if value is None:
-                return match.group(0)
             if value == 1:
                 return "いちにちかん"
             day_reading = _day_reading(value)
@@ -1997,9 +2007,6 @@ def _normalize_numbers(text: str) -> str:
                 return f"{day_reading}かん"
             return f"{_int_to_kana(value)}にちかん"
         counter_reading = _KANA_COUNTER_READINGS.get(counter, counter)
-        value = _parse_kanji_number(num)
-        if value is None:
-            return match.group(0)
         return f"{_int_to_kana(value)}{counter_reading}"
 
     def _replace_ordinal(match: re.Match) -> str:

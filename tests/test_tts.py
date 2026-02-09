@@ -42,6 +42,11 @@ def test_chunking_splits_on_space_with_digits() -> None:
     assert chunks == ["さくら荘のペットな彼女", "全13巻"]
 
 
+def test_normalize_numbers_hatachi() -> None:
+    assert tts_util._normalize_numbers("20歳を過ぎた") == "はたちを過ぎた"
+    assert tts_util._normalize_numbers("二十歳") == "はたち"
+
+
 def test_chunking_splits_on_commas_when_too_long() -> None:
     text = "これはとても長い文章なので、途中で区切る必要があります。"
     spans = tts_util.make_chunk_spans(text, max_chars=15, chunk_mode="japanese")
