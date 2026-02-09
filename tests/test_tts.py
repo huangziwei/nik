@@ -1688,9 +1688,43 @@ def test_normalize_numbers_counter_one_readings() -> None:
     assert tts_util._normalize_numbers("一話だけ") == "いちわだけ"
 
 
+def test_normalize_numbers_counter_sound_changes() -> None:
+    assert tts_util._normalize_numbers("三杯") == "さんばい"
+    assert tts_util._normalize_numbers("六杯目") == "ろっぱい目"
+    assert tts_util._normalize_numbers("八杯") == "はっぱい"
+    assert tts_util._normalize_numbers("十杯") == "じゅっぱい"
+    assert tts_util._normalize_numbers("三分") == "さんぷん"
+    assert tts_util._normalize_numbers("四分") == "よんぷん"
+    assert tts_util._normalize_numbers("六分間") == "ろっぷんかん"
+    assert tts_util._normalize_numbers("八分") == "はっぷん"
+    assert tts_util._normalize_numbers("十分") == "じゅっぷん"
+    assert tts_util._normalize_numbers("三本") == "さんぼん"
+    assert tts_util._normalize_numbers("六本") == "ろっぽん"
+    assert tts_util._normalize_numbers("八本") == "はっぽん"
+    assert tts_util._normalize_numbers("十本") == "じゅっぽん"
+    assert tts_util._normalize_numbers("三匹") == "さんびき"
+    assert tts_util._normalize_numbers("六匹") == "ろっぴき"
+    assert tts_util._normalize_numbers("八匹") == "はっぴき"
+    assert tts_util._normalize_numbers("十匹") == "じゅっぴき"
+    assert tts_util._normalize_numbers("八個") == "はっこ"
+    assert tts_util._normalize_numbers("十個") == "じゅっこ"
+    assert tts_util._normalize_numbers("六個") == "ろっこ"
+    assert tts_util._normalize_numbers("三軒") == "さんげん"
+    assert tts_util._normalize_numbers("八軒") == "はっけん"
+    assert tts_util._normalize_numbers("十軒") == "じゅっけん"
+    assert tts_util._normalize_numbers("八カ月") == "はっかげつ"
+    assert tts_util._normalize_numbers("六ヵ月") == "ろっかげつ"
+    assert tts_util._normalize_numbers("十ヶ月") == "じゅっかげつ"
+    assert tts_util._normalize_numbers("八回") == "はっかい"
+    assert tts_util._normalize_numbers("十回目") == "じゅっかいめ"
+
+
 def test_normalize_numbers_counter_one_guards() -> None:
     assert tts_util._normalize_numbers("一通り終えた") == "一通り終えた"
     assert tts_util._normalize_numbers("一回り大きい") == "一回り大きい"
+    assert tts_util._normalize_numbers("一個人の判断") == "一個人の判断"
+    assert tts_util._normalize_numbers("一軒家に住む") == "一軒家に住む"
+    assert tts_util._normalize_numbers("一軒屋で暮らす") == "一軒屋で暮らす"
 
 
 def test_normalize_numbers_kanji_age_counter() -> None:
@@ -1772,7 +1806,7 @@ def test_normalize_numbers_slash_date_year() -> None:
         ("１ 八月一三日（金曜日）──スタート地点", "いち はちがつじゅうさんにち(金曜日)──スタート地点"),
         ("受付時間 9：00～17：00（土日 祝日 年末年始を除く）", "受付時間 きゅうじぜろふんからじゅうななじぜろふん(土日 祝日 年末年始を除く)"),
         # Ｖシリーズ全１０冊合本版 - 森博嗣.epub
-        ("Ｖシリーズ全１０冊合本版", "Vシリーズ全じゅうさつ合本版"),
+        ("Ｖシリーズ全１０冊合本版", "Vシリーズ全じゅっさつ合本版"),
         ("0.9×0.8＝0.72", "零てんきゅう×零てんはち=零てんななに"),
     ],
 )

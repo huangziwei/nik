@@ -522,56 +522,97 @@ _KANA_COUNTER_READINGS = {
     "ミリリットル": "みりりっとる",
 }
 
-_COUNTER_ONE_READINGS = {
-    "回": "いっかい",
-    "回目": "いっかいめ",
-    "冊": "いっさつ",
-    "冊目": "いっさつめ",
-    "巻": "いっかん",
-    "巻目": "いっかんめ",
-    "章": "いっしょう",
-    "節": "いっせつ",
-    "週間": "いっしゅうかん",
-    "週": "いっしゅう",
-    "分": "いっぷん",
-    "分間": "いっぷんかん",
-    "歳": "いっさい",
-    "才": "いっさい",
-    "ヵ月": "いっかげつ",
-    "か月": "いっかげつ",
-    "カ月": "いっかげつ",
-    "ケ月": "いっかげつ",
-    "ヶ月": "いっかげつ",
-    "ヵ月間": "いっかげつかん",
-    "か月間": "いっかげつかん",
-    "カ月間": "いっかげつかん",
-    "ケ月間": "いっかげつかん",
-    "ヶ月間": "いっかげつかん",
-    "体": "いったい",
-    "本": "いっぽん",
-    "匹": "いっぴき",
-    "杯": "いっぱい",
-    "通": "いっつう",
-    "点": "いってん",
-    "曲": "いっきょく",
-    "件": "いっけん",
-    "席": "いっせき",
-    "校": "いっこう",
-    "着": "いっちゃく",
-    "社": "いっしゃ",
-    "軒": "いっけん",
-    "株": "いっかぶ",
-    "品": "いっぴん",
-    "個": "いっこ",
-    "箇": "いっか",
-    "箇所": "いっかしょ",
-    "頭": "いっとう",
-    "足": "いっそく",
+_COUNTER_SPECIAL_READINGS = {
+    "回": {1: "いっかい", 6: "ろっかい", 8: "はっかい", 10: "じゅっかい"},
+    "回目": {1: "いっかいめ", 6: "ろっかいめ", 8: "はっかいめ", 10: "じゅっかいめ"},
+    "冊": {1: "いっさつ", 8: "はっさつ", 10: "じゅっさつ"},
+    "冊目": {1: "いっさつめ", 8: "はっさつめ", 10: "じゅっさつめ"},
+    "巻": {1: "いっかん", 6: "ろっかん", 8: "はっかん", 10: "じゅっかん"},
+    "巻目": {1: "いっかんめ", 6: "ろっかんめ", 8: "はっかんめ", 10: "じゅっかんめ"},
+    "章": {1: "いっしょう", 8: "はっしょう", 10: "じゅっしょう"},
+    "節": {1: "いっせつ", 8: "はっせつ", 10: "じゅっせつ"},
+    "週間": {1: "いっしゅうかん", 8: "はっしゅうかん", 10: "じゅっしゅうかん"},
+    "週": {1: "いっしゅう", 8: "はっしゅう", 10: "じゅっしゅう"},
+    "分": {
+        1: "いっぷん",
+        3: "さんぷん",
+        4: "よんぷん",
+        6: "ろっぷん",
+        8: "はっぷん",
+        10: "じゅっぷん",
+    },
+    "分間": {
+        1: "いっぷんかん",
+        3: "さんぷんかん",
+        4: "よんぷんかん",
+        6: "ろっぷんかん",
+        8: "はっぷんかん",
+        10: "じゅっぷんかん",
+    },
+    "歳": {1: "いっさい", 8: "はっさい", 10: "じゅっさい"},
+    "才": {1: "いっさい", 8: "はっさい", 10: "じゅっさい"},
+    "ヵ月": {1: "いっかげつ", 6: "ろっかげつ", 8: "はっかげつ", 10: "じゅっかげつ"},
+    "か月": {1: "いっかげつ", 6: "ろっかげつ", 8: "はっかげつ", 10: "じゅっかげつ"},
+    "カ月": {1: "いっかげつ", 6: "ろっかげつ", 8: "はっかげつ", 10: "じゅっかげつ"},
+    "ケ月": {1: "いっかげつ", 6: "ろっかげつ", 8: "はっかげつ", 10: "じゅっかげつ"},
+    "ヶ月": {1: "いっかげつ", 6: "ろっかげつ", 8: "はっかげつ", 10: "じゅっかげつ"},
+    "ヵ月間": {
+        1: "いっかげつかん",
+        6: "ろっかげつかん",
+        8: "はっかげつかん",
+        10: "じゅっかげつかん",
+    },
+    "か月間": {
+        1: "いっかげつかん",
+        6: "ろっかげつかん",
+        8: "はっかげつかん",
+        10: "じゅっかげつかん",
+    },
+    "カ月間": {
+        1: "いっかげつかん",
+        6: "ろっかげつかん",
+        8: "はっかげつかん",
+        10: "じゅっかげつかん",
+    },
+    "ケ月間": {
+        1: "いっかげつかん",
+        6: "ろっかげつかん",
+        8: "はっかげつかん",
+        10: "じゅっかげつかん",
+    },
+    "ヶ月間": {
+        1: "いっかげつかん",
+        6: "ろっかげつかん",
+        8: "はっかげつかん",
+        10: "じゅっかげつかん",
+    },
+    "体": {1: "いったい"},
+    "本": {1: "いっぽん", 3: "さんぼん", 6: "ろっぽん", 8: "はっぽん", 10: "じゅっぽん"},
+    "匹": {1: "いっぴき", 3: "さんびき", 6: "ろっぴき", 8: "はっぴき", 10: "じゅっぴき"},
+    "杯": {1: "いっぱい", 3: "さんばい", 6: "ろっぱい", 8: "はっぱい", 10: "じゅっぱい"},
+    "通": {1: "いっつう"},
+    "点": {1: "いってん"},
+    "曲": {1: "いっきょく"},
+    "件": {1: "いっけん", 6: "ろっけん", 8: "はっけん", 10: "じゅっけん"},
+    "席": {1: "いっせき"},
+    "校": {1: "いっこう"},
+    "着": {1: "いっちゃく"},
+    "社": {1: "いっしゃ"},
+    "軒": {1: "いっけん", 3: "さんげん", 6: "ろっけん", 8: "はっけん", 10: "じゅっけん"},
+    "株": {1: "いっかぶ"},
+    "品": {1: "いっぴん"},
+    "個": {1: "いっこ", 6: "ろっこ", 8: "はっこ", 10: "じゅっこ"},
+    "箇": {1: "いっか"},
+    "箇所": {1: "いっかしょ"},
+    "頭": {1: "いっとう"},
+    "足": {1: "いっそく"},
 }
 
 _COUNTER_GUARD_NEXT = {
     "回": {"り"},
     "通": {"り"},
+    "個": {"人"},
+    "軒": {"家", "屋"},
 }
 
 _COUNTERS = list(
@@ -2001,28 +2042,18 @@ def _normalize_numbers(text: str) -> str:
         counter = match.group("counter") or ""
         if not num or not counter:
             return match.group(0)
-        if num == "1":
-            next_ch = match.string[match.end() : match.end() + 1]
-            guard = _COUNTER_GUARD_NEXT.get(counter)
-            if guard and next_ch in guard:
-                return match.group(0)
-            reading = _COUNTER_ONE_READINGS.get(counter)
-            if reading:
-                return reading
-        if counter in {"歳", "才"}:
-            try:
-                value = int(num)
-            except ValueError:
-                return match.group(0)
+        next_ch = match.string[match.end() : match.end() + 1]
+        guard = _COUNTER_GUARD_NEXT.get(counter)
+        if guard and next_ch in guard:
+            return match.group(0)
+        try:
+            value = int(num)
+        except ValueError:
+            value = None
+        if counter in {"歳", "才"} and value is not None:
             if value == 20 and _allow_hatachi(match):
                 return "はたち"
-        if counter == "話" and num == "1":
-            return "いちわ"
-        if counter == "人":
-            try:
-                value = int(num)
-            except ValueError:
-                return match.group(0)
+        if counter == "人" and value is not None:
             if value == 1:
                 return "ひとり"
             if value == 2:
@@ -2030,6 +2061,10 @@ def _normalize_numbers(text: str) -> str:
             if value == 4:
                 return "よにん"
             return f"{_int_to_kana(value)}にん"
+        if value is not None:
+            reading = _COUNTER_SPECIAL_READINGS.get(counter, {}).get(value)
+            if reading:
+                return reading
         return f"{_to_kanji_number(num)}{counter}"
 
     def _replace_kanji_counter(match: re.Match) -> str:
@@ -2052,14 +2087,10 @@ def _normalize_numbers(text: str) -> str:
         value = _parse_kanji_number(num)
         if value is None:
             return match.group(0)
-        if value == 1:
-            next_ch = match.string[match.end() : match.end() + 1]
-            guard = _COUNTER_GUARD_NEXT.get(counter)
-            if guard and next_ch in guard:
-                return match.group(0)
-            reading = _COUNTER_ONE_READINGS.get(counter)
-            if reading:
-                return reading
+        next_ch = match.string[match.end() : match.end() + 1]
+        guard = _COUNTER_GUARD_NEXT.get(counter)
+        if guard and next_ch in guard:
+            return match.group(0)
         if counter in {"歳", "才"} and value == 20 and _allow_hatachi(match):
             return "はたち"
         if counter == "人":
@@ -2077,6 +2108,9 @@ def _normalize_numbers(text: str) -> str:
             if day_reading:
                 return f"{day_reading}かん"
             return f"{_int_to_kana(value)}にちかん"
+        reading = _COUNTER_SPECIAL_READINGS.get(counter, {}).get(value)
+        if reading:
+            return reading
         counter_reading = _KANA_COUNTER_READINGS.get(counter, counter)
         return f"{_int_to_kana(value)}{counter_reading}"
 
