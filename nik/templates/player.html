@@ -4052,7 +4052,7 @@
         advancedToggle.classList.toggle("mode-on", state.advancedMode);
         advancedToggle.classList.toggle("mode-off", !state.advancedMode);
         if (persist) {
-          saveSettings();
+          saveAdvancedModeForBook(state.book ? state.book.id : null, state.advancedMode);
         }
         updateSampleButtonState();
         if (reload && state.book) {
@@ -4294,6 +4294,7 @@
         state.voiceOptions = [];
         state.advancedSelection = new Set();
         state.advancedLastIndex = null;
+        state.advancedMode = false;
         resetAudioPlayers();
         bookTitle.textContent = t("selectBook");
         bookMeta.textContent = t("noBookLoaded");
@@ -4317,7 +4318,7 @@
         updateUrl(null, null);
         updateMergeButtonState();
         updateClearButtonState();
-        renderAdvancedPanel();
+        updateAdvancedMode(false, false);
         updateMarks();
         closeMetaModal();
       }
@@ -4373,7 +4374,7 @@
       function loadSettings() {
         state.voicePreference = localStorage.getItem("nik.voice");
         setKanaStyle("partial", false);
-        state.advancedMode = localStorage.getItem("nik.advancedMode") === "1";
+        state.advancedMode = false;
         state.libraryShelf = normalizeShelf(
           localStorage.getItem("nik.libraryShelf")
         );
@@ -4396,11 +4397,28 @@
         setLanguage(state.language, false);
       }
 
+      function advancedModeKey(bookId) {
+        return `nik.advancedMode:${bookId}`;
+      }
+
+      function loadAdvancedModeForBook(bookId) {
+        if (!bookId) {
+          return false;
+        }
+        return localStorage.getItem(advancedModeKey(bookId)) === "1";
+      }
+
+      function saveAdvancedModeForBook(bookId, value) {
+        if (!bookId) {
+          return;
+        }
+        localStorage.setItem(advancedModeKey(bookId), value ? "1" : "0");
+      }
+
       function saveSettings() {
         if (state.voicePreference) {
           localStorage.setItem("nik.voice", state.voicePreference);
         }
-        localStorage.setItem("nik.advancedMode", state.advancedMode ? "1" : "0");
       }
 
       function filterBooksForShelf() {
@@ -4526,6 +4544,10 @@
           state.chapters = data.chapters || [];
           state.advancedSelection = new Set();
           state.advancedLastIndex = null;
+          state.advancedMode = loadAdvancedModeForBook(
+            data.book ? data.book.id : null
+          );
+          updateAdvancedMode(false, false);
           state.padMs = data.book ? data.book.pad_ms || 0 : 0;
           state.bookVoice = data.book ? data.book.last_voice || null : null;
           state.playback = { lastPlayed: null, furthestPlayed: null, bookmarks: [] };
