@@ -652,6 +652,8 @@ _JUUBUN_ENOUGH_PREFIXES = (
     "かもし",
 )
 
+_BUN_ENOUGH_VALUES = {10, 12, 100}
+
 _JUUBUN_TIME_PREFIXES = (
     "後",
     "前",
@@ -2142,7 +2144,7 @@ def _normalize_numbers(text: str) -> str:
                 return reading
         return f"{_to_kanji_number(num)}{counter}"
 
-    def _is_juubun_enough(match: re.Match) -> bool:
+    def _is_bun_enough(match: re.Match) -> bool:
         after = match.string[match.end() :]
         if not after:
             return True
@@ -2155,6 +2157,25 @@ def _normalize_numbers(text: str) -> str:
             if after.startswith(prefix):
                 return True
         return False
+
+    def _parse_any_int(raw: str) -> Optional[int]:
+        if not raw:
+            return None
+        if raw.isdigit():
+            try:
+                return int(raw)
+            except ValueError:
+                return None
+        return _parse_kanji_number(raw)
+
+    def _replace_bunno_fraction(match: re.Match) -> str:
+        num_raw = match.group("num") or ""
+        den_raw = match.group("den") or ""
+        num_value = _parse_any_int(num_raw)
+        den_value = _parse_any_int(den_raw)
+        if num_value is None or den_value is None:
+            return match.group(0)
+        return f"{_int_to_kana(num_value)}ぶんの{_int_to_kana(den_value)}"
 
     def _replace_kanji_counter(match: re.Match) -> str:
         num = match.group("num") or ""
@@ -2180,8 +2201,8 @@ def _normalize_numbers(text: str) -> str:
         guard = _COUNTER_GUARD_NEXT.get(counter)
         if guard and next_ch in guard:
             return match.group(0)
-        if counter == "分" and value == 10 and _is_juubun_enough(match):
-            return "じゅうぶん"
+        if counter == "分" and value in _BUN_ENOUGH_VALUES and _is_bun_enough(match):
+            return f"{_int_to_kana(value)}ぶん"
         if counter in {"歳", "才"} and value == 20 and _allow_hatachi(match):
             return "はたち"
         if counter == "人":
@@ -2310,6 +2331,11 @@ def _normalize_numbers(text: str) -> str:
     text = re.sub(
         r"(?<!\d)(?P<num>\d+)[/／](?P<den>\d+)(?!\d)",
         _replace_fraction,
+        text,
+    )
+    text = re.sub(
+        rf"(?P<num>\d+|{kanji_num_re})分の(?P<den>\d+|{kanji_num_re})",
+        _replace_bunno_fraction,
         text,
     )
     text = re.sub(

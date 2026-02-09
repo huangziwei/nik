@@ -1728,6 +1728,8 @@ def test_normalize_numbers_juubun_enough() -> None:
     assert tts_util._normalize_numbers("十分でしょう") == "じゅうぶんでしょう"
     assert tts_util._normalize_numbers("十分である") == "じゅうぶんである"
     assert tts_util._normalize_numbers("十分。") == "じゅうぶん。"
+    assert tts_util._normalize_numbers("十二分に伝わる") == "じゅうにぶんに伝わる"
+    assert tts_util._normalize_numbers("百分に活かす") == "ひゃくぶんに活かす"
     assert tts_util._normalize_numbers("十分後") == "じゅっぷん後"
     assert tts_util._normalize_numbers("十分だけ待つ") == "じゅっぷんだけ待つ"
 
@@ -1778,6 +1780,12 @@ def test_normalize_numbers_day_span_single() -> None:
 def test_normalize_numbers_slash_fraction() -> None:
     text = "北の夕鶴2/3の殺人"
     assert tts_util._normalize_numbers(text) == "北の夕鶴さんぶんのにの殺人"
+
+
+def test_normalize_numbers_bunno_fraction() -> None:
+    assert tts_util._normalize_numbers("三分の二") == "さんぶんのに"
+    assert tts_util._normalize_numbers("10分の1") == "じゅうぶんのいち"
+    assert tts_util._normalize_numbers("十分の一") == "じゅうぶんのいち"
 
 
 def test_normalize_numbers_slash_date_weekday() -> None:
