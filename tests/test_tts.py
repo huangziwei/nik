@@ -1697,7 +1697,8 @@ def test_normalize_numbers_counter_sound_changes() -> None:
     assert tts_util._normalize_numbers("四分") == "よんぷん"
     assert tts_util._normalize_numbers("六分間") == "ろっぷんかん"
     assert tts_util._normalize_numbers("八分") == "はっぷん"
-    assert tts_util._normalize_numbers("十分") == "じゅっぷん"
+    assert tts_util._normalize_numbers("十分待つ") == "じゅっぷん待つ"
+    assert tts_util._normalize_numbers("十分間隔") == "じゅっぷんかんかく"
     assert tts_util._normalize_numbers("三本") == "さんぼん"
     assert tts_util._normalize_numbers("六本") == "ろっぽん"
     assert tts_util._normalize_numbers("八本") == "はっぽん"
@@ -1717,6 +1718,18 @@ def test_normalize_numbers_counter_sound_changes() -> None:
     assert tts_util._normalize_numbers("十ヶ月") == "じゅっかげつ"
     assert tts_util._normalize_numbers("八回") == "はっかい"
     assert tts_util._normalize_numbers("十回目") == "じゅっかいめ"
+
+
+def test_normalize_numbers_juubun_enough() -> None:
+    assert tts_util._normalize_numbers("十分に注意する") == "じゅうぶんに注意する"
+    assert tts_util._normalize_numbers("十分な準備") == "じゅうぶんな準備"
+    assert tts_util._normalize_numbers("十分だ") == "じゅうぶんだ"
+    assert tts_util._normalize_numbers("十分です") == "じゅうぶんです"
+    assert tts_util._normalize_numbers("十分でしょう") == "じゅうぶんでしょう"
+    assert tts_util._normalize_numbers("十分である") == "じゅうぶんである"
+    assert tts_util._normalize_numbers("十分。") == "じゅうぶん。"
+    assert tts_util._normalize_numbers("十分後") == "じゅっぷん後"
+    assert tts_util._normalize_numbers("十分だけ待つ") == "じゅっぷんだけ待つ"
 
 
 def test_normalize_numbers_counter_one_guards() -> None:

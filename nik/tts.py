@@ -439,6 +439,7 @@ _KANA_COUNTER_READINGS = {
     "条": "じょう",
     "時間": "じかん",
     "分間": "ふんかん",
+    "分間隔": "ふんかんかく",
     "秒間": "びょうかん",
     "年間": "ねんかん",
     "月間": "げっかん",
@@ -549,6 +550,14 @@ _COUNTER_SPECIAL_READINGS = {
         8: "はっぷんかん",
         10: "じゅっぷんかん",
     },
+    "分間隔": {
+        1: "いっぷんかんかく",
+        3: "さんぷんかんかく",
+        4: "よんぷんかんかく",
+        6: "ろっぷんかんかく",
+        8: "はっぷんかんかく",
+        10: "じゅっぷんかんかく",
+    },
     "歳": {1: "いっさい", 8: "はっさい", 10: "じゅっさい"},
     "才": {1: "いっさい", 8: "はっさい", 10: "じゅっさい"},
     "ヵ月": {1: "いっかげつ", 6: "ろっかげつ", 8: "はっかげつ", 10: "じゅっかげつ"},
@@ -614,6 +623,72 @@ _COUNTER_GUARD_NEXT = {
     "個": {"人"},
     "軒": {"家", "屋"},
 }
+
+_JUUBUN_ENOUGH_PREFIXES = (
+    "に",
+    "な",
+    "だ",
+    "です",
+    "だった",
+    "だっ",
+    "だろ",
+    "だろう",
+    "でしょう",
+    "である",
+    "であ",
+    "でな",
+    "では",
+    "でも",
+    "じゃ",
+    "じゃあ",
+    "じゃない",
+    "じゃなく",
+    "なら",
+    "ならば",
+    "でいい",
+    "でよ",
+    "でよい",
+    "かも",
+    "かもし",
+)
+
+_JUUBUN_TIME_PREFIXES = (
+    "後",
+    "前",
+    "間",
+    "ほど",
+    "くらい",
+    "ぐらい",
+    "ばかり",
+    "程度",
+    "余り",
+    "あまり",
+    "以上",
+    "以内",
+    "経",
+    "経っ",
+    "経ち",
+    "経て",
+    "経る",
+    "過",
+    "過ぎ",
+    "過ご",
+    "待",
+    "待っ",
+    "歩",
+    "走",
+    "進",
+    "続",
+    "要",
+    "要し",
+    "かか",
+    "かけ",
+    "かっ",
+    "かり",
+    "だけ",
+    "は",
+    "も",
+)
 
 _COUNTERS = list(
     {
@@ -2067,6 +2142,20 @@ def _normalize_numbers(text: str) -> str:
                 return reading
         return f"{_to_kanji_number(num)}{counter}"
 
+    def _is_juubun_enough(match: re.Match) -> bool:
+        after = match.string[match.end() :]
+        if not after:
+            return True
+        for prefix in _JUUBUN_TIME_PREFIXES:
+            if after.startswith(prefix):
+                return False
+        if after[0] in _END_PUNCT or after[0] in _CLOSE_PUNCT:
+            return True
+        for prefix in _JUUBUN_ENOUGH_PREFIXES:
+            if after.startswith(prefix):
+                return True
+        return False
+
     def _replace_kanji_counter(match: re.Match) -> str:
         num = match.group("num") or ""
         counter = match.group("counter") or ""
@@ -2091,6 +2180,8 @@ def _normalize_numbers(text: str) -> str:
         guard = _COUNTER_GUARD_NEXT.get(counter)
         if guard and next_ch in guard:
             return match.group(0)
+        if counter == "分" and value == 10 and _is_juubun_enough(match):
+            return "じゅうぶん"
         if counter in {"歳", "才"} and value == 20 and _allow_hatachi(match):
             return "はたち"
         if counter == "人":
