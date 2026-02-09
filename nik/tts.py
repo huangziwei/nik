@@ -92,7 +92,8 @@ _JP_QUOTE_CHARS = {
 }
 
 _SECTION_PAD_MULT = 3
-_CHAPTER_PAD_MULT = 6
+_CHAPTER_BREAK_PAD_MULTIPLIER = 6
+_CHAPTER_PAD_MULT = _CHAPTER_BREAK_PAD_MULTIPLIER
 _JP_OPEN_QUOTES = {"「", "『", "《", "〈", "【", "〔", "［", "｢", "〝"}
 _JP_CLOSE_QUOTES = {"」", "』", "》", "〉", "】", "〕", "］", "｣", "〞", "〟"}
 _DASH_RUN_RE = re.compile(r"[‐‑‒–—―─━]{2,}")
