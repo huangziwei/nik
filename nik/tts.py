@@ -522,6 +522,58 @@ _KANA_COUNTER_READINGS = {
     "ミリリットル": "みりりっとる",
 }
 
+_COUNTER_ONE_READINGS = {
+    "回": "いっかい",
+    "回目": "いっかいめ",
+    "冊": "いっさつ",
+    "冊目": "いっさつめ",
+    "巻": "いっかん",
+    "巻目": "いっかんめ",
+    "章": "いっしょう",
+    "節": "いっせつ",
+    "週間": "いっしゅうかん",
+    "週": "いっしゅう",
+    "分": "いっぷん",
+    "分間": "いっぷんかん",
+    "歳": "いっさい",
+    "才": "いっさい",
+    "ヵ月": "いっかげつ",
+    "か月": "いっかげつ",
+    "カ月": "いっかげつ",
+    "ケ月": "いっかげつ",
+    "ヶ月": "いっかげつ",
+    "ヵ月間": "いっかげつかん",
+    "か月間": "いっかげつかん",
+    "カ月間": "いっかげつかん",
+    "ケ月間": "いっかげつかん",
+    "ヶ月間": "いっかげつかん",
+    "体": "いったい",
+    "本": "いっぽん",
+    "匹": "いっぴき",
+    "杯": "いっぱい",
+    "通": "いっつう",
+    "点": "いってん",
+    "曲": "いっきょく",
+    "件": "いっけん",
+    "席": "いっせき",
+    "校": "いっこう",
+    "着": "いっちゃく",
+    "社": "いっしゃ",
+    "軒": "いっけん",
+    "株": "いっかぶ",
+    "品": "いっぴん",
+    "個": "いっこ",
+    "箇": "いっか",
+    "箇所": "いっかしょ",
+    "頭": "いっとう",
+    "足": "いっそく",
+}
+
+_COUNTER_GUARD_NEXT = {
+    "回": {"り"},
+    "通": {"り"},
+}
+
 _COUNTERS = list(
     {
         *_KANA_COUNTER_READINGS.keys(),
@@ -1949,6 +2001,14 @@ def _normalize_numbers(text: str) -> str:
         counter = match.group("counter") or ""
         if not num or not counter:
             return match.group(0)
+        if num == "1":
+            next_ch = match.string[match.end() : match.end() + 1]
+            guard = _COUNTER_GUARD_NEXT.get(counter)
+            if guard and next_ch in guard:
+                return match.group(0)
+            reading = _COUNTER_ONE_READINGS.get(counter)
+            if reading:
+                return reading
         if counter in {"歳", "才"}:
             try:
                 value = int(num)
@@ -1992,6 +2052,14 @@ def _normalize_numbers(text: str) -> str:
         value = _parse_kanji_number(num)
         if value is None:
             return match.group(0)
+        if value == 1:
+            next_ch = match.string[match.end() : match.end() + 1]
+            guard = _COUNTER_GUARD_NEXT.get(counter)
+            if guard and next_ch in guard:
+                return match.group(0)
+            reading = _COUNTER_ONE_READINGS.get(counter)
+            if reading:
+                return reading
         if counter in {"歳", "才"} and value == 20 and _allow_hatachi(match):
             return "はたち"
         if counter == "人":

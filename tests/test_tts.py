@@ -1674,6 +1674,25 @@ def test_normalize_numbers_counter_wa() -> None:
     assert tts_util._normalize_numbers(text) == "いちわ 土曜日"
 
 
+def test_normalize_numbers_counter_one_readings() -> None:
+    assert tts_util._normalize_numbers("一冊") == "いっさつ"
+    assert tts_util._normalize_numbers("１回") == "いっかい"
+    assert tts_util._normalize_numbers("一分") == "いっぷん"
+    assert tts_util._normalize_numbers("一匹") == "いっぴき"
+    assert tts_util._normalize_numbers("一杯") == "いっぱい"
+    assert tts_util._normalize_numbers("一体") == "いったい"
+    assert tts_util._normalize_numbers("一ヶ月") == "いっかげつ"
+    assert tts_util._normalize_numbers("一回目") == "いっかいめ"
+    assert tts_util._normalize_numbers("一週間") == "いっしゅうかん"
+    assert tts_util._normalize_numbers("一通の手紙") == "いっつうの手紙"
+    assert tts_util._normalize_numbers("一話だけ") == "いちわだけ"
+
+
+def test_normalize_numbers_counter_one_guards() -> None:
+    assert tts_util._normalize_numbers("一通り終えた") == "一通り終えた"
+    assert tts_util._normalize_numbers("一回り大きい") == "一回り大きい"
+
+
 def test_normalize_numbers_kanji_age_counter() -> None:
     text = "十二歳の頃"
     assert tts_util._normalize_numbers(text) == "じゅうにさいの頃"
