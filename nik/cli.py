@@ -476,7 +476,7 @@ def _rechunk(args: argparse.Namespace) -> int:
     if max_chars is None:
         max_chars = 220
     if pad_ms is None:
-        pad_ms = 195
+        pad_ms = 300
     if chunk_mode is None:
         chunk_mode = "japanese"
 
@@ -853,7 +853,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--pad-ms",
         type=int,
         default=None,
-        help="Silence padding per chunk in ms (default: reuse manifest or 195)",
+        help="Silence padding per chunk in ms (default: reuse manifest or 300)",
     )
     rechunk.add_argument(
         "--chunk-mode",
@@ -953,7 +953,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip text requirement and use x-vector only cloning",
     )
     synth.add_argument("--max-chars", type=int, default=220)
-    synth.add_argument("--pad-ms", type=int, default=195)
+    synth.add_argument("--pad-ms", type=int, default=300)
     synth.add_argument("--rechunk", action="store_true")
     synth.add_argument(
         "--kana-normalize",
@@ -1037,7 +1037,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip text requirement and use x-vector only cloning",
     )
     sample.add_argument("--max-chars", type=int, default=220)
-    sample.add_argument("--pad-ms", type=int, default=195)
+    sample.add_argument("--pad-ms", type=int, default=300)
     sample.add_argument("--rechunk", action="store_true")
     sample.add_argument(
         "--kana-normalize",

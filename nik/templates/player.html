@@ -2156,6 +2156,7 @@
         preloadedIndex: null,
         padMs: 0,
         gaplessArmedIndex: null,
+        gaplessPollTimer: null,
         playbackRate: 1.0,
         mergeRunning: false,
         mergeReady: false,
@@ -6638,6 +6639,7 @@
       }
 
       function resetAudioPlayers() {
+        clearGapless();
         [audio, audioNext].forEach((element) => {
           element.ontimeupdate = null;
           element.pause();
@@ -6647,7 +6649,6 @@
         currentAudio = audio;
         nextAudio = audioNext;
         state.preloadedIndex = null;
-        state.gaplessArmedIndex = null;
         setPlayButton(false);
       }
 
@@ -6702,15 +6703,19 @@
 
       function clearGapless() {
         state.gaplessArmedIndex = null;
+        if (state.gaplessPollTimer) {
+          clearInterval(state.gaplessPollTimer);
+          state.gaplessPollTimer = null;
+        }
         currentAudio.ontimeupdate = null;
       }
 
       function gaplessTailSeconds() {
         const padMs = Number(state.padMs) || 0;
-        if (padMs > 0) {
+        if (!padMs) {
           return 0;
         }
-        return 0.05;
+        return Math.min(0.085, padMs / 1000);
       }
 
       function armGapless(index) {
@@ -6719,12 +6724,11 @@
         if (!tailSec) {
           return;
         }
-        state.gaplessArmedIndex = index;
-        currentAudio.ontimeupdate = () => {
+        const tryGaplessSwitch = () => {
           if (state.gaplessArmedIndex !== index) {
             return;
           }
-          if (currentAudio.paused) {
+          if (currentAudio.paused || state.playTransitioning) {
             return;
           }
           const duration = currentAudio.duration;
@@ -6735,12 +6739,17 @@
           if (remaining > tailSec) {
             return;
           }
-          currentAudio.ontimeupdate = null;
           const nextIndex = index + 1;
-          if (state.preloadedIndex === nextIndex && nextAudio.src) {
-            playIndex(nextIndex);
+          if (state.preloadedIndex !== nextIndex || !nextAudio.src) {
+            return;
           }
+          clearGapless();
+          playIndex(nextIndex);
         };
+        state.gaplessArmedIndex = index;
+        currentAudio.ontimeupdate = tryGaplessSwitch;
+        state.gaplessPollTimer = window.setInterval(tryGaplessSwitch, 25);
+        tryGaplessSwitch();
       }
 
       async function preloadIndex(index) {
@@ -6802,11 +6811,15 @@
           );
           updateMarks();
 
-          let available = false;
-          try {
-            available = await chunkExists(item);
-          } catch (err) {
-            available = false;
+          const preloadedReady =
+            state.preloadedIndex === index && Boolean(nextAudio.src);
+          let available = preloadedReady;
+          if (!available) {
+            try {
+              available = await chunkExists(item);
+            } catch (err) {
+              available = false;
+            }
           }
 
           if (!available) {
