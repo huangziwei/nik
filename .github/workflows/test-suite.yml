@@ -33,6 +33,7 @@ jobs:
             ebooklib \
             lxml \
             fastapi \
+            kyujipy \
             jinja2 \
             python-multipart \
             pydantic
