@@ -123,6 +123,9 @@ UNIDIC_URL = "https://clrd.ninjal.ac.jp/unidic_archive/2512/unidic-cwj-202512_fu
 UNIDIC_DIR_ENV = "NIK_UNIDIC_DIR"
 UNIDIC_URL_ENV = "NIK_UNIDIC_URL"
 UNIDIC_DIRNAME = "unidic-cwj-202512_full"
+NLTK_DATA_ENV = "NLTK_DATA"
+NIK_CACHE_DIR = Path.home() / ".cache" / "nik"
+NLTK_DATA_DIR = NIK_CACHE_DIR / "nltk_data"
 
 _DIGIT_KANA = {
     "0": "ゼロ",
@@ -2292,6 +2295,16 @@ def _lazy_import_fugashi() -> None:
     fugashi = _fugashi
 
 
+def _configure_nltk_data_dir() -> None:
+    if os.environ.get(NLTK_DATA_ENV):
+        return
+    try:
+        NLTK_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        return
+    os.environ[NLTK_DATA_ENV] = str(NLTK_DATA_DIR)
+
+
 def _lazy_import_wordfreq() -> None:
     global wordfreq
     if wordfreq is not None:
@@ -2309,6 +2322,7 @@ def _lazy_import_g2p_en() -> None:
     global g2p_en, _EN_G2P
     if _EN_G2P is not None:
         return
+    _configure_nltk_data_dir()
     try:
         from g2p_en import G2p as _G2p
     except Exception as exc:  # pragma: no cover - optional runtime dependency
