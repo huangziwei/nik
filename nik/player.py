@@ -946,6 +946,7 @@ class ChunkSynthRequest(BaseModel):
     chapter_id: str
     chunk_index: int
     kana_style: Optional[str] = None
+    use_voice_map: bool = False
 
 
 class MergeRequest(BaseModel):
@@ -1933,9 +1934,7 @@ def create_app(root_dir: Path) -> FastAPI:
         if not manifest_path.exists():
             raise HTTPException(status_code=404, detail="Missing TTS manifest.")
 
-        voice_map_path = _voice_map_path(book_dir)
-        if not voice_map_path.exists():
-            voice_map_path = None
+        voice_map_path = None
 
         try:
             result = tts_util.synthesize_chunk(
