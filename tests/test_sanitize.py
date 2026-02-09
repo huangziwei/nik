@@ -52,6 +52,13 @@ def test_normalize_text_preserves_section_break() -> None:
     assert SECTION_BREAK in cleaned
 
 
+def test_normalize_text_converts_star_section_break() -> None:
+    raw = "一。\n☆\n二。"
+    cleaned = sanitize_util.normalize_text(raw)
+    assert SECTION_BREAK in cleaned
+    assert "☆" not in cleaned
+
+
 def test_diff_ruby_spans_splits_kana_boundary() -> None:
     spans = sanitize_util._diff_ruby_spans("荘で監視", "そうでかんし")
     assert spans == [

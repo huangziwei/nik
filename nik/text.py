@@ -9,7 +9,15 @@ SECTION_BREAK = "\uE000"
 
 
 def normalize_section_breaks(text: str) -> str:
-    if not text or SECTION_BREAK not in text:
+    if not text:
+        return text
+    if "☆" in text:
+        text = re.sub(
+            r"(?m)^[ \t\u3000]*☆+[ \t\u3000]*$",
+            SECTION_BREAK,
+            text,
+        )
+    if SECTION_BREAK not in text:
         return text
     text = re.sub(
         rf"[ \t]*{SECTION_BREAK}[ \t]*",
