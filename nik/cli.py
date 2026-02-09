@@ -1105,7 +1105,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip text requirement and use x-vector only cloning",
     )
     synth.add_argument("--max-chars", type=int, default=220)
-    synth.add_argument("--pad-ms", type=int, default=300)
+    synth.add_argument("--pad-ms", type=int, default=350)
     synth.add_argument("--rechunk", action="store_true")
     synth.add_argument(
         "--kana-normalize",
@@ -1189,7 +1189,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip text requirement and use x-vector only cloning",
     )
     sample.add_argument("--max-chars", type=int, default=220)
-    sample.add_argument("--pad-ms", type=int, default=300)
+    sample.add_argument("--pad-ms", type=int, default=350)
     sample.add_argument("--rechunk", action="store_true")
     sample.add_argument(
         "--kana-normalize",
