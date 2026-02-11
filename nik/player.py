@@ -2749,32 +2749,35 @@ def create_app(root_dir: Path) -> FastAPI:
         if merge_job and merge_job.process.poll() is None:
             raise HTTPException(status_code=409, detail="Stop merge before clearing cache.")
         tts_dir = book_dir / "tts"
-        if tts_dir.exists():
-            seg_dir = tts_dir / "segments"
-            if seg_dir.exists():
-                shutil.rmtree(seg_dir)
-            manifest_path = tts_dir / "manifest.json"
-            if manifest_path.exists():
-                manifest = _load_json(manifest_path)
-                chapters = manifest.get("chapters", [])
-                changed = False
-                if isinstance(chapters, list):
-                    for entry in chapters:
-                        if not isinstance(entry, dict):
-                            continue
-                        chunks = entry.get("chunks", [])
-                        if not isinstance(chunks, list) or not chunks:
-                            continue
-                        durations = entry.get("durations_ms")
-                        reset = not isinstance(durations, list) or len(durations) != len(chunks)
-                        if not reset and any(value is not None for value in durations):
-                            reset = True
-                        if reset:
-                            entry["durations_ms"] = [None] * len(chunks)
-                            changed = True
-                if changed:
-                    _atomic_write_json(manifest_path, manifest)
-        return _no_store({"status": "cleared", "book_id": payload.book_id})
+        manifest_path = tts_dir / "manifest.json"
+        max_chars = 220
+        pad_ms = 350
+        chunk_mode = "japanese"
+        if manifest_path.exists():
+            manifest = _load_json(manifest_path)
+            try:
+                max_chars = int(manifest.get("max_chars") or max_chars)
+            except (TypeError, ValueError):
+                max_chars = 220
+            try:
+                pad_ms = int(manifest.get("pad_ms") or pad_ms)
+            except (TypeError, ValueError):
+                pad_ms = 350
+            raw_chunk_mode = str(manifest.get("chunk_mode") or chunk_mode).strip()
+            if raw_chunk_mode:
+                chunk_mode = raw_chunk_mode
+        try:
+            tts_cleared = sanitize.refresh_chunks(
+                book_dir=book_dir,
+                max_chars=max_chars,
+                pad_ms=pad_ms,
+                chunk_mode=chunk_mode,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Rechunk failed: {exc}") from exc
+        return _no_store(
+            {"status": "cleared", "book_id": payload.book_id, "tts_cleared": tts_cleared}
+        )
 
     @app.get("/api/merge/status")
     def merge_status(book_id: str) -> JSONResponse:

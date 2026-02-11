@@ -351,3 +351,49 @@ def test_synth_chunk_passes_voice_map_path(tmp_path: Path, monkeypatch: pytest.M
     assert response.status_code == 200
     assert captured["voice"] == "selected-default"
     assert captured["voice_map_path"] == book_dir / "voice-map.json"
+
+
+def test_clear_tts_forces_rechunk_with_manifest_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, root_dir = _make_repo(tmp_path)
+    book_dir = _make_book(root_dir)
+    (book_dir / "tts" / "manifest.json").write_text(
+        json.dumps(
+            {
+                "voice": "manifest-voice",
+                "max_chars": 321,
+                "pad_ms": 444,
+                "chunk_mode": "japanese",
+                "chapters": [{"id": "c1", "chunks": ["chunk"]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_refresh_chunks(
+        *,
+        book_dir: Path,
+        max_chars: int = 220,
+        pad_ms: int = 350,
+        chunk_mode: str = "japanese",
+    ) -> bool:
+        captured["book_dir"] = book_dir
+        captured["max_chars"] = max_chars
+        captured["pad_ms"] = pad_ms
+        captured["chunk_mode"] = chunk_mode
+        return True
+
+    monkeypatch.setattr(player_util.sanitize, "refresh_chunks", fake_refresh_chunks)
+
+    app = player_util.create_app(root_dir)
+    client = TestClient(app)
+    response = client.post("/api/tts/clear", json={"book_id": "book"})
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "cleared", "book_id": "book", "tts_cleared": True}
+    assert captured["book_dir"] == book_dir
+    assert captured["max_chars"] == 321
+    assert captured["pad_ms"] == 444
+    assert captured["chunk_mode"] == "japanese"
