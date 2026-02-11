@@ -8,6 +8,11 @@ from nik.text import SECTION_BREAK
 from nik import voice as voice_util
 
 
+@pytest.fixture(autouse=True)
+def _reset_first_token_separator_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(tts_util.FIRST_TOKEN_SEPARATOR_ENV, raising=False)
+
+
 def test_make_chunk_spans_splits_japanese_sentences() -> None:
     text = "今日は良い天気です。明日も晴れるでしょう。"
     spans = tts_util.make_chunk_spans(text, max_chars=10, chunk_mode="japanese")
@@ -1067,7 +1072,69 @@ def test_normalize_kana_first_token_partial() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
+    assert out == "なげつけ'好き"
+
+
+def test_normalize_kana_first_token_partial_separator_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("投げつけ", "ナゲツケ"),
+                DummyToken("好き", "スキ"),
+            ]
+
+    monkeypatch.setenv(tts_util.FIRST_TOKEN_SEPARATOR_ENV, "none")
+    out = tts_util._normalize_kana_with_tagger(
+        "投げつけ好き",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_token_to_kana=True,
+    )
     assert out == "なげつけ好き"
+
+
+def test_normalize_kana_first_token_partial_separator_custom(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("投げつけ", "ナゲツケ"),
+                DummyToken("好き", "スキ"),
+            ]
+
+    monkeypatch.setenv(tts_util.FIRST_TOKEN_SEPARATOR_ENV, "・")
+    out = tts_util._normalize_kana_with_tagger(
+        "投げつけ好き",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_token_to_kana=True,
+    )
+    assert out == "なげつけ・好き"
 
 
 def test_normalize_kana_first_token_partial_kanji_run() -> None:
@@ -1095,7 +1162,7 @@ def test_normalize_kana_first_token_partial_kanji_run() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "じてんしゃ"
+    assert out == "じてん'しゃ"
 
 
 def test_normalize_kana_first_token_partial_numeric_counter_run() -> None:
@@ -1143,7 +1210,7 @@ def test_normalize_kana_first_token_partial_numeric_counter_run() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "とおか"
+    assert out == "とお'か"
 
 
 def test_normalize_kana_first_token_already_kana() -> None:
@@ -1333,7 +1400,7 @@ def test_normalize_kana_first_token_to_kana_leading_kanji() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "かんじテスト"
+    assert out == "かんじ'テスト"
 
 
 def test_normalize_kana_first_token_to_kana_handles_mixed_single_token() -> None:
@@ -1570,7 +1637,7 @@ def test_normalize_kana_weekday_reading() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "どようび"
+    assert out == "どよう'び"
 
 
 def test_normalize_kana_with_tagger_normalizes_kyujitai() -> None:
@@ -1601,7 +1668,7 @@ def test_normalize_kana_with_tagger_normalizes_kyujitai() -> None:
         force_first_token_to_kana=True,
     )
     assert tagger.last_input == "目覚め"
-    assert out == "めざめ"
+    assert out == "めざめ'"
 
 
 def test_normalize_kana_with_tagger_normalizes_kyujitai_uso() -> None:
@@ -1632,7 +1699,7 @@ def test_normalize_kana_with_tagger_normalizes_kyujitai_uso() -> None:
         force_first_token_to_kana=True,
     )
     assert tagger.last_input == "嘘"
-    assert out == "うそ"
+    assert out == "うそ'"
 
 
 def test_synthesize_book_force_first_token_to_kana(
@@ -2042,6 +2109,10 @@ def test_prepare_tts_text_strips_japanese_quotes() -> None:
         tts_util.prepare_tts_text("「聖書」『旧約』《新約》“Test” 'OK'〝注〟don't")
         == "聖書、旧約、新約Test OK注don't"
     )
+
+
+def test_prepare_tts_text_preserves_japanese_internal_single_quote() -> None:
+    assert tts_util.prepare_tts_text("りこん'で") == "りこん'で"
 
 
 def test_prepare_tts_text_normalizes_width_and_format_chars() -> None:

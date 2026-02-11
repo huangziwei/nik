@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import importlib.metadata
 import importlib.util
@@ -11,7 +12,6 @@ import re
 import shutil
 import sys
 import tempfile
-import csv
 import time
 import unicodedata
 import urllib.parse
@@ -34,7 +34,12 @@ from rich.progress import (
 )
 
 from . import voice as voice_util
-from .text import SECTION_BREAK, normalize_section_breaks, read_clean_text, strip_section_breaks
+from .text import (
+    SECTION_BREAK,
+    normalize_section_breaks,
+    read_clean_text,
+    strip_section_breaks,
+)
 from .voice import VoiceConfig
 
 torch = None
@@ -56,7 +61,7 @@ _KYUJITAI_CONVERTER: Optional[KyujitaiConverter] = None
 _END_PUNCT = set("。！？?!…")
 _MID_PUNCT = set("、，,;；:：")
 _CLOSE_PUNCT = set("」』）】］〉》」』”’\"'")
-_DOUBLE_QUOTE_CHARS = {"\"", "“", "”", "«", "»", "„", "‟", "❝", "❞", "＂"}
+_DOUBLE_QUOTE_CHARS = {'"', "“", "”", "«", "»", "„", "‟", "❝", "❞", "＂"}
 _SINGLE_QUOTE_CHARS = {"'", "‘", "’", "‚", "‛", "＇"}
 _LEADING_ELISIONS = {
     "tis",
@@ -98,7 +103,9 @@ _SECTION_BREAK_PAUSE_MULTIPLIER = 1 + _SECTION_PAD_MULT
 _TITLE_BREAK_PAUSE_MULTIPLIER = 1 + _CHAPTER_PAD_MULT
 _HEADING_TOKEN_RE = re.compile(r"[^\W_]+(?:['’.\-][^\W_]+)*")
 _ROMAN_TOKEN_RE = re.compile(r"^[IVXLCDM]+$", re.IGNORECASE)
-_SENTENCE_END_RE = re.compile(r"[.!?。！？](?:[\"')\]\}\u201d\u2019»」』）】])*(?=\s|$)")
+_SENTENCE_END_RE = re.compile(
+    r"[.!?。！？](?:[\"')\]\}\u201d\u2019»」』）】])*(?=\s|$)"
+)
 _JP_OPEN_QUOTES = {"「", "『", "《", "〈", "【", "〔", "［", "｢", "〝"}
 _JP_CLOSE_QUOTES = {"」", "』", "》", "〉", "】", "〕", "］", "｣", "〞", "〟"}
 _DASH_RUN_RE = re.compile(r"[‐‑‒–—―─━]{2,}")
@@ -121,7 +128,7 @@ except ValueError:
     _JP_COMMON_ZIPF = 4.0
 
 DEFAULT_TORCH_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
-DEFAULT_MLX_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"
+DEFAULT_MLX_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16"
 MIN_MLX_AUDIO_VERSION = "0.3.1"
 FORCED_LANGUAGE = "Japanese"
 READING_TEMPLATE_FILENAME = "global-reading-overrides.md"
@@ -132,6 +139,7 @@ UNIDIC_DIRNAME = "unidic-cwj-202512_full"
 NLTK_DATA_ENV = "NLTK_DATA"
 NIK_CACHE_DIR = Path.home() / ".cache" / "nik"
 NLTK_DATA_DIR = NIK_CACHE_DIR / "nltk_data"
+FIRST_TOKEN_SEPARATOR_ENV = "NIK_FIRST_TOKEN_SEPARATOR"
 
 _DIGIT_KANA = {
     "0": "ゼロ",
@@ -146,10 +154,7 @@ _DIGIT_KANA = {
     "9": "きゅう",
 }
 
-_ROMAN_NUMERAL_CHARS = (
-    "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫⅬⅭⅮⅯ"
-    "ⅰⅱⅲⅳⅴⅵⅶⅷⅸⅹⅺⅻⅼⅽⅾⅿ"
-)
+_ROMAN_NUMERAL_CHARS = "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫⅬⅭⅮⅯⅰⅱⅲⅳⅴⅵⅶⅷⅸⅹⅺⅻⅼⅽⅾⅿ"
 _ASCII_ROMAN_NUMERAL_CHARS = "IVXLCDM"
 _ASCII_ROMAN_MAX_VALUE = 50
 _KANJI_NUMERAL_RANGE_CHARS = "〇零一二三四五六七八九十百千万億兆京"
@@ -602,9 +607,27 @@ _COUNTER_SPECIAL_READINGS = {
         10: "じゅっかげつかん",
     },
     "体": {1: "いったい"},
-    "本": {1: "いっぽん", 3: "さんぼん", 6: "ろっぽん", 8: "はっぽん", 10: "じゅっぽん"},
-    "匹": {1: "いっぴき", 3: "さんびき", 6: "ろっぴき", 8: "はっぴき", 10: "じゅっぴき"},
-    "杯": {1: "いっぱい", 3: "さんばい", 6: "ろっぱい", 8: "はっぱい", 10: "じゅっぱい"},
+    "本": {
+        1: "いっぽん",
+        3: "さんぼん",
+        6: "ろっぽん",
+        8: "はっぽん",
+        10: "じゅっぽん",
+    },
+    "匹": {
+        1: "いっぴき",
+        3: "さんびき",
+        6: "ろっぴき",
+        8: "はっぴき",
+        10: "じゅっぴき",
+    },
+    "杯": {
+        1: "いっぱい",
+        3: "さんばい",
+        6: "ろっぱい",
+        8: "はっぱい",
+        10: "じゅっぱい",
+    },
     "通": {1: "いっつう"},
     "点": {1: "いってん"},
     "曲": {1: "いっきょく"},
@@ -613,7 +636,13 @@ _COUNTER_SPECIAL_READINGS = {
     "校": {1: "いっこう"},
     "着": {1: "いっちゃく"},
     "社": {1: "いっしゃ"},
-    "軒": {1: "いっけん", 3: "さんげん", 6: "ろっけん", 8: "はっけん", 10: "じゅっけん"},
+    "軒": {
+        1: "いっけん",
+        3: "さんげん",
+        6: "ろっけん",
+        8: "はっけん",
+        10: "じゅっけん",
+    },
     "株": {1: "いっかぶ"},
     "品": {1: "いっぴん"},
     "個": {1: "いっこ", 6: "ろっこ", 8: "はっこ", 10: "じゅっこ"},
@@ -705,6 +734,7 @@ _COUNTERS = list(
     }
 )
 
+
 @dataclass(frozen=True)
 class ChapterInput:
     index: int
@@ -756,7 +786,10 @@ def _require_tts() -> None:
 
 
 def _is_apple_silicon() -> bool:
-    return sys.platform == "darwin" and platform.machine().lower() in {"arm64", "aarch64"}
+    return sys.platform == "darwin" and platform.machine().lower() in {
+        "arm64",
+        "aarch64",
+    }
 
 
 def _parse_version(value: str) -> tuple:
@@ -848,8 +881,7 @@ def _lazy_import_mlx_audio() -> None:
         from mlx_audio.tts.utils import load_model as _load_model
     except Exception as exc:  # pragma: no cover - optional runtime dependency
         raise RuntimeError(
-            "mlx-audio is not installed. Install it with "
-            "`uv sync --prerelease=allow`."
+            "mlx-audio is not installed. Install it with `uv sync --prerelease=allow`."
         ) from exc
     mlx_audio = _mlx_audio
     mlx_load_model = _load_model
@@ -940,6 +972,7 @@ def _generate_audio_mlx(
     if sample_rate is None:
         sample_rate = getattr(model, "sample_rate", None)
     return audio_parts, int(sample_rate or 24000)
+
 
 def _normalize_text(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
@@ -1229,17 +1262,29 @@ def _looks_like_dialogue_chunk(stripped: str) -> bool:
 
     # Dialogue lines are often isolated and wrapped by quote pairs.
     trimmed = text.rstrip("。！？!?…．，、,;；:：")
-    if len(trimmed) >= 2 and trimmed[0] in _JP_OPEN_QUOTES and trimmed[-1] in _JP_CLOSE_QUOTES:
+    if (
+        len(trimmed) >= 2
+        and trimmed[0] in _JP_OPEN_QUOTES
+        and trimmed[-1] in _JP_CLOSE_QUOTES
+    ):
         inner = trimmed[1:-1].strip()
         if inner:
             return True
 
-    if len(trimmed) >= 2 and trimmed[0] in _DOUBLE_QUOTE_CHARS and trimmed[-1] in _DOUBLE_QUOTE_CHARS:
+    if (
+        len(trimmed) >= 2
+        and trimmed[0] in _DOUBLE_QUOTE_CHARS
+        and trimmed[-1] in _DOUBLE_QUOTE_CHARS
+    ):
         inner = trimmed[1:-1].strip()
         if inner:
             return True
 
-    if len(trimmed) >= 2 and trimmed[0] in _SINGLE_QUOTE_CHARS and trimmed[-1] in _SINGLE_QUOTE_CHARS:
+    if (
+        len(trimmed) >= 2
+        and trimmed[0] in _SINGLE_QUOTE_CHARS
+        and trimmed[-1] in _SINGLE_QUOTE_CHARS
+    ):
         inner = trimmed[1:-1].strip()
         if inner:
             return True
@@ -1276,7 +1321,9 @@ def _looks_like_heading_chunk(chunk: str) -> bool:
     return True
 
 
-def _looks_like_contextual_heading(chunk: str, prev_words: int, next_words: int) -> bool:
+def _looks_like_contextual_heading(
+    chunk: str, prev_words: int, next_words: int
+) -> bool:
     if _looks_like_heading_chunk(chunk):
         return True
     stripped = " ".join(part.strip() for part in chunk.splitlines() if part.strip())
@@ -1318,7 +1365,9 @@ def compute_chunk_pause_multipliers(
     for idx, chunk in enumerate(chunk_texts):
         prev_words = chunk_word_counts[idx - 1] if idx > 0 else 0
         next_words = chunk_word_counts[idx + 1] if idx + 1 < len(chunk_texts) else 0
-        heading_like[idx] = _looks_like_contextual_heading(chunk, prev_words, next_words)
+        heading_like[idx] = _looks_like_contextual_heading(
+            chunk, prev_words, next_words
+        )
     first_body_idx = next(
         (idx for idx, is_heading in enumerate(heading_like) if not is_heading),
         len(heading_like),
@@ -1387,7 +1436,9 @@ def _normalize_pause_multipliers(
     return normalized
 
 
-def _apply_chapter_boundary_pause_multipliers(manifest_chapters: Sequence[dict]) -> None:
+def _apply_chapter_boundary_pause_multipliers(
+    manifest_chapters: Sequence[dict],
+) -> None:
     for idx, entry in enumerate(manifest_chapters):
         if idx >= len(manifest_chapters) - 1:
             break
@@ -1434,6 +1485,9 @@ def _strip_single_quotes(text: str) -> str:
             and prev.isalnum()
             and next_ch.isalnum()
         ):
+            out.append(ch)
+            continue
+        if prev and next_ch and _is_japanese_char(prev) and _is_japanese_char(next_ch):
             out.append(ch)
             continue
         if (
@@ -1613,9 +1667,19 @@ def _normalize_kana_style(value: Optional[str]) -> str:
     return "mixed"
 
 
-def _normalize_kyujitai(
-    text: str, *, debug_sources: Optional[List[str]] = None
-) -> str:
+def _first_token_separator() -> str:
+    raw = os.environ.get(FIRST_TOKEN_SEPARATOR_ENV)
+    if raw is None:
+        return "\\"
+    lowered = raw.strip().lower()
+    if lowered in {"none", "off", "disable", "disabled", "no", "empty", "null"}:
+        return ""
+    if lowered == "space":
+        return " "
+    return raw
+
+
+def _normalize_kyujitai(text: str, *, debug_sources: Optional[List[str]] = None) -> str:
     if not text or not _has_kanji(text):
         return text
     converter = _get_kyujitai_converter()
@@ -1794,14 +1858,14 @@ def _maybe_canonicalize_surface(surface: str, token: Any, reading_kata: str) -> 
         return surface
     if len(reading_kata) < len(tail_kata):
         return surface
-    if lemma_reading_kata[:-len(tail_kata)] != reading_kata[:-len(tail_kata)]:
+    if lemma_reading_kata[: -len(tail_kata)] != reading_kata[: -len(tail_kata)]:
         return surface
-    new_tail_kata = reading_kata[-len(tail_kata):]
+    new_tail_kata = reading_kata[-len(tail_kata) :]
     if _is_hiragana_char(tail[0]):
         new_tail = _katakana_to_hiragana(new_tail_kata)
     else:
         new_tail = new_tail_kata
-    return lemma[:-len(tail)] + new_tail
+    return lemma[: -len(tail)] + new_tail
 
 
 def _apply_surface_kana(reading_kata: str, surface: str) -> str:
@@ -1950,7 +2014,9 @@ def _parse_kanji_numeral(seq: str) -> Optional[int]:
 def _parse_kanji_number(seq: str) -> Optional[int]:
     if not seq:
         return None
-    if any(ch in _KANJI_SMALL_UNIT_VALUES or ch in _KANJI_BIG_UNIT_VALUES for ch in seq):
+    if any(
+        ch in _KANJI_SMALL_UNIT_VALUES or ch in _KANJI_BIG_UNIT_VALUES for ch in seq
+    ):
         return _parse_kanji_numeral(seq)
     return _kanji_digits_to_int(seq)
 
@@ -2652,7 +2718,9 @@ def _normalize_numbers(text: str) -> str:
         _replace_kanji_decimal,
         text,
     )
-    counters = "|".join(sorted({re.escape(c) for c in _COUNTERS}, key=len, reverse=True))
+    counters = "|".join(
+        sorted({re.escape(c) for c in _COUNTERS}, key=len, reverse=True)
+    )
     if counters:
         text = re.sub(
             rf"(?P<num>\d+)(?P<counter>{counters})",
@@ -2847,11 +2915,13 @@ def _load_zh_lexicon() -> set[str]:
     if _ZH_LEXICON is not None:
         return _ZH_LEXICON
     lex: set[str] = set()
-    lex_path = Path(__file__).resolve().parent / "templates" / "modern-chinese-common-words.csv"
+    lex_path = (
+        Path(__file__).resolve().parent
+        / "templates"
+        / "modern-chinese-common-words.csv"
+    )
     if not lex_path.exists():
-        raise RuntimeError(
-            f"Partial kana mode requires {lex_path}. Missing file."
-        )
+        raise RuntimeError(f"Partial kana mode requires {lex_path}. Missing file.")
     try:
         with lex_path.open(encoding="utf-8") as f:
             reader = csv.DictReader(f)
@@ -3197,7 +3267,12 @@ def _should_force_first_token_to_kana(
                 break
             idx += 1
             continue
-        if _is_kana_char(ch) or _is_kanji_char(ch) or ch.isdigit() or ch in _KANJI_NUMERAL_RANGE_CHARS:
+        if (
+            _is_kana_char(ch)
+            or _is_kanji_char(ch)
+            or ch.isdigit()
+            or ch in _KANJI_NUMERAL_RANGE_CHARS
+        ):
             break
         if unicodedata.category(ch).startswith("P"):
             if leading_chars:
@@ -3285,7 +3360,9 @@ def _phones_to_kana(phones: Sequence[str]) -> str:
             idx += 1
             continue
         if phone in _EN_CONSONANT_KANA:
-            next_phone = _strip_arpabet_stress(phones[idx + 1]) if idx + 1 < len(phones) else ""
+            next_phone = (
+                _strip_arpabet_stress(phones[idx + 1]) if idx + 1 < len(phones) else ""
+            )
             if next_phone in _EN_VOWEL_BASE:
                 base = _EN_VOWEL_BASE[next_phone]
                 tail = _EN_VOWEL_TAIL.get(next_phone, "")
@@ -3312,9 +3389,7 @@ def _english_word_to_kana(word: str) -> str:
         return override
     _lazy_import_g2p_en()
     normalized = unicodedata.normalize("NFD", cleaned)
-    normalized = "".join(
-        ch for ch in normalized if unicodedata.category(ch) != "Mn"
-    )
+    normalized = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
     normalized = re.sub(r"[^A-Za-z]", "", normalized).lower()
     if not normalized:
         return ""
@@ -3330,7 +3405,11 @@ def _english_word_to_kana(word: str) -> str:
     filtered: List[str] = []
     for phone in phones:
         stripped = _strip_arpabet_stress(str(phone))
-        if stripped in _EN_VOWEL_BASE or stripped in _EN_CONSONANT_KANA or stripped == "NG":
+        if (
+            stripped in _EN_VOWEL_BASE
+            or stripped in _EN_CONSONANT_KANA
+            or stripped == "NG"
+        ):
             filtered.append(stripped)
     if not filtered:
         return ""
@@ -3352,7 +3431,12 @@ def _latin_prefix_to_kana_with_source(surface: str) -> tuple[str, str]:
                 break
             idx += 1
             continue
-        if _is_kana_char(ch) or _is_kanji_char(ch) or ch.isdigit() or ch in _KANJI_NUMERAL_RANGE_CHARS:
+        if (
+            _is_kana_char(ch)
+            or _is_kanji_char(ch)
+            or ch.isdigit()
+            or ch in _KANJI_NUMERAL_RANGE_CHARS
+        ):
             break
         if unicodedata.category(ch).startswith("P"):
             if leading_chars:
@@ -3459,7 +3543,9 @@ def _force_first_latin_phrase(
             idx += 1
         if idx > space_start:
             out.append(normalized[space_start:idx])
-        if idx >= length or not (normalized[idx].isascii() and normalized[idx].isalpha()):
+        if idx >= length or not (
+            normalized[idx].isascii() and normalized[idx].isalpha()
+        ):
             break
 
     out.append(normalized[idx:])
@@ -3481,7 +3567,12 @@ def _first_token_mode(text: str) -> str:
                 break
             idx += 1
             continue
-        if _is_kana_char(ch) or _is_kanji_char(ch) or ch.isdigit() or ch in _KANJI_NUMERAL_RANGE_CHARS:
+        if (
+            _is_kana_char(ch)
+            or _is_kanji_char(ch)
+            or ch.isdigit()
+            or ch in _KANJI_NUMERAL_RANGE_CHARS
+        ):
             break
         if unicodedata.category(ch).startswith("P"):
             if leading_chars:
@@ -3573,11 +3664,14 @@ def _normalize_kana_with_tagger(
     run_action: List[str] = [""] * len(tokens)
     force_first_kanji_indices: set[int] = set()
     force_first_token_idx: Optional[int] = None
+    first_force_separator_inserted = False
+    first_force_separator = ""
     if kana_style == "partial":
         force_first_kanji_indices, force_first_token_idx = _plan_force_first_targets(
             tokens,
             force_first_token_to_kana=force_first_token_to_kana,
         )
+        first_force_separator = _first_token_separator()
     if kana_style == "partial" and tokens:
         if partial_mid_kanji and zh_lexicon is None:
             zh_lexicon = _load_zh_lexicon()
@@ -3609,18 +3703,27 @@ def _normalize_kana_with_tagger(
                 action = ""
                 if has_numeric and has_counter:
                     action = "convert"
-                elif partial_mid_kanji and run_surface and run_surface in (zh_lexicon or set()):
+                elif (
+                    partial_mid_kanji
+                    and run_surface
+                    and run_surface in (zh_lexicon or set())
+                ):
                     action = "convert"
                 if action:
                     for pos in range(idx, end):
                         run_action[pos] = action
             idx = end
+
     def _adjust_weekday_reading(idx: int, reading_kata: str) -> str:
         if not reading_kata:
             return reading_kata
         surface = getattr(tokens[idx], "surface", "") or ""
         if surface == "曜日":
-            return reading_kata[:-1] + "ビ" if reading_kata.endswith("ヒ") else reading_kata
+            return (
+                reading_kata[:-1] + "ビ"
+                if reading_kata.endswith("ヒ")
+                else reading_kata
+            )
         if surface == "日" and idx > 0:
             prev_surface = getattr(tokens[idx - 1], "surface", "") or ""
             if prev_surface.endswith("曜"):
@@ -3709,6 +3812,9 @@ def _normalize_kana_with_tagger(
                 converted = _apply_surface_kana(reading_kata, surface)
                 output = _katakana_to_hiragana(converted)
                 out.append(output)
+                if not first_force_separator_inserted and first_force_separator:
+                    out.append(first_force_separator)
+                    first_force_separator_inserted = True
                 _append_kana_debug(
                     debug_sources,
                     surface_original,
@@ -3723,7 +3829,9 @@ def _normalize_kana_with_tagger(
                     debug_sources,
                     surface_original,
                     surface,
-                    source="keep" if surface == surface_original else "normalize:surface",
+                    source="keep"
+                    if surface == surface_original
+                    else "normalize:surface",
                 )
                 continue
             if action == "convert":
@@ -3748,7 +3856,9 @@ def _normalize_kana_with_tagger(
                     reading=reading_kata,
                 )
                 continue
-            if partial_mid_kanji and _should_partial_convert(surface, attrs, zh_lexicon or set()):
+            if partial_mid_kanji and _should_partial_convert(
+                surface, attrs, zh_lexicon or set()
+            ):
                 output = _apply_surface_kana(reading_kata, surface)
                 out.append(output)
                 _append_kana_debug(
@@ -3764,7 +3874,9 @@ def _normalize_kana_with_tagger(
                     debug_sources,
                     surface_original,
                     surface,
-                    source="keep" if surface == surface_original else "normalize:surface",
+                    source="keep"
+                    if surface == surface_original
+                    else "normalize:surface",
                 )
             continue
         if kana_style == "katakana":
@@ -3904,7 +4016,10 @@ def _normalize_wave_dashes_for_tts(text: str) -> str:
             out.append("ー")
             continue
         if _is_japanese_char(left) and (
-            not right or right in _END_PUNCT or right in _MID_PUNCT or right in _CLOSE_PUNCT
+            not right
+            or right in _END_PUNCT
+            or right in _MID_PUNCT
+            or right in _CLOSE_PUNCT
         ):
             out.append("ー")
             continue
@@ -4325,7 +4440,9 @@ def _split_reading_overrides_data(
     global_entries: List[dict[str, str]] = []
     chapters_data: object = data
     if isinstance(data, dict):
-        has_known_keys = any(key in data for key in ("global", "default", "*", "chapters"))
+        has_known_keys = any(
+            key in data for key in ("global", "default", "*", "chapters")
+        )
         if "global" in data:
             global_entries = _parse_reading_entries(data.get("global"))
         if "default" in data and not global_entries:
@@ -4430,9 +4547,7 @@ def _merge_reading_overrides(
     return list(merged.values())
 
 
-def apply_reading_overrides(
-    text: str, overrides: Sequence[dict[str, str]]
-) -> str:
+def apply_reading_overrides(text: str, overrides: Sequence[dict[str, str]]) -> str:
     if not overrides:
         return text
     literals: list[dict[str, str]] = []
@@ -4588,8 +4703,6 @@ def _reading_override_spans(
 
     spans.sort(key=lambda item: int(item.get("start", 0)))
     return spans
-
-
 
 
 def _replace_isolated_kanji(text: str, base: str, reading: str) -> str:
@@ -4753,7 +4866,8 @@ def _prepare_manifest(
                 add_chapter_boundary=chapter_idx < len(chapters) - 1,
             )
             fallback_pause = [
-                max(computed_pause[idx], legacy_pause[idx]) for idx in range(len(chunks))
+                max(computed_pause[idx], legacy_pause[idx])
+                for idx in range(len(chunks))
             ]
             ch_manifest["pause_multipliers"] = _normalize_pause_multipliers(
                 ch_manifest.get("pause_multipliers"),
@@ -4772,15 +4886,22 @@ def _prepare_manifest(
     for ch in chapters:
         spans = make_chunk_spans(ch.text, max_chars=max_chars, chunk_mode="japanese")
         pause_multipliers = compute_chunk_pause_multipliers(ch.text, spans)
-        section_breaks = [idx for idx, chv in enumerate(ch.text) if chv == SECTION_BREAK]
+        section_breaks = [
+            idx for idx, chv in enumerate(ch.text) if chv == SECTION_BREAK
+        ]
         chunk_section_breaks = [False] * len(spans)
         if section_breaks and spans:
             break_idx = 0
             for idx, (_start, end) in enumerate(spans):
                 next_start = spans[idx + 1][0] if idx + 1 < len(spans) else len(ch.text)
-                while break_idx < len(section_breaks) and section_breaks[break_idx] < end:
+                while (
+                    break_idx < len(section_breaks) and section_breaks[break_idx] < end
+                ):
                     break_idx += 1
-                if break_idx < len(section_breaks) and section_breaks[break_idx] < next_start:
+                if (
+                    break_idx < len(section_breaks)
+                    and section_breaks[break_idx] < next_start
+                ):
                     chunk_section_breaks[idx] = True
         chunks = [strip_section_breaks(ch.text[start:end]) for start, end in spans]
         if not chunks:
@@ -4948,7 +5069,9 @@ def _write_wav(path: Path, audio: np.ndarray, sample_rate: int) -> None:
     sf.write(path, audio, sample_rate, subtype="PCM_16")
 
 
-def build_concat_file(segment_paths: List[Path], concat_path: Path, base_dir: Path) -> None:
+def build_concat_file(
+    segment_paths: List[Path], concat_path: Path, base_dir: Path
+) -> None:
     lines = []
     for p in segment_paths:
         rel = p.relative_to(base_dir).as_posix()
@@ -5093,7 +5216,9 @@ def synthesize_book(
     raw_overrides = voice_map.get("chapters", {}) if voice_map else {}
     for entry in manifest.get("chapters", []):
         chapter_id = entry.get("id") or "chapter"
-        raw_value = raw_overrides.get(chapter_id) if isinstance(raw_overrides, dict) else None
+        raw_value = (
+            raw_overrides.get(chapter_id) if isinstance(raw_overrides, dict) else None
+        )
         selected = _normalize_voice_id(raw_value, default_voice)
         chapter_voice_map[chapter_id] = selected
         entry["voice"] = selected
@@ -5178,8 +5303,12 @@ def synthesize_book(
         chapter_task = progress.add_task("Chapter", total=0)
 
         chapter_entries = manifest.get("chapters", [])
-        chapter_total_count = len(chapter_entries) if isinstance(chapter_entries, list) else 0
-        for chapter_idx, (ch_entry, chunks) in enumerate(zip(manifest["chapters"], chapter_chunks)):
+        chapter_total_count = (
+            len(chapter_entries) if isinstance(chapter_entries, list) else 0
+        )
+        for chapter_idx, (ch_entry, chunks) in enumerate(
+            zip(manifest["chapters"], chapter_chunks)
+        ):
             chapter_id = ch_entry.get("id") or "chapter"
             chapter_title = ch_entry.get("title") or chapter_id
             chapter_total = len(chunks)

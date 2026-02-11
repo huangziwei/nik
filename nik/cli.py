@@ -4,6 +4,7 @@ import argparse
 import importlib
 import json
 import math
+import os
 import shutil
 import subprocess
 import sys
@@ -12,7 +13,7 @@ import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from . import asr as asr_util
 from . import epub as epub_util
@@ -542,24 +543,27 @@ def _synth(args: argparse.Namespace) -> int:
         sys.stderr.write(f"{exc}\n")
         return 2
 
-    return tts_util.synthesize_book(
-        book_dir=book_dir,
-        voice=voice_config,
-        out_dir=out_dir,
-        max_chars=args.max_chars,
-        pad_ms=args.pad_ms,
-        rechunk=args.rechunk,
-        voice_map_path=voice_map_path,
-        base_dir=Path.cwd(),
-        model_name=args.model,
-        device_map=args.device,
-        dtype=args.dtype,
-        attn_implementation=args.attn,
-        backend=args.backend,
-        kana_normalize=args.kana_normalize,
-        kana_style=args.kana_style,
-        partial_mid_kanji=args.partial_mid_kanji,
-    )
+    def _run() -> int:
+        return tts_util.synthesize_book(
+            book_dir=book_dir,
+            voice=voice_config,
+            out_dir=out_dir,
+            max_chars=args.max_chars,
+            pad_ms=args.pad_ms,
+            rechunk=args.rechunk,
+            voice_map_path=voice_map_path,
+            base_dir=Path.cwd(),
+            model_name=args.model,
+            device_map=args.device,
+            dtype=args.dtype,
+            attn_implementation=args.attn,
+            backend=args.backend,
+            kana_normalize=args.kana_normalize,
+            kana_style=args.kana_style,
+            partial_mid_kanji=args.partial_mid_kanji,
+        )
+
+    return int(_with_first_token_separator(args.first_token_separator, _run))
 
 
 def _sample(args: argparse.Namespace) -> int:
@@ -581,24 +585,27 @@ def _sample(args: argparse.Namespace) -> int:
         sys.stderr.write(f"{exc}\n")
         return 2
 
-    return tts_util.synthesize_book_sample(
-        book_dir=book_dir,
-        voice=voice_config,
-        out_dir=out_dir,
-        max_chars=args.max_chars,
-        pad_ms=args.pad_ms,
-        rechunk=args.rechunk,
-        voice_map_path=voice_map_path,
-        base_dir=Path.cwd(),
-        model_name=args.model,
-        device_map=args.device,
-        dtype=args.dtype,
-        attn_implementation=args.attn,
-        backend=args.backend,
-        kana_normalize=args.kana_normalize,
-        kana_style=args.kana_style,
-        partial_mid_kanji=args.partial_mid_kanji,
-    )
+    def _run() -> int:
+        return tts_util.synthesize_book_sample(
+            book_dir=book_dir,
+            voice=voice_config,
+            out_dir=out_dir,
+            max_chars=args.max_chars,
+            pad_ms=args.pad_ms,
+            rechunk=args.rechunk,
+            voice_map_path=voice_map_path,
+            base_dir=Path.cwd(),
+            model_name=args.model,
+            device_map=args.device,
+            dtype=args.dtype,
+            attn_implementation=args.attn,
+            backend=args.backend,
+            kana_normalize=args.kana_normalize,
+            kana_style=args.kana_style,
+            partial_mid_kanji=args.partial_mid_kanji,
+        )
+
+    return int(_with_first_token_separator(args.first_token_separator, _run))
 
 
 def _jsonl_entries(path: Path) -> list[dict]:
@@ -775,6 +782,23 @@ def _debug_dump(label: str, value: str) -> None:
     sys.stderr.write(f"{label}: {value}\n")
 
 
+def _with_first_token_separator(
+    separator: Optional[str], run: Callable[[], int] | Callable[[], tts_util.TtsPipeline]
+) -> int | tts_util.TtsPipeline:
+    if separator is None:
+        return run()
+    key = tts_util.FIRST_TOKEN_SEPARATOR_ENV
+    previous = os.environ.get(key)
+    os.environ[key] = separator
+    try:
+        return run()
+    finally:
+        if previous is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = previous
+
+
 def _kana(args: argparse.Namespace) -> int:
     raw_input = args.path
     input_path = Path(raw_input)
@@ -888,8 +912,8 @@ def _kana(args: argparse.Namespace) -> int:
         if isinstance(item, dict) and str(item.get("base") or "").strip()
     }
     kana_sources = [] if args.debug else None
-    try:
-        pipeline = tts_util._prepare_tts_pipeline(
+    def _run_pipeline() -> tts_util.TtsPipeline:
+        return tts_util._prepare_tts_pipeline(
             text,
             chapter_id=chapter_id,
             chunk_span=chunk_span,
@@ -904,6 +928,11 @@ def _kana(args: argparse.Namespace) -> int:
             partial_mid_kanji=args.partial_mid_kanji,
             add_short_punct=True,
             debug_sources=kana_sources,
+        )
+    try:
+        pipeline = _with_first_token_separator(
+            args.first_token_separator,
+            _run_pipeline,
         )
     except RuntimeError as exc:
         sys.stderr.write(f"{exc}\n")
@@ -1126,6 +1155,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Allow mid-sentence kanji->kana conversion in partial mode (default: disabled)",
     )
     synth.add_argument(
+        "--first-token-separator",
+        default=None,
+        help=(
+            "Separator inserted after forced first-token kanji conversion in partial mode "
+            "(example: \"'\", \"・\", \"、\", \"none\")"
+        ),
+    )
+    synth.add_argument(
         "--model",
         default=None,
         help="Model id/path (defaults depend on backend)",
@@ -1210,6 +1247,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Allow mid-sentence kanji->kana conversion in partial mode (default: disabled)",
     )
     sample.add_argument(
+        "--first-token-separator",
+        default=None,
+        help=(
+            "Separator inserted after forced first-token kanji conversion in partial mode "
+            "(example: \"'\", \"・\", \"、\", \"none\")"
+        ),
+    )
+    sample.add_argument(
         "--model",
         default=None,
         help="Model id/path (defaults depend on backend)",
@@ -1261,6 +1306,14 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Allow mid-sentence kanji->kana conversion in partial mode (default: disabled)",
+    )
+    kana.add_argument(
+        "--first-token-separator",
+        default=None,
+        help=(
+            "Separator inserted after forced first-token kanji conversion in partial mode "
+            "(example: \"'\", \"・\", \"、\", \"none\")"
+        ),
     )
     kana.add_argument(
         "--debug",
