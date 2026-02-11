@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -51,6 +52,89 @@ def _summarize_ruby_pairs(
     if not replacements and not conflicts:
         return None
     return {"replacements": replacements, "conflicts": conflicts}
+
+
+def _load_unidic_tagger_if_available() -> Optional[object]:
+    dict_dir = tts_util._resolve_unidic_dir()
+    if not (dict_dir / "dicrc").exists():
+        return None
+    try:
+        return tts_util._get_kana_tagger()
+    except Exception:
+        return None
+
+
+def _reading_rank(reading: str, counts: dict[str, int], order: dict[str, int]) -> tuple[int, int]:
+    return (-counts.get(reading, 0), order.get(reading, len(order)))
+
+
+def _majority_ruby_reading(counts: dict[str, int], order: dict[str, int]) -> str:
+    if not counts:
+        return ""
+    return min(counts.keys(), key=lambda reading: _reading_rank(reading, counts, order))
+
+
+def _is_unidic_aligned_ruby_reading(
+    base: str,
+    reading: str,
+    tagger: Optional[object],
+) -> bool:
+    if not base or not reading or tagger is None:
+        return False
+    reading_text = unicodedata.normalize("NFKC", str(reading).strip())
+    if not reading_text or not tts_util._is_kana_reading(reading_text):
+        return False
+    try:
+        normalized = tts_util._normalize_ruby_reading(base, reading_text, tagger)
+        reading_kata = tts_util._hiragana_to_katakana(
+            unicodedata.normalize("NFKC", normalized)
+        )
+        base_kata = tts_util._base_reading_kata(base, tagger)
+    except Exception:
+        return False
+    return bool(base_kata and reading_kata == base_kata)
+
+
+def _select_preferred_ruby_reading(
+    base: str,
+    counts: dict[str, int],
+    order: dict[str, int],
+    tagger: Optional[object],
+) -> tuple[str, int]:
+    if not counts:
+        return "", 0
+    majority = _majority_ruby_reading(counts, order)
+    if not majority:
+        return "", 0
+    majority_count = counts.get(majority, 0)
+
+    if tagger is not None:
+        majority_aligned = [
+            reading
+            for reading, count in counts.items()
+            if count == majority_count
+            and _is_unidic_aligned_ruby_reading(base, reading, tagger)
+        ]
+        if majority_aligned:
+            selected = min(
+                majority_aligned,
+                key=lambda reading: _reading_rank(reading, counts, order),
+            )
+            return selected, counts.get(selected, 0)
+
+        aligned = [
+            reading
+            for reading in counts
+            if _is_unidic_aligned_ruby_reading(base, reading, tagger)
+        ]
+        if aligned:
+            selected = min(
+                aligned,
+                key=lambda reading: _reading_rank(reading, counts, order),
+            )
+            return selected, counts.get(selected, 0)
+
+    return majority, majority_count
 
 
 def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
@@ -135,24 +219,23 @@ def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
         overrides_path = out_dir / "reading-overrides.json"
         ruby_global: list[dict] = []
         ruby_conflicts: list[dict] = []
+        unidic_tagger = _load_unidic_tagger_if_available()
         for base, counts in sorted(ruby_counts.items(), key=lambda item: item[0]):
             total = sum(counts.values())
             order = {reading: idx for idx, reading in enumerate(ruby_order.get(base, []))}
-            majority_reading = ""
-            majority_count = -1
-            for reading, count in counts.items():
-                rank = order.get(reading, len(order))
-                if (count > majority_count) or (
-                    count == majority_count and rank < order.get(majority_reading, 1 << 30)
-                ):
-                    majority_reading = reading
-                    majority_count = count
-            if majority_reading:
+            majority_reading = _majority_ruby_reading(counts, order)
+            selected_reading, selected_count = _select_preferred_ruby_reading(
+                base=base,
+                counts=counts,
+                order=order,
+                tagger=unidic_tagger,
+            )
+            if selected_reading:
                 ruby_global.append(
                     {
                         "base": base,
-                        "reading": majority_reading,
-                        "count": majority_count,
+                        "reading": selected_reading,
+                        "count": selected_count,
                         "total": total,
                     }
                 )

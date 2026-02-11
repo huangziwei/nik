@@ -42,6 +42,66 @@ def test_clone_parser_allows_disabling_auto_text() -> None:
     assert args.auto_text is False
 
 
+def test_select_preferred_ruby_reading_prefers_unidic_aligned_majority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    counts = {"おれ": 1, "あんさつしや": 1}
+    order = {"おれ": 0, "あんさつしや": 1}
+    monkeypatch.setattr(
+        cli,
+        "_is_unidic_aligned_ruby_reading",
+        lambda base, reading, tagger: reading == "あんさつしや",
+    )
+    selected, selected_count = cli._select_preferred_ruby_reading(
+        base="暗殺者",
+        counts=counts,
+        order=order,
+        tagger=object(),
+    )
+    assert selected == "あんさつしや"
+    assert selected_count == 1
+
+
+def test_select_preferred_ruby_reading_prefers_unidic_aligned_minor_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    counts = {"おれ": 2, "あんさつしや": 1}
+    order = {"おれ": 0, "あんさつしや": 1}
+    monkeypatch.setattr(
+        cli,
+        "_is_unidic_aligned_ruby_reading",
+        lambda base, reading, tagger: reading == "あんさつしや",
+    )
+    selected, selected_count = cli._select_preferred_ruby_reading(
+        base="暗殺者",
+        counts=counts,
+        order=order,
+        tagger=object(),
+    )
+    assert selected == "あんさつしや"
+    assert selected_count == 1
+
+
+def test_select_preferred_ruby_reading_falls_back_to_majority_without_alignment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    counts = {"おれ": 2, "あんさつしや": 1}
+    order = {"おれ": 0, "あんさつしや": 1}
+    monkeypatch.setattr(
+        cli,
+        "_is_unidic_aligned_ruby_reading",
+        lambda base, reading, tagger: False,
+    )
+    selected, selected_count = cli._select_preferred_ruby_reading(
+        base="暗殺者",
+        counts=counts,
+        order=order,
+        tagger=object(),
+    )
+    assert selected == "おれ"
+    assert selected_count == 2
+
+
 def test_synth_parser_supports_backend() -> None:
     parser = cli.build_parser()
     args = parser.parse_args(["synth", "--book", "out", "--voice", "voice.json", "--backend", "mlx"])

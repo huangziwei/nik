@@ -451,6 +451,25 @@ def test_apply_ruby_evidence_to_chunk_keeps_non_kanji_span() -> None:
     assert out == f"ティーティーエス{_default_first_token_separator()}を試す。"
 
 
+def test_apply_ruby_evidence_to_chunk_keeps_inline_ruby_over_global_override() -> None:
+    chunk_text = "暗殺者は暗殺者だ。"
+    chunk_span = (0, len(chunk_text))
+    chapter_spans = [
+        {"start": 0, "end": 3, "base": "暗殺者", "reading": "おれ"},
+    ]
+    ruby_data = {"global": [{"base": "暗殺者", "reading": "あんさつしや"}]}
+    out = tts_util._apply_ruby_evidence_to_chunk(
+        chunk_text,
+        chunk_span,
+        chapter_spans,
+        ruby_data,
+    )
+    sep = _default_first_token_separator()
+    assert out.startswith(f"オレ{sep}は")
+    assert f"アンサツシャ{sep}だ。" in out
+    assert "暗殺者" not in out
+
+
 def test_normalize_kana_with_stub_tagger() -> None:
     class DummyFeature:
         def __init__(self, kana: str | None) -> None:
