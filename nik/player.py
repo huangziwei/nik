@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import os
@@ -10,6 +11,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, List, Optional, Union
@@ -20,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from . import asr as asr_util
 from . import epub as epub_util
 from . import sanitize
 from . import tts as tts_util
@@ -101,6 +105,272 @@ def _find_repo_root(start: Path) -> Path:
         if (candidate / "pyproject.toml").exists():
             return candidate
     return start
+
+
+_CLONE_TIME_TOKEN_RE = re.compile(r"^\d+(?:\.\d+)?$")
+_VOICE_GENDERS = {"female", "male"}
+
+
+def _normalize_voice_gender(value: object) -> Optional[str]:
+    if value is None:
+        return None
+    raw = str(value).strip().lower()
+    if not raw:
+        return None
+    if raw not in _VOICE_GENDERS:
+        raise ValueError("Gender must be 'female' or 'male'.")
+    return raw
+
+
+def _is_http_url(value: str) -> bool:
+    parsed = urllib.parse.urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _download_clone_source(url: str, dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    request = urllib.request.Request(url, headers={"User-Agent": "nik voice clone"})
+    with urllib.request.urlopen(request) as response, dest.open("wb") as handle:
+        shutil.copyfileobj(response, handle)
+
+
+def _coerce_clone_voice_name(raw: Optional[str], source_name: str) -> str:
+    return voice_util.coerce_voice_name(raw, source_name)
+
+
+def _format_clone_seconds(seconds: float) -> str:
+    rounded = round(seconds, 3)
+    text = f"{rounded:.3f}".rstrip("0").rstrip(".")
+    return text or "0"
+
+
+def _parse_clone_time(value: object, field_name: str, *, allow_zero: bool) -> str:
+    raw = "" if value is None else str(value).strip()
+    if not raw:
+        if allow_zero:
+            return "0"
+        raise ValueError(f"{field_name} is required.")
+
+    if ":" in raw:
+        parts = raw.split(":")
+        if len(parts) not in {2, 3}:
+            raise ValueError(
+                f"{field_name} must be seconds or timecode (MM:SS or HH:MM:SS)."
+            )
+        if any(not _CLONE_TIME_TOKEN_RE.fullmatch(part) for part in parts):
+            raise ValueError(
+                f"{field_name} must be seconds or timecode (MM:SS or HH:MM:SS)."
+            )
+        sec_part = float(parts[-1])
+        min_part = float(parts[-2])
+        hour_part = float(parts[-3]) if len(parts) == 3 else 0.0
+        if sec_part >= 60 or min_part >= 60:
+            raise ValueError(f"{field_name} timecode must keep MM/SS values below 60.")
+        seconds = hour_part * 3600 + min_part * 60 + sec_part
+    else:
+        try:
+            seconds = float(raw)
+        except ValueError as exc:
+            raise ValueError(f"{field_name} must be a number of seconds.") from exc
+
+    if seconds < 0:
+        raise ValueError(f"{field_name} must be >= 0 seconds.")
+    if not allow_zero and seconds <= 0:
+        raise ValueError(f"{field_name} must be > 0 seconds.")
+    return _format_clone_seconds(seconds)
+
+
+def _build_clone_ffmpeg_cmd(
+    input_path: Path,
+    output_path: Path,
+    start: str,
+    duration: str,
+) -> list[str]:
+    return [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        start,
+        "-t",
+        duration,
+        "-i",
+        str(input_path),
+        "-map",
+        "0:a:0",
+        "-vn",
+        "-sn",
+        "-dn",
+        "-map_metadata",
+        "-1",
+        "-ac",
+        "1",
+        "-ar",
+        "24000",
+        "-c:a",
+        "pcm_s16le",
+        str(output_path),
+    ]
+
+
+def _clone_cache_dir(repo_root: Path) -> Path:
+    return repo_root / ".cache" / "voice-clone"
+
+
+def _clone_preview_path(repo_root: Path) -> Path:
+    return _clone_cache_dir(repo_root) / "preview.wav"
+
+
+def _clone_source_cache_path(source: str, repo_root: Path) -> Path:
+    parsed = urllib.parse.urlparse(source)
+    suffix = Path(parsed.path).suffix.lower() or ".audio"
+    digest = hashlib.sha256(source.encode("utf-8")).hexdigest()[:24]
+    return _clone_cache_dir(repo_root) / "sources" / f"{digest}{suffix}"
+
+
+def _resolve_clone_source(source: str, repo_root: Path) -> tuple[Path, str, str]:
+    raw = str(source or "").strip()
+    if not raw:
+        raise ValueError("Source is required.")
+    if _is_http_url(raw):
+        cache_path = _clone_source_cache_path(raw, repo_root)
+        try:
+            if not cache_path.exists() or cache_path.stat().st_size <= 0:
+                _download_clone_source(raw, cache_path)
+        except Exception as exc:
+            raise ValueError(f"Download failed: {exc}") from exc
+        parsed = urllib.parse.urlparse(raw)
+        source_name = Path(parsed.path).stem or "voice"
+        return cache_path, source_name, raw
+
+    input_path = Path(raw).expanduser()
+    if not input_path.is_absolute():
+        raise ValueError("Local source path must be absolute (or start with '~/').")
+    input_path = input_path.resolve()
+    if not input_path.exists() or not input_path.is_file():
+        raise ValueError(f"Input file not found: {input_path}")
+    return input_path, input_path.stem, str(input_path)
+
+
+def _run_clone_ffmpeg(
+    input_path: Path,
+    output_path: Path,
+    start: str,
+    duration: str,
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = _build_clone_ffmpeg_cmd(input_path, output_path, start, duration)
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode == 0:
+        return
+    detail = (result.stderr or result.stdout or "").strip()
+    if detail:
+        tail = detail.splitlines()[-1]
+        raise RuntimeError(f"ffmpeg failed to process the audio: {tail}")
+    raise RuntimeError("ffmpeg failed to process the audio.")
+
+
+def _normalize_clone_text(value: Optional[str]) -> Optional[str]:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _payload_fields_set(payload: BaseModel) -> set[str]:
+    fields = getattr(payload, "model_fields_set", None)
+    if isinstance(fields, set):
+        return {str(item) for item in fields}
+    legacy = getattr(payload, "__fields_set__", None)
+    if isinstance(legacy, set):
+        return {str(item) for item in legacy}
+    return set()
+
+
+def _resolve_voice_config_path(value: str, repo_root: Path) -> tuple[str, Path]:
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError("Voice is required.")
+    voices_dir = (repo_root / voice_util.VOICE_DIRNAME).resolve()
+    candidate = Path(raw)
+    resolved: Optional[Path] = None
+    if candidate.is_absolute():
+        resolved = candidate.resolve()
+    else:
+        repo_candidate = (repo_root / candidate).resolve()
+        if repo_candidate.exists():
+            resolved = repo_candidate
+
+    config_path: Optional[Path] = None
+    voice_id = ""
+    if resolved is not None:
+        if resolved.is_dir():
+            config_path = resolved / "voice.json"
+            voice_id = resolved.name
+        elif resolved.suffix.lower() == ".json":
+            config_path = resolved
+            voice_id = resolved.stem
+        else:
+            config_path = resolved.with_suffix(".json")
+            voice_id = resolved.stem
+    else:
+        voice_id = candidate.stem
+        config_path = voices_dir / f"{voice_id}.json"
+        if not config_path.exists():
+            alt = voices_dir / voice_id / "voice.json"
+            if alt.exists():
+                config_path = alt
+            else:
+                config_path = None
+
+    if not config_path or not config_path.exists() or not config_path.is_file():
+        raise ValueError(f"Voice config not found: {raw}")
+    config_path = config_path.resolve()
+    if voices_dir not in config_path.parents and config_path != voices_dir:
+        raise ValueError("Voice must be inside the voices directory.")
+    return voice_id, config_path
+
+
+def _resolve_voice_audio_path(config_path: Path, data: dict) -> tuple[str, Path]:
+    ref_audio = str(data.get("ref_audio") or data.get("audio") or "").strip()
+    if not ref_audio:
+        return "", config_path.with_suffix(".wav")
+    audio_path = Path(ref_audio)
+    if not audio_path.is_absolute():
+        audio_path = (config_path.parent / audio_path).resolve()
+    return ref_audio, audio_path
+
+
+def _resolve_clone_text(
+    payload: "VoiceCloneTextPayload",
+    audio_path: Path,
+) -> Optional[str]:
+    text = _normalize_clone_text(payload.text)
+    if not text and not payload.x_vector_only and not payload.auto_text:
+        raise ValueError(
+            "Reference text is required. Provide a transcript, enable Whisper "
+            "auto-text, or use x-vector-only mode."
+        )
+    if not text and payload.auto_text:
+        whisper_language = payload.whisper_language or payload.language
+        try:
+            text = asr_util.transcribe_audio(
+                audio_path,
+                model_name=payload.whisper_model,
+                language=whisper_language,
+                device=payload.whisper_device,
+                initial_prompt=payload.whisper_prompt,
+            )
+        except Exception as exc:
+            raise ValueError(f"Whisper transcription failed: {exc}") from exc
+        text = _normalize_clone_text(text)
+        if not text:
+            raise ValueError(
+                "Whisper returned empty text; provide a transcript instead."
+            )
+    if not text and not payload.x_vector_only:
+        raise ValueError(
+            "Reference text is required. Provide a transcript, enable Whisper "
+            "auto-text, or use x-vector-only mode."
+        )
+    return text
 
 
 def _template_rules_path() -> Path:
@@ -1034,6 +1304,14 @@ class FfmpegJob:
     ended_at: Optional[float] = None
 
 
+@dataclass
+class VoiceClonePreview:
+    source_key: str
+    start: str
+    duration: str
+    path: Path
+
+
 class SynthRequest(BaseModel):
     book_id: str
     voice: Optional[str] = None
@@ -1129,6 +1407,42 @@ class MetadataPayload(BaseModel):
     year: Optional[str] = None
 
 
+class VoiceCloneTextPayload(BaseModel):
+    text: Optional[str] = None
+    auto_text: bool = True
+    x_vector_only: bool = False
+    whisper_model: str = "small"
+    whisper_language: Optional[str] = None
+    whisper_device: Optional[str] = None
+    whisper_prompt: Optional[str] = None
+    language: Optional[str] = None
+    gender: Optional[str] = None
+
+
+class VoiceClonePreviewPayload(VoiceCloneTextPayload):
+    source: str
+    start: Optional[str] = None
+    duration: Union[str, float, int] = 12
+
+
+class VoiceCloneSavePayload(VoiceCloneTextPayload):
+    source: str
+    start: Optional[str] = None
+    duration: Union[str, float, int] = 12
+    name: Optional[str] = None
+    overwrite: bool = False
+
+
+class VoiceMetadataPayload(BaseModel):
+    voice: str
+    gender: Optional[str] = None
+    name: Optional[str] = None
+
+
+class VoiceDeletePayload(BaseModel):
+    voice: str
+
+
 def create_app(root_dir: Path) -> FastAPI:
     templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
     app = FastAPI()
@@ -1139,6 +1453,7 @@ def create_app(root_dir: Path) -> FastAPI:
     merge_jobs: dict[str, MergeJob] = {}
     ffmpeg_job: Optional[FfmpegJob] = None
     ffmpeg_error: Optional[str] = None
+    clone_preview: Optional[VoiceClonePreview] = None
 
     app.mount("/audio", StaticFiles(directory=str(root_dir)), name="audio")
 
@@ -1326,8 +1641,311 @@ def create_app(root_dir: Path) -> FastAPI:
     def list_voices() -> JSONResponse:
         local: List[dict] = []
         for voice_id in _list_voice_ids(repo_root):
-            local.append({"label": voice_id, "value": voice_id})
+            entry = {"label": voice_id, "value": voice_id}
+            try:
+                _, config_path = _resolve_voice_config_path(voice_id, repo_root)
+                data = _load_json(config_path)
+                if isinstance(data, dict):
+                    try:
+                        gender = _normalize_voice_gender(data.get("gender"))
+                    except ValueError:
+                        gender = None
+                    if gender:
+                        entry["gender"] = gender
+            except Exception:
+                pass
+            local.append(entry)
         return _no_store({"local": local, "builtin": [], "default": ""})
+
+    @app.post("/api/voices/metadata")
+    def set_voice_metadata(payload: VoiceMetadataPayload) -> JSONResponse:
+        try:
+            voice_id, config_path = _resolve_voice_config_path(payload.voice, repo_root)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        data = _load_json(config_path)
+        if not isinstance(data, dict):
+            raise HTTPException(
+                status_code=400,
+                detail="Voice config must be a JSON object.",
+            )
+
+        fields_set = _payload_fields_set(payload)
+        has_gender = "gender" in fields_set
+        has_name = "name" in fields_set
+        voices_dir = (repo_root / voice_util.VOICE_DIRNAME).resolve()
+
+        old_voice_id = voice_id
+        next_voice_id = voice_id
+        next_config_path = config_path
+        if has_name:
+            requested_name = str(payload.name or "").strip()
+            if not requested_name:
+                raise HTTPException(status_code=400, detail="Voice name is required.")
+            next_stem = _coerce_clone_voice_name(requested_name, voice_id)
+            next_voice_id = next_stem
+            if config_path.name == "voice.json" and config_path.parent != voices_dir:
+                next_dir = config_path.parent.parent / next_stem
+                if next_dir.resolve() != config_path.parent.resolve():
+                    if next_dir.exists():
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"Voice '{next_stem}' already exists.",
+                        )
+                    try:
+                        config_path.parent.rename(next_dir)
+                    except OSError as exc:
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Unable to rename voice: {exc}",
+                    ) from exc
+                    next_config_path = next_dir / "voice.json"
+            else:
+                next_config_path = config_path.with_name(f"{next_stem}.json")
+                if next_config_path.resolve() != config_path.resolve():
+                    if next_config_path.exists():
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"Voice '{next_stem}' already exists.",
+                        )
+                    try:
+                        config_path.rename(next_config_path)
+                    except OSError as exc:
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Unable to rename voice: {exc}",
+                        ) from exc
+
+            data["name"] = next_stem
+        else:
+            next_voice_id = voice_id
+
+        ref_audio_value, audio_path = _resolve_voice_audio_path(next_config_path, data)
+        if has_name:
+            if (
+                audio_path.exists()
+                and audio_path.is_file()
+                and voices_dir in audio_path.resolve().parents
+                and audio_path.stem == old_voice_id
+            ):
+                next_audio_path = audio_path.with_name(
+                    f"{next_voice_id}{audio_path.suffix}"
+                )
+                if next_audio_path.resolve() != audio_path.resolve():
+                    if next_audio_path.exists():
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"Voice audio '{next_voice_id}' already exists.",
+                        )
+                    try:
+                        audio_path.rename(next_audio_path)
+                    except OSError as exc:
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Unable to rename voice audio: {exc}",
+                        ) from exc
+                    audio_path = next_audio_path
+                    if ref_audio_value and not Path(ref_audio_value).is_absolute():
+                        data["ref_audio"] = next_audio_path.relative_to(
+                            next_config_path.parent
+                        ).as_posix()
+                    else:
+                        data["ref_audio"] = str(next_audio_path)
+
+        if has_gender:
+            try:
+                gender = _normalize_voice_gender(payload.gender)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            if gender:
+                data["gender"] = gender
+            else:
+                data.pop("gender", None)
+        else:
+            try:
+                gender = _normalize_voice_gender(data.get("gender"))
+            except ValueError:
+                gender = None
+
+        _atomic_write_json(next_config_path, data)
+        return _no_store(
+            {
+                "status": "saved",
+                "voice": next_voice_id,
+                "gender": gender,
+                "name": next_voice_id,
+            }
+        )
+
+    @app.post("/api/voices/delete")
+    def delete_voice(payload: VoiceDeletePayload) -> JSONResponse:
+        try:
+            voice_id, config_path = _resolve_voice_config_path(payload.voice, repo_root)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        data = _load_json(config_path)
+        if not isinstance(data, dict):
+            data = {}
+        _, audio_path = _resolve_voice_audio_path(config_path, data)
+        voices_dir = (repo_root / voice_util.VOICE_DIRNAME).resolve()
+
+        if audio_path.exists() and audio_path.is_file():
+            if voices_dir in audio_path.resolve().parents:
+                try:
+                    audio_path.unlink()
+                except OSError as exc:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Unable to delete voice audio: {exc}",
+                    ) from exc
+
+        try:
+            config_path.unlink()
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Unable to delete voice config: {exc}",
+            ) from exc
+
+        if config_path.parent != voices_dir and config_path.name == "voice.json":
+            try:
+                if not any(config_path.parent.iterdir()):
+                    config_path.parent.rmdir()
+            except OSError:
+                pass
+
+        return _no_store({"status": "deleted", "voice": voice_id})
+
+    @app.post("/api/voices/clone/preview")
+    def preview_clone_voice(payload: VoiceClonePreviewPayload) -> JSONResponse:
+        nonlocal clone_preview
+        if shutil.which("ffmpeg") is None:
+            raise HTTPException(status_code=400, detail="ffmpeg not found on PATH.")
+
+        try:
+            input_path, source_name, source_key = _resolve_clone_source(
+                payload.source, repo_root
+            )
+            start = _parse_clone_time(payload.start, "start", allow_zero=True)
+            duration = _parse_clone_time(payload.duration, "duration", allow_zero=False)
+            gender = _normalize_voice_gender(payload.gender)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        preview_path = _clone_preview_path(repo_root)
+        try:
+            _run_clone_ffmpeg(input_path, preview_path, start, duration)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        try:
+            text = _resolve_clone_text(payload, preview_path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        clone_preview = VoiceClonePreview(
+            source_key=source_key,
+            start=start,
+            duration=duration,
+            path=preview_path,
+        )
+        return _no_store(
+            {
+                "status": "ready",
+                "preview_url": f"/api/voices/clone/preview-audio?ts={int(time.time() * 1000)}",
+                "suggested_name": _coerce_clone_voice_name(None, source_name),
+                "start": start,
+                "duration": duration,
+                "text": text or "",
+            }
+        )
+
+    @app.get("/api/voices/clone/preview-audio")
+    def preview_clone_voice_audio() -> FileResponse:
+        preview_path = _clone_preview_path(repo_root)
+        if not preview_path.exists() or preview_path.stat().st_size <= 0:
+            raise HTTPException(status_code=404, detail="No clone preview available.")
+        return FileResponse(
+            str(preview_path),
+            media_type="audio/wav",
+            filename="voice-preview.wav",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.post("/api/voices/clone/save")
+    def save_clone_voice(payload: VoiceCloneSavePayload) -> JSONResponse:
+        nonlocal clone_preview
+        if shutil.which("ffmpeg") is None:
+            raise HTTPException(status_code=400, detail="ffmpeg not found on PATH.")
+
+        try:
+            input_path, source_name, source_key = _resolve_clone_source(
+                payload.source, repo_root
+            )
+            start = _parse_clone_time(payload.start, "start", allow_zero=True)
+            duration = _parse_clone_time(payload.duration, "duration", allow_zero=False)
+            gender = _normalize_voice_gender(payload.gender)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        output_name = _coerce_clone_voice_name(payload.name, source_name)
+        voices_dir = repo_root / voice_util.VOICE_DIRNAME
+        voices_dir.mkdir(parents=True, exist_ok=True)
+        output_path = voices_dir / f"{output_name}.wav"
+        config_path = voices_dir / f"{output_name}.json"
+        replaced = output_path.exists()
+        if replaced and not payload.overwrite:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Voice '{output_name}' already exists.",
+            )
+
+        can_reuse_preview = (
+            clone_preview is not None
+            and clone_preview.path.exists()
+            and clone_preview.source_key == source_key
+            and clone_preview.start == start
+            and clone_preview.duration == duration
+        )
+        try:
+            if can_reuse_preview:
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(clone_preview.path, output_path)
+            else:
+                _run_clone_ffmpeg(input_path, output_path, start, duration)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"Unable to write voice: {exc}") from exc
+
+        try:
+            text = _resolve_clone_text(payload, output_path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        language = str(payload.language or voice_util.DEFAULT_LANGUAGE).strip()
+        if not language:
+            language = voice_util.DEFAULT_LANGUAGE
+        config = voice_util.VoiceConfig(
+            name=output_name,
+            ref_audio=output_path.name,
+            ref_text=text,
+            language=language,
+            x_vector_only_mode=bool(payload.x_vector_only),
+            gender=gender,
+        )
+        voice_util.write_voice_config(config, config_path)
+
+        return _no_store(
+            {
+                "status": "saved",
+                "voice": {"label": output_name, "value": output_name},
+                "overwrote": replaced,
+                "used_preview": can_reuse_preview,
+            }
+        )
 
     @app.get("/api/chunk-status")
     def chunk_status(

@@ -16,6 +16,7 @@ class VoiceConfig:
     ref_text: Optional[str]
     language: str = DEFAULT_LANGUAGE
     x_vector_only_mode: bool = False
+    gender: Optional[str] = None
 
     @property
     def audio_path(self) -> Path:
@@ -53,12 +54,19 @@ def load_voice_config(path: Path) -> VoiceConfig:
             ref_text = None
     language = str(data.get("language") or DEFAULT_LANGUAGE).strip() or DEFAULT_LANGUAGE
     x_vector_only_mode = bool(data.get("x_vector_only_mode", False))
+    gender_value = data.get("gender")
+    gender = None
+    if gender_value is not None:
+        cleaned = str(gender_value).strip().lower()
+        if cleaned in {"female", "male"}:
+            gender = cleaned
     return VoiceConfig(
         name=name,
         ref_audio=ref_audio,
         ref_text=ref_text,
         language=language,
         x_vector_only_mode=x_vector_only_mode,
+        gender=gender,
     )
 
 
@@ -70,6 +78,8 @@ def write_voice_config(config: VoiceConfig, path: Path) -> None:
         "language": config.language,
         "x_vector_only_mode": config.x_vector_only_mode,
     }
+    if config.gender:
+        payload["gender"] = config.gender
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",

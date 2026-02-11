@@ -643,6 +643,40 @@
         gap: 8px;
       }
 
+      .local-voice-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .local-voice-section {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--surface);
+      }
+
+      .local-voice-section-label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--muted);
+      }
+
+      .local-voice-section-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .local-voice-section-buttons .voice-button {
+        padding: 5px 10px;
+      }
+
       .voice-button {
         border: 1px solid var(--line-strong);
         background: var(--surface-2);
@@ -652,6 +686,19 @@
         font-size: 12px;
         font-weight: 600;
         cursor: pointer;
+      }
+
+      .voice-button.voice-action {
+        min-width: 30px;
+        padding: 6px 0;
+        font-size: 14px;
+        line-height: 1;
+      }
+
+      .voice-button.voice-action.edit-mode {
+        padding: 6px 10px;
+        font-size: 11px;
+        line-height: 1.2;
       }
 
       .voice-button.active {
@@ -1021,6 +1068,18 @@
         font-family: var(--ui);
       }
 
+      .meta-form textarea {
+        width: 100%;
+        min-height: 90px;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid var(--line-strong);
+        background: var(--surface-2);
+        color: var(--ink);
+        font-family: var(--ui);
+        resize: vertical;
+      }
+
       .meta-actions {
         display: flex;
         align-items: center;
@@ -1037,6 +1096,99 @@
 
       .meta-status[data-tone="error"] {
         color: var(--danger);
+      }
+
+      .clone-card {
+        width: min(520px, calc(100vw - 32px));
+      }
+
+      .clone-form {
+        display: grid;
+        gap: 10px;
+      }
+
+      .clone-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .clone-hint {
+        margin: 2px 0 0;
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .clone-edit-note {
+        margin: 2px 0 0;
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .clone-gender-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .clone-gender-option {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        cursor: pointer;
+      }
+
+      .clone-gender-option input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .clone-gender-option span {
+        border: 1px solid var(--line-strong);
+        background: var(--surface-2);
+        color: var(--ink);
+        padding: 6px 12px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .clone-gender-option input:checked + span {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--accent-ink);
+      }
+
+      .clone-gender-option input:focus-visible + span {
+        outline: 2px solid var(--accent-2);
+        outline-offset: 2px;
+      }
+
+      .clone-gender-option input:disabled + span {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .clone-options {
+        display: grid;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .clone-options label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .clone-preview {
+        margin-top: 6px;
+      }
+
+      .clone-preview audio {
+        width: 100%;
       }
 
       .reader-body {
@@ -1767,6 +1919,9 @@
         .advanced-row .advanced-select {
           grid-column: 2 / -1;
         }
+        .clone-grid {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
     <script>
@@ -1985,6 +2140,68 @@
             </div>
           </div>
         </section>
+        <div class="meta-modal" id="cloneModal" hidden>
+          <div class="meta-card clone-card" role="dialog" aria-modal="true" aria-labelledby="cloneTitleLabel">
+            <div class="meta-header">
+              <h3 id="cloneTitleLabel">ボイスをクローン</h3>
+              <button class="btn circle" id="cloneClose" type="button" aria-label="閉じる">x</button>
+            </div>
+            <div class="meta-form clone-form">
+              <div id="cloneAudioFields">
+                <label for="cloneSource" id="cloneSourceLabel">ソース URL またはローカルパス</label>
+                <input
+                  id="cloneSource"
+                  type="text"
+                  placeholder="https://... or /absolute/path/to/audio.mp3"
+                  autocomplete="off"
+                />
+                <div class="clone-grid">
+                  <div>
+                <label for="cloneStart" id="cloneStartLabel">開始</label>
+                    <input id="cloneStart" type="text" placeholder="" />
+                  </div>
+                  <div>
+                    <label for="cloneDuration" id="cloneDurationLabel">長さ (秒)</label>
+                    <input id="cloneDuration" type="number" min="0.1" step="0.1" placeholder="" />
+                  </div>
+                </div>
+                <p class="clone-hint" id="cloneHint">URL または絶対パスを入力し、プレビューで確認してください。</p>
+              </div>
+              <div class="clone-edit-note" id="cloneEditNote" hidden>
+                <span id="cloneEditNoteLabel">ボイスのメタデータを編集中:</span>
+                <strong id="cloneEditVoiceLabel"></strong>
+              </div>
+              <label for="cloneName" id="cloneNameLabel">ボイス名</label>
+              <input id="cloneName" type="text" placeholder="Defaults to source name" autocomplete="off" />
+              <label id="cloneGenderLabel">ボイス性別</label>
+              <div class="clone-gender-toggle" role="radiogroup" aria-label="Voice gender">
+                <label class="clone-gender-option">
+                  <input id="cloneGenderMale" type="radio" name="cloneGender" value="male" />
+                  <span id="cloneGenderMaleLabel">Male</span>
+                </label>
+                <label class="clone-gender-option">
+                  <input id="cloneGenderFemale" type="radio" name="cloneGender" value="female" />
+                  <span id="cloneGenderFemaleLabel">Female</span>
+                </label>
+              </div>
+              <div id="cloneTextFields">
+              <label for="cloneText" id="cloneTextLabel">トランスクリプト</label>
+              <textarea id="cloneText" placeholder="Audio transcript..."></textarea>
+              <p class="clone-hint" id="cloneWhisperNote">Whisper で自動文字起こしを行います。</p>
+            </div>
+              <div class="clone-preview" id="clonePreviewWrap" hidden>
+                <audio id="clonePreviewAudio" controls preload="metadata"></audio>
+              </div>
+            </div>
+            <div class="meta-actions">
+              <span class="meta-status" id="cloneStatus"></span>
+              <button class="btn" id="cloneCancel" type="button">キャンセル</button>
+              <button class="btn danger" id="cloneDelete" type="button" hidden>削除</button>
+              <button class="btn" id="clonePreviewBtn" type="button">プレビュー</button>
+              <button class="btn primary" id="cloneSave" type="button">保存</button>
+            </div>
+          </div>
+        </div>
         <div class="meta-modal" id="metaModal" hidden>
           <div class="meta-card" role="dialog" aria-modal="true" aria-labelledby="metaTitleLabel">
             <div class="meta-header">
@@ -2150,6 +2367,13 @@
         advancedMode: false,
         voiceMap: { default: null, chapters: {} },
         voiceOptions: [],
+        localVoiceValues: [],
+        voiceGenderMap: {},
+        cloneMode: "add",
+        cloneEditVoice: null,
+        cloneNameDirty: false,
+        cloneTextDirty: false,
+        cloneModalBusy: false,
         advancedSelection: new Set(),
         advancedLastIndex: null,
         voiceMapSaveTimer: null,
@@ -2259,6 +2483,38 @@
       );
       const metaYear = document.getElementById("metaYear");
       const metaYearFieldLabel = document.getElementById("metaYearFieldLabel");
+      const cloneModal = document.getElementById("cloneModal");
+      const cloneClose = document.getElementById("cloneClose");
+      const cloneCancel = document.getElementById("cloneCancel");
+      const clonePreviewBtn = document.getElementById("clonePreviewBtn");
+      const cloneDelete = document.getElementById("cloneDelete");
+      const cloneSave = document.getElementById("cloneSave");
+      const cloneStatus = document.getElementById("cloneStatus");
+      const cloneTitleLabel = document.getElementById("cloneTitleLabel");
+      const cloneSourceLabel = document.getElementById("cloneSourceLabel");
+      const cloneStartLabel = document.getElementById("cloneStartLabel");
+      const cloneDurationLabel = document.getElementById("cloneDurationLabel");
+      const cloneHint = document.getElementById("cloneHint");
+      const cloneAudioFields = document.getElementById("cloneAudioFields");
+      const cloneTextFields = document.getElementById("cloneTextFields");
+      const cloneEditNote = document.getElementById("cloneEditNote");
+      const cloneEditNoteLabel = document.getElementById("cloneEditNoteLabel");
+      const cloneEditVoiceLabel = document.getElementById("cloneEditVoiceLabel");
+      const cloneNameLabel = document.getElementById("cloneNameLabel");
+      const cloneGenderLabel = document.getElementById("cloneGenderLabel");
+      const cloneGenderMaleLabel = document.getElementById("cloneGenderMaleLabel");
+      const cloneGenderFemaleLabel = document.getElementById("cloneGenderFemaleLabel");
+      const cloneTextLabel = document.getElementById("cloneTextLabel");
+      const cloneWhisperNote = document.getElementById("cloneWhisperNote");
+      const cloneSource = document.getElementById("cloneSource");
+      const cloneStart = document.getElementById("cloneStart");
+      const cloneDuration = document.getElementById("cloneDuration");
+      const cloneName = document.getElementById("cloneName");
+      const cloneGenderMale = document.getElementById("cloneGenderMale");
+      const cloneGenderFemale = document.getElementById("cloneGenderFemale");
+      const cloneText = document.getElementById("cloneText");
+      const clonePreviewWrap = document.getElementById("clonePreviewWrap");
+      const clonePreviewAudio = document.getElementById("clonePreviewAudio");
       const editRulesTitle = document.getElementById("editRulesTitle");
       const rulesDrop = document.getElementById("rulesDrop");
       const rulesDropLabel = document.getElementById("rulesDropLabel");
@@ -2335,6 +2591,7 @@
       const BOUNDARY_LOG_FLUSH_MS = 4000;
       let latencyAudioContext = null;
       let latencyAudioContextInit = false;
+      let localVoiceActionButton = null;
 
       const I18N = {
         jp: {
@@ -2400,10 +2657,49 @@
           localVoices: "ローカルボイス",
           builtinVoices: "内蔵ボイス",
           noVoicesFound: "ボイスが見つかりません。",
+          noLocalVoices: "ローカルボイスがありません。",
           voicesLoadFail: "ボイスを読み込めません。",
           defaultVoice: "デフォルト",
           defaultVoiceWithLabel: "デフォルト（{label}）",
           chapterFallback: "章",
+          cloneTitle: "ボイスをクローン",
+          cloneEditTitle: "ボイスのメタデータを編集",
+          cloneSourceLabel: "ソース URL またはローカルパス",
+          cloneSourcePlaceholder: "https://... または /absolute/path/to/audio.mp3",
+          cloneStartLabel: "開始",
+          cloneStartPlaceholder: "0 または 00:00:00 (既定: 0)",
+          cloneDurationLabel: "長さ (秒)",
+          cloneDurationPlaceholder: "12 (既定)",
+          cloneHint: "URL または絶対パスを入力し、プレビューで確認してください。",
+          cloneNameLabel: "ボイス名",
+          cloneNamePlaceholder: "ソース名が未指定の場合の既定",
+          cloneGenderLabel: "ボイス性別",
+          cloneGenderMale: "男性",
+          cloneGenderFemale: "女性",
+          cloneGenderRequired: "男性または女性を選択してください。",
+          voiceGenderOther: "その他",
+          cloneTextLabel: "トランスクリプト",
+          cloneTextPlaceholder: "音声クリップの文字起こし...",
+          cloneWhisperAlways: "Whisper で自動文字起こしを行います。",
+          clonePreview: "プレビュー",
+          cloneSave: "保存",
+          cloneSaveMetadata: "メタデータを保存",
+          cloneCancel: "キャンセル",
+          cloneDelete: "削除",
+          cloneEditNote: "ボイスのメタデータを編集中:",
+          clonePreviewing: "プレビューを生成中...",
+          clonePreviewReady: "プレビュー準備完了。",
+          clonePreviewFailed: "プレビューに失敗しました。",
+          cloneSaving: "ボイスを保存中...",
+          cloneSaved: "ボイスを保存しました。",
+          cloneDeleting: "ボイスを削除中...",
+          cloneDeleted: "ボイスを削除しました。",
+          cloneSourceRequired: "ソースが必要です。",
+          cloneNameRequired: "ボイス名が必要です。",
+          cloneTextRequired: "トランスクリプトが必要です。",
+          cloneOverwriteMessage: "ボイスは既に存在します。",
+          cloneOverwriteConfirm: "{message} 上書きしますか？",
+          cloneDeleteConfirm: "ボイス「{label}」を削除しますか？",
           chunksLabel: "{count} チャンク",
           noChaptersYet: "章がありません。",
           noTextAvailable: "テキストがありません。",
@@ -2688,10 +2984,50 @@
           localVoices: "Local voices",
           builtinVoices: "Built-in voices",
           noVoicesFound: "No voices found.",
+          noLocalVoices: "No local voices.",
           voicesLoadFail: "Unable to load voices.",
           defaultVoice: "Default",
           defaultVoiceWithLabel: "Default ({label})",
           chapterFallback: "Chapter",
+          cloneTitle: "Clone voice",
+          cloneEditTitle: "Edit voice metadata",
+          cloneSourceLabel: "Source URL or local path",
+          cloneSourcePlaceholder: "https://... or /absolute/path/to/audio.mp3",
+          cloneStartLabel: "Start",
+          cloneStartPlaceholder: "0 or 00:00:00 (default: 0)",
+          cloneDurationLabel: "Duration (seconds)",
+          cloneDurationPlaceholder: "12 (default)",
+          cloneHint:
+            "Use a URL or absolute local path, then preview to confirm the clip.",
+          cloneNameLabel: "Voice name",
+          cloneNamePlaceholder: "Defaults to source name",
+          cloneGenderLabel: "Voice gender",
+          cloneGenderMale: "Male",
+          cloneGenderFemale: "Female",
+          cloneGenderRequired: "Select Male or Female.",
+          voiceGenderOther: "Other",
+          cloneTextLabel: "Transcript",
+          cloneTextPlaceholder: "Audio transcript...",
+          cloneWhisperAlways: "Whisper auto-transcribe is always enabled.",
+          clonePreview: "Preview",
+          cloneSave: "Save voice",
+          cloneSaveMetadata: "Save metadata",
+          cloneCancel: "Cancel",
+          cloneDelete: "Delete voice",
+          cloneEditNote: "Editing voice metadata for",
+          clonePreviewing: "Generating preview...",
+          clonePreviewReady: "Preview ready.",
+          clonePreviewFailed: "Preview failed.",
+          cloneSaving: "Saving voice...",
+          cloneSaved: "Saved voice.",
+          cloneDeleting: "Deleting voice...",
+          cloneDeleted: "Deleted voice.",
+          cloneSourceRequired: "Source is required.",
+          cloneNameRequired: "Voice name is required.",
+          cloneTextRequired: "Transcript is required.",
+          cloneOverwriteMessage: "Voice already exists.",
+          cloneOverwriteConfirm: "{message} Overwrite it?",
+          cloneDeleteConfirm: "Delete voice \"{label}\"?",
           chunksLabel: "{count} chunks",
           noChaptersYet: "No chapters yet.",
           noTextAvailable: "No text available.",
@@ -3121,6 +3457,74 @@
         if (metaSave) {
           metaSave.textContent = t("metaSave");
         }
+        if (cloneTitleLabel) {
+          cloneTitleLabel.textContent =
+            state.cloneMode === "edit" ? t("cloneEditTitle") : t("cloneTitle");
+        }
+        if (cloneClose) {
+          cloneClose.setAttribute("aria-label", t("close"));
+        }
+        if (cloneSourceLabel) {
+          cloneSourceLabel.textContent = t("cloneSourceLabel");
+        }
+        if (cloneStartLabel) {
+          cloneStartLabel.textContent = t("cloneStartLabel");
+        }
+        if (cloneDurationLabel) {
+          cloneDurationLabel.textContent = t("cloneDurationLabel");
+        }
+        if (cloneHint) {
+          cloneHint.textContent = t("cloneHint");
+        }
+        if (cloneEditNoteLabel) {
+          cloneEditNoteLabel.textContent = t("cloneEditNote");
+        }
+        if (cloneNameLabel) {
+          cloneNameLabel.textContent = t("cloneNameLabel");
+        }
+        if (cloneGenderLabel) {
+          cloneGenderLabel.textContent = t("cloneGenderLabel");
+        }
+        if (cloneGenderMaleLabel) {
+          cloneGenderMaleLabel.textContent = t("cloneGenderMale");
+        }
+        if (cloneGenderFemaleLabel) {
+          cloneGenderFemaleLabel.textContent = t("cloneGenderFemale");
+        }
+        if (cloneTextLabel) {
+          cloneTextLabel.textContent = t("cloneTextLabel");
+        }
+        if (cloneWhisperNote) {
+          cloneWhisperNote.textContent = t("cloneWhisperAlways");
+        }
+        if (cloneCancel) {
+          cloneCancel.textContent = t("cloneCancel");
+        }
+        if (clonePreviewBtn) {
+          clonePreviewBtn.textContent = t("clonePreview");
+        }
+        if (cloneSave) {
+          cloneSave.textContent =
+            state.cloneMode === "edit" ? t("cloneSaveMetadata") : t("cloneSave");
+        }
+        if (cloneDelete) {
+          cloneDelete.textContent = t("cloneDelete");
+        }
+        if (cloneSource) {
+          cloneSource.placeholder = t("cloneSourcePlaceholder");
+        }
+        if (cloneStart) {
+          cloneStart.placeholder = t("cloneStartPlaceholder");
+        }
+        if (cloneDuration) {
+          cloneDuration.placeholder = t("cloneDurationPlaceholder");
+        }
+        if (cloneName) {
+          cloneName.placeholder = t("cloneNamePlaceholder");
+        }
+        if (cloneText) {
+          cloneText.placeholder = t("cloneTextPlaceholder");
+        }
         if (bookMenuBtn) {
           bookMenuBtn.setAttribute("aria-label", t("more"));
           bookMenuBtn.setAttribute("title", t("more"));
@@ -3190,6 +3594,7 @@
           updateMergeUI(state.lastMergeStatus);
         }
         updateTtsToggleLabel();
+        updateLocalVoiceActionButton();
         updateAdvancedMode(false, false);
         updateLanguageToggle();
         updateThemeToggle();
@@ -4151,6 +4556,7 @@
         buttons.forEach((button) => {
           button.classList.toggle("active", button.dataset.voice === value);
         });
+        updateLocalVoiceActionButton();
         if (state.advancedMode) {
           state.voiceMap.default = value;
           if (persist) {
@@ -4159,8 +4565,12 @@
           renderAdvancedPanel();
         } else {
           state.voicePreference = value;
-          if (persist && value) {
-            localStorage.setItem("nik.voice", value);
+          if (persist) {
+            if (value) {
+              localStorage.setItem("nik.voice", value);
+            } else {
+              localStorage.removeItem("nik.voice");
+            }
           }
         }
       }
@@ -4169,8 +4579,121 @@
         return state.selectedVoice;
       }
 
-      function appendVoiceGroup(container, label, items) {
-        if (!items.length) {
+      function normalizeVoiceGender(value) {
+        const raw = String(value || "").trim().toLowerCase();
+        if (raw === "female" || raw === "male") {
+          return raw;
+        }
+        return "";
+      }
+
+      function getCloneGenderValue() {
+        if (cloneGenderMale && cloneGenderMale.checked) {
+          return "male";
+        }
+        if (cloneGenderFemale && cloneGenderFemale.checked) {
+          return "female";
+        }
+        return "";
+      }
+
+      function setCloneGenderValue(value) {
+        const normalized = normalizeVoiceGender(value);
+        if (cloneGenderMale) {
+          cloneGenderMale.checked = normalized === "male";
+        }
+        if (cloneGenderFemale) {
+          cloneGenderFemale.checked = normalized === "female";
+        }
+      }
+
+      function setCloneGenderDisabled(disabled) {
+        if (cloneGenderMale) {
+          cloneGenderMale.disabled = disabled;
+        }
+        if (cloneGenderFemale) {
+          cloneGenderFemale.disabled = disabled;
+        }
+      }
+
+      function focusCloneGender() {
+        if (cloneGenderMale && !cloneGenderMale.disabled) {
+          cloneGenderMale.focus();
+          return;
+        }
+        if (cloneGenderFemale && !cloneGenderFemale.disabled) {
+          cloneGenderFemale.focus();
+        }
+      }
+
+      function isLocalVoice(value) {
+        if (!value) {
+          return false;
+        }
+        return state.localVoiceValues.includes(value);
+      }
+
+      function selectedLocalVoice() {
+        return isLocalVoice(state.selectedVoice) ? state.selectedVoice : null;
+      }
+
+      function updateLocalVoiceActionButton() {
+        if (!localVoiceActionButton) {
+          return;
+        }
+        const selected = selectedLocalVoice();
+        if (selected) {
+          localVoiceActionButton.textContent = t("edit");
+          localVoiceActionButton.title = t("cloneEditTitle");
+          localVoiceActionButton.setAttribute("aria-label", t("cloneEditTitle"));
+          localVoiceActionButton.classList.add("edit-mode");
+          localVoiceActionButton.dataset.mode = "edit";
+        } else {
+          localVoiceActionButton.textContent = "+";
+          localVoiceActionButton.title = t("cloneTitle");
+          localVoiceActionButton.setAttribute("aria-label", t("cloneTitle"));
+          localVoiceActionButton.classList.remove("edit-mode");
+          localVoiceActionButton.dataset.mode = "add";
+        }
+      }
+
+      function createVoiceSelectionButton(item) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "voice-button";
+        button.dataset.voice = item.value;
+        button.textContent = formatVoiceLabel(item.label);
+        button.addEventListener("click", () => {
+          if (state.selectedVoice === item.value) {
+            setSelectedVoice(null);
+            return;
+          }
+          setSelectedVoice(item.value);
+        });
+        return button;
+      }
+
+      function createLocalVoiceActionButton() {
+        const actionButton = document.createElement("button");
+        actionButton.type = "button";
+        actionButton.className = "voice-button voice-action";
+        actionButton.addEventListener("click", () => {
+          const selected = selectedLocalVoice();
+          if (selected) {
+            openCloneModal("edit", selected);
+            return;
+          }
+          openCloneModal("add");
+        });
+        localVoiceActionButton = actionButton;
+        updateLocalVoiceActionButton();
+        return actionButton;
+      }
+
+      function appendVoiceGroup(container, label, items, options = {}) {
+        const includeAddButton = !!options.includeAddButton;
+        const emptyLabel = options.emptyLabel || "";
+        if (!items.length && !includeAddButton && !emptyLabel) {
           return;
         }
         const group = document.createElement("div");
@@ -4180,20 +4703,93 @@
         title.textContent = label;
         const buttons = document.createElement("div");
         buttons.className = "voice-buttons";
-        items.forEach((item) => {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = "voice-button";
-          button.dataset.voice = item.value;
-          button.textContent = formatVoiceLabel(item.label);
-          button.addEventListener("click", () => {
-            setSelectedVoice(item.value);
+        if (items.length) {
+          items.forEach((item) => {
+            buttons.appendChild(createVoiceSelectionButton(item));
           });
-          buttons.appendChild(button);
-        });
+        } else if (emptyLabel) {
+          const empty = document.createElement("div");
+          empty.className = "voice-empty";
+          empty.textContent = emptyLabel;
+          buttons.appendChild(empty);
+        }
+        if (includeAddButton) {
+          buttons.appendChild(createLocalVoiceActionButton());
+        }
         group.appendChild(title);
         group.appendChild(buttons);
         container.appendChild(group);
+      }
+
+      function voiceStemFromValue(value) {
+        if (!value) {
+          return "";
+        }
+        const parts = String(value).split(/[\\/]/);
+        const leaf = parts[parts.length - 1] || "";
+        if (!leaf) {
+          return "";
+        }
+        return leaf.replace(/\.[^.]+$/, "");
+      }
+
+      function renderLocalVoiceGroups(local) {
+        const female = [];
+        const male = [];
+        const unspecified = [];
+        local.forEach((item) => {
+          const gender = normalizeVoiceGender(item.gender);
+          if (gender === "female") {
+            female.push(item);
+          } else if (gender === "male") {
+            male.push(item);
+          } else {
+            unspecified.push(item);
+          }
+        });
+        const group = document.createElement("div");
+        group.className = "voice-group";
+        const title = document.createElement("div");
+        title.className = "voice-group-title";
+        title.textContent = t("localVoices");
+        const row = document.createElement("div");
+        row.className = "local-voice-row";
+        const buckets = [
+          { label: "F", items: female, title: t("cloneGenderFemale") },
+          { label: "M", items: male, title: t("cloneGenderMale") },
+          { label: t("voiceGenderOther"), items: unspecified, title: t("voiceGenderOther") },
+        ];
+        let hasLocal = false;
+        buckets.forEach((bucket) => {
+          if (!bucket.items.length) {
+            return;
+          }
+          hasLocal = true;
+          const section = document.createElement("div");
+          section.className = "local-voice-section";
+          section.title = bucket.title;
+          const label = document.createElement("span");
+          label.className = "local-voice-section-label";
+          label.textContent = bucket.label;
+          const buttons = document.createElement("div");
+          buttons.className = "local-voice-section-buttons";
+          bucket.items.forEach((item) => {
+            buttons.appendChild(createVoiceSelectionButton(item));
+          });
+          section.appendChild(label);
+          section.appendChild(buttons);
+          row.appendChild(section);
+        });
+        if (!hasLocal) {
+          const empty = document.createElement("div");
+          empty.className = "voice-empty";
+          empty.textContent = t("noLocalVoices");
+          row.appendChild(empty);
+        }
+        row.appendChild(createLocalVoiceActionButton());
+        group.appendChild(title);
+        group.appendChild(row);
+        voiceGroup.appendChild(group);
       }
 
       function formatVoiceLabel(label) {
@@ -4234,16 +4830,30 @@
           const builtin = Array.isArray(data.builtin) ? data.builtin : [];
           const defaultVoice = data.default || "";
 
+          state.localVoiceValues = local
+            .map((item) => item.value)
+            .filter((value) => typeof value === "string" && value);
+          const voiceGenderMap = {};
+          local.forEach((item) => {
+            const value = typeof item.value === "string" ? item.value : "";
+            if (!value) {
+              return;
+            }
+            const gender = normalizeVoiceGender(item.gender);
+            if (gender) {
+              voiceGenderMap[value] = gender;
+            }
+          });
+          state.voiceGenderMap = voiceGenderMap;
+
           state.voiceOptions = [...local, ...builtin];
           voiceGroup.innerHTML = "";
-          appendVoiceGroup(voiceGroup, t("localVoices"), local);
+          localVoiceActionButton = null;
+          renderLocalVoiceGroups(local);
           appendVoiceGroup(voiceGroup, t("builtinVoices"), builtin);
 
           const available = state.voiceOptions.map((item) => item.value);
           if (!available.length) {
-            voiceGroup.innerHTML = `<div class="voice-empty">${t(
-              "noVoicesFound"
-            )}</div>`;
             setSelectedVoice(null, false);
             return;
           }
@@ -4270,6 +4880,362 @@
           voiceGroup.innerHTML = `<div class="voice-empty">${t(
             "voicesLoadFail"
           )}</div>`;
+        }
+      }
+
+      function setCloneStatus(message, tone = "") {
+        if (!cloneStatus) {
+          return;
+        }
+        cloneStatus.textContent = message || "";
+        if (tone) {
+          cloneStatus.dataset.tone = tone;
+        } else {
+          delete cloneStatus.dataset.tone;
+        }
+      }
+
+      function resetClonePreview() {
+        if (clonePreviewAudio) {
+          clonePreviewAudio.pause();
+          clonePreviewAudio.removeAttribute("src");
+          clonePreviewAudio.load();
+        }
+        if (clonePreviewWrap) {
+          clonePreviewWrap.hidden = true;
+        }
+      }
+
+      function setCloneBusy(busy) {
+        state.cloneModalBusy = busy;
+        const disabled = !!busy;
+        if (cloneSource) {
+          cloneSource.disabled = disabled;
+        }
+        if (cloneStart) {
+          cloneStart.disabled = disabled;
+        }
+        if (cloneDuration) {
+          cloneDuration.disabled = disabled;
+        }
+        if (cloneName) {
+          cloneName.disabled = disabled;
+        }
+        if (cloneText) {
+          cloneText.disabled = disabled;
+        }
+        setCloneGenderDisabled(disabled);
+        if (clonePreviewBtn) {
+          clonePreviewBtn.disabled = disabled;
+        }
+        if (cloneDelete) {
+          cloneDelete.disabled = disabled;
+        }
+        if (cloneSave) {
+          cloneSave.disabled = disabled;
+        }
+      }
+
+      function setCloneMode(mode, editVoiceValue = null) {
+        const editing = mode === "edit";
+        state.cloneMode = editing ? "edit" : "add";
+        state.cloneEditVoice = editing ? editVoiceValue : null;
+        if (cloneTitleLabel) {
+          cloneTitleLabel.textContent = editing
+            ? t("cloneEditTitle")
+            : t("cloneTitle");
+        }
+        if (cloneAudioFields) {
+          cloneAudioFields.hidden = editing;
+        }
+        if (cloneTextFields) {
+          cloneTextFields.hidden = editing;
+        }
+        if (clonePreviewBtn) {
+          clonePreviewBtn.hidden = editing;
+        }
+        if (cloneDelete) {
+          cloneDelete.hidden = !editing;
+        }
+        if (cloneSave) {
+          cloneSave.textContent = editing
+            ? t("cloneSaveMetadata")
+            : t("cloneSave");
+        }
+        if (cloneEditNote) {
+          cloneEditNote.hidden = !editing;
+        }
+        if (cloneEditVoiceLabel) {
+          cloneEditVoiceLabel.textContent = editing
+            ? voiceLabelFromValue(editVoiceValue || "")
+            : "";
+        }
+        if (editing) {
+          resetClonePreview();
+        }
+      }
+
+      function openCloneModal(mode = "add", editVoiceValue = null) {
+        if (!cloneModal) {
+          return;
+        }
+        const selectedForEdit =
+          mode === "edit" ? editVoiceValue || selectedLocalVoice() : null;
+        if (mode === "edit" && !selectedForEdit) {
+          mode = "add";
+        }
+        setCloneMode(mode, selectedForEdit);
+        if (cloneSource) {
+          cloneSource.value = "";
+        }
+        if (cloneStart) {
+          cloneStart.value = "";
+        }
+        if (cloneDuration) {
+          cloneDuration.value = "";
+        }
+        if (cloneName) {
+          if (mode === "edit" && selectedForEdit) {
+            cloneName.value = voiceStemFromValue(selectedForEdit);
+          } else {
+            cloneName.value = "";
+          }
+        }
+        if (mode === "edit" && selectedForEdit) {
+          setCloneGenderValue(state.voiceGenderMap[selectedForEdit] || "");
+        } else {
+          setCloneGenderValue("");
+        }
+        if (cloneText) {
+          cloneText.value = "";
+        }
+        state.cloneNameDirty = false;
+        state.cloneTextDirty = false;
+        setCloneStatus("");
+        resetClonePreview();
+        setCloneBusy(false);
+        cloneModal.hidden = false;
+        if (mode === "edit") {
+          if (cloneName) {
+            cloneName.focus();
+            cloneName.select();
+          } else {
+            focusCloneGender();
+          }
+        } else if (cloneSource) {
+          cloneSource.focus();
+          cloneSource.select();
+        }
+      }
+
+      function closeCloneModal() {
+        if (!cloneModal) {
+          return;
+        }
+        resetClonePreview();
+        cloneModal.hidden = true;
+      }
+
+      function clonePayload() {
+        if (state.cloneMode === "edit") {
+          return null;
+        }
+        const source = cloneSource ? cloneSource.value.trim() : "";
+        const start = cloneStart ? cloneStart.value.trim() : "";
+        const duration = cloneDuration ? cloneDuration.value.trim() : "";
+        const name = cloneName ? cloneName.value.trim() : "";
+        const text = cloneText ? cloneText.value.trim() : "";
+        const gender = getCloneGenderValue();
+
+        if (!source) {
+          setCloneStatus(t("cloneSourceRequired"), "error");
+          if (cloneSource) {
+            cloneSource.focus();
+          }
+          return null;
+        }
+        if (!gender) {
+          setCloneStatus(t("cloneGenderRequired"), "error");
+          focusCloneGender();
+          return null;
+        }
+        const payload = {
+          source,
+          start: start || "0",
+          duration: duration || "12",
+          auto_text: true,
+          x_vector_only: false,
+          gender,
+        };
+        if (name) {
+          payload.name = name;
+        }
+        if (text) {
+          payload.text = text;
+        }
+        return payload;
+      }
+
+      async function previewCloneVoice() {
+        if (state.cloneMode === "edit") {
+          return;
+        }
+        const payload = clonePayload();
+        if (!payload) {
+          return;
+        }
+        setCloneBusy(true);
+        setCloneStatus(t("clonePreviewing"));
+        try {
+          const data = await fetchJson("/api/voices/clone/preview", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          resetClonePreview();
+          if (clonePreviewAudio && data.preview_url) {
+            clonePreviewAudio.src = data.preview_url;
+            clonePreviewAudio.load();
+          }
+          if (clonePreviewWrap) {
+            clonePreviewWrap.hidden = false;
+          }
+          if (cloneName && !state.cloneNameDirty && data.suggested_name) {
+            cloneName.value = data.suggested_name;
+          }
+          if (cloneText && !state.cloneTextDirty) {
+            cloneText.value = data.text || "";
+          }
+          setCloneStatus(t("clonePreviewReady"));
+        } catch (err) {
+          setCloneStatus(err.message || t("clonePreviewFailed"), "error");
+        } finally {
+          setCloneBusy(false);
+        }
+      }
+
+      async function saveVoiceMetadata() {
+        const voiceValue = state.cloneEditVoice || selectedLocalVoice();
+        if (!voiceValue) {
+          setCloneStatus(t("noLocalVoices"), "error");
+          return;
+        }
+        const gender = getCloneGenderValue();
+        const voiceName = cloneName ? cloneName.value.trim() : "";
+        if (!gender) {
+          setCloneStatus(t("cloneGenderRequired"), "error");
+          focusCloneGender();
+          return;
+        }
+        if (!voiceName) {
+          setCloneStatus(t("cloneNameRequired"), "error");
+          if (cloneName) {
+            cloneName.focus();
+          }
+          return;
+        }
+        setCloneBusy(true);
+        setCloneStatus(t("cloneSaving"));
+        try {
+          const data = await fetchJson("/api/voices/metadata", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              voice: voiceValue,
+              gender,
+              name: voiceName,
+            }),
+          });
+          await loadVoices();
+          const nextVoice =
+            data && typeof data.voice === "string" ? data.voice : voiceValue;
+          setSelectedVoice(nextVoice);
+          setStatus(t("cloneSaved"));
+          closeCloneModal();
+        } catch (err) {
+          setCloneStatus(err.message || t("clonePreviewFailed"), "error");
+        } finally {
+          setCloneBusy(false);
+        }
+      }
+
+      async function deleteLocalVoice() {
+        const voiceValue = state.cloneEditVoice || selectedLocalVoice();
+        if (!voiceValue) {
+          setCloneStatus(t("noLocalVoices"), "error");
+          return;
+        }
+        const label = voiceLabelFromValue(voiceValue) || voiceValue;
+        const confirmed = window.confirm(
+          t("cloneDeleteConfirm", { label })
+        );
+        if (!confirmed) {
+          return;
+        }
+        setCloneBusy(true);
+        setCloneStatus(t("cloneDeleting"));
+        try {
+          await fetchJson("/api/voices/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ voice: voiceValue }),
+          });
+          await loadVoices();
+          setStatus(t("cloneDeleted"));
+          closeCloneModal();
+        } catch (err) {
+          setCloneStatus(err.message || t("clonePreviewFailed"), "error");
+        } finally {
+          setCloneBusy(false);
+        }
+      }
+
+      async function saveCloneVoice() {
+        if (state.cloneMode === "edit") {
+          await saveVoiceMetadata();
+          return;
+        }
+        const basePayload = clonePayload();
+        if (!basePayload) {
+          return;
+        }
+        let overwrite = false;
+        while (true) {
+          setCloneBusy(true);
+          setCloneStatus(t("cloneSaving"));
+          try {
+            const payload = { ...basePayload, overwrite };
+            const data = await fetchJson("/api/voices/clone/save", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+            await loadVoices();
+            if (data && data.voice && data.voice.value) {
+              setSelectedVoice(data.voice.value);
+              setStatus(t("cloneSaved"));
+            } else {
+              setStatus(t("cloneSaved"));
+            }
+            closeCloneModal();
+            return;
+          } catch (err) {
+            if (err && err.status === 409 && !overwrite) {
+              setCloneBusy(false);
+              const message = err.message || t("cloneOverwriteMessage");
+              const confirmed = window.confirm(
+                t("cloneOverwriteConfirm", { message })
+              );
+              if (confirmed) {
+                overwrite = true;
+                continue;
+              }
+            }
+            setCloneStatus(err.message || t("clonePreviewFailed"), "error");
+            return;
+          } finally {
+            setCloneBusy(false);
+          }
         }
       }
 
@@ -4439,12 +5405,51 @@
           ? t("defaultVoiceWithLabel", { label: defaultLabel })
           : t("defaultVoice");
         select.appendChild(defaultOption);
+        const buckets = {
+          female: [],
+          male: [],
+          unspecified: [],
+          builtin: [],
+        };
         state.voiceOptions.forEach((entry) => {
-          const option = document.createElement("option");
-          option.value = entry.value;
-          option.textContent = formatVoiceLabel(entry.label);
-          select.appendChild(option);
+          if (!entry || !entry.value) {
+            return;
+          }
+          if (isLocalVoice(entry.value)) {
+            const gender = normalizeVoiceGender(
+              entry.gender || state.voiceGenderMap[entry.value]
+            );
+            if (gender === "female") {
+              buckets.female.push(entry);
+            } else if (gender === "male") {
+              buckets.male.push(entry);
+            } else {
+              buckets.unspecified.push(entry);
+            }
+          } else {
+            buckets.builtin.push(entry);
+          }
         });
+
+        const appendOptionGroup = (label, items) => {
+          if (!items.length) {
+            return;
+          }
+          const group = document.createElement("optgroup");
+          group.label = label;
+          items.forEach((entry) => {
+            const option = document.createElement("option");
+            option.value = entry.value;
+            option.textContent = formatVoiceLabel(entry.label);
+            group.appendChild(option);
+          });
+          select.appendChild(group);
+        };
+
+        appendOptionGroup(t("cloneGenderFemale"), buckets.female);
+        appendOptionGroup(t("cloneGenderMale"), buckets.male);
+        appendOptionGroup(t("voiceGenderOther"), buckets.unspecified);
+        appendOptionGroup(t("builtinVoices"), buckets.builtin);
       }
 
       function updateChapterVoice(chapterId, voiceValue) {
@@ -7363,9 +8368,67 @@
           closeMetaModal();
         }
       });
+      if (cloneClose) {
+        cloneClose.addEventListener("click", closeCloneModal);
+      }
+      if (cloneCancel) {
+        cloneCancel.addEventListener("click", closeCloneModal);
+      }
+      if (clonePreviewBtn) {
+        clonePreviewBtn.addEventListener("click", previewCloneVoice);
+      }
+      if (cloneDelete) {
+        cloneDelete.addEventListener("click", deleteLocalVoice);
+      }
+      if (cloneSave) {
+        cloneSave.addEventListener("click", saveCloneVoice);
+      }
+      if (cloneSource) {
+        cloneSource.addEventListener("input", () => {
+          resetClonePreview();
+          setCloneStatus("");
+        });
+      }
+      if (cloneStart) {
+        cloneStart.addEventListener("input", () => {
+          resetClonePreview();
+          setCloneStatus("");
+        });
+      }
+      if (cloneDuration) {
+        cloneDuration.addEventListener("input", () => {
+          resetClonePreview();
+          setCloneStatus("");
+        });
+      }
+      if (cloneName) {
+        cloneName.addEventListener("input", () => {
+          state.cloneNameDirty = cloneName.value.trim().length > 0;
+          setCloneStatus("");
+        });
+      }
+      if (cloneText) {
+        cloneText.addEventListener("input", () => {
+          state.cloneTextDirty = cloneText.value.trim().length > 0;
+          setCloneStatus("");
+        });
+      }
+      if (cloneModal) {
+        cloneModal.addEventListener("click", (event) => {
+          if (event.target === cloneModal) {
+            closeCloneModal();
+          }
+        });
+      }
       document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && metaModal && !metaModal.hidden) {
-          closeMetaModal();
+        if (event.key === "Escape") {
+          if (cloneModal && !cloneModal.hidden) {
+            closeCloneModal();
+            return;
+          }
+          if (metaModal && !metaModal.hidden) {
+            closeMetaModal();
+          }
         }
       });
       editToggle.addEventListener("click", toggleEditPanel);

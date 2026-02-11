@@ -1,7 +1,21 @@
 import json
+import shutil
 from pathlib import Path
 
+import pytest
+from fastapi.testclient import TestClient
+
 from nik import player as player_util
+from nik import voice as voice_util
+
+
+def _make_repo(tmp_path: Path) -> tuple[Path, Path]:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "pyproject.toml").write_text("[project]\nname='nik'\n", encoding="utf-8")
+    root_dir = repo_root / "out"
+    root_dir.mkdir()
+    return repo_root, root_dir
 
 
 def test_list_voice_ids(tmp_path: Path) -> None:
@@ -74,3 +88,160 @@ def test_delete_m4b_outputs_removes_parts(tmp_path: Path) -> None:
     assert not base.exists()
     assert not part1.exists()
     assert not part2.exists()
+
+
+def test_parse_clone_time_accepts_seconds_and_timecode() -> None:
+    assert player_util._parse_clone_time("0", "start", allow_zero=True) == "0"
+    assert player_util._parse_clone_time("1.250", "start", allow_zero=True) == "1.25"
+    assert player_util._parse_clone_time("01:02", "start", allow_zero=True) == "62"
+    assert player_util._parse_clone_time("00:01:02.5", "start", allow_zero=True) == "62.5"
+
+
+@pytest.mark.parametrize(
+    "raw,allow_zero,message",
+    [
+        ("", False, "required"),
+        ("-1", True, ">= 0"),
+        ("0", False, "> 0"),
+        ("00:61", True, "below 60"),
+        ("a:b:c", True, "timecode"),
+    ],
+)
+def test_parse_clone_time_rejects_invalid_values(
+    raw: str,
+    allow_zero: bool,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        player_util._parse_clone_time(raw, "duration", allow_zero=allow_zero)
+
+
+def test_clone_preview_and_save_reuses_preview(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root, root_dir = _make_repo(tmp_path)
+    source = repo_root / "voice-source.mp3"
+    source.write_bytes(b"source")
+    source_path = str(source)
+    calls: list[tuple[Path, Path, str, str]] = []
+
+    def fake_run_clone_ffmpeg(
+        input_path: Path,
+        output_path: Path,
+        start: str,
+        duration: str,
+    ) -> None:
+        calls.append((input_path, output_path, start, duration))
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"RIFFFAKEWAVE")
+
+    real_which = shutil.which
+
+    def fake_which(name: str) -> str | None:
+        if name == "ffmpeg":
+            return "/usr/bin/ffmpeg"
+        return real_which(name)
+
+    monkeypatch.setattr(player_util, "_run_clone_ffmpeg", fake_run_clone_ffmpeg)
+    monkeypatch.setattr(player_util.shutil, "which", fake_which)
+    monkeypatch.setattr(
+        player_util.asr_util, "transcribe_audio", lambda *args, **kwargs: "hello world"
+    )
+
+    app = player_util.create_app(root_dir)
+    client = TestClient(app)
+
+    preview = client.post(
+        "/api/voices/clone/preview",
+        json={"source": source_path, "start": "1", "duration": "3.5", "gender": "female"},
+    )
+    assert preview.status_code == 200
+    preview_payload = preview.json()
+    assert preview_payload["status"] == "ready"
+    assert preview_payload["suggested_name"] == "voice-source"
+    assert preview_payload["start"] == "1"
+    assert preview_payload["duration"] == "3.5"
+    assert preview_payload["text"] == "hello world"
+    assert len(calls) == 1
+
+    preview_audio = client.get("/api/voices/clone/preview-audio")
+    assert preview_audio.status_code == 200
+    assert preview_audio.headers["content-type"].startswith("audio/wav")
+
+    save = client.post(
+        "/api/voices/clone/save",
+        json={
+            "source": source_path,
+            "start": "1",
+            "duration": "3.5",
+            "name": "narrator",
+            "gender": "female",
+        },
+    )
+    assert save.status_code == 200
+    save_payload = save.json()
+    assert save_payload["status"] == "saved"
+    assert save_payload["used_preview"] is True
+    assert save_payload["voice"] == {"label": "narrator", "value": "narrator"}
+    assert len(calls) == 1
+
+    voice_audio = repo_root / "voices" / "narrator.wav"
+    voice_config = repo_root / "voices" / "narrator.json"
+    assert voice_audio.exists()
+    assert voice_config.exists()
+    payload = json.loads(voice_config.read_text(encoding="utf-8"))
+    assert payload["ref_audio"] == "narrator.wav"
+    assert payload["ref_text"] == "hello world"
+    assert payload["gender"] == "female"
+
+
+def test_voice_metadata_update_and_delete(tmp_path: Path) -> None:
+    repo_root, root_dir = _make_repo(tmp_path)
+    voices_dir = repo_root / "voices"
+    voices_dir.mkdir(parents=True, exist_ok=True)
+    voice_path = voices_dir / "sample.wav"
+    voice_path.write_bytes(b"RIFFFAKEWAVE")
+    config_path = voices_dir / "sample.json"
+    config = voice_util.VoiceConfig(
+        name="sample",
+        ref_audio="sample.wav",
+        ref_text="hello",
+        language="Japanese",
+        x_vector_only_mode=False,
+    )
+    voice_util.write_voice_config(config, config_path)
+
+    app = player_util.create_app(root_dir)
+    client = TestClient(app)
+
+    save = client.post(
+        "/api/voices/metadata",
+        json={"voice": "sample", "gender": "male", "name": "Sample2"},
+    )
+    assert save.status_code == 200
+    save_payload = save.json()
+    assert save_payload["voice"] == "Sample2"
+    assert save_payload["gender"] == "male"
+    assert (voices_dir / "sample.wav").exists() is False
+    assert (voices_dir / "Sample2.wav").exists()
+    assert (voices_dir / "sample.json").exists() is False
+    assert (voices_dir / "Sample2.json").exists()
+    updated = json.loads((voices_dir / "Sample2.json").read_text(encoding="utf-8"))
+    assert updated["ref_audio"] == "Sample2.wav"
+    assert updated["gender"] == "male"
+
+    listed = client.get("/api/voices")
+    assert listed.status_code == 200
+    local_entry = next(
+        item for item in listed.json()["local"] if item["value"] == "Sample2"
+    )
+    assert local_entry["gender"] == "male"
+
+    deleted = client.post(
+        "/api/voices/delete",
+        json={"voice": "Sample2"},
+    )
+    assert deleted.status_code == 200
+    assert deleted.json() == {"status": "deleted", "voice": "Sample2"}
+    assert not (voices_dir / "Sample2.wav").exists()
+    assert not (voices_dir / "Sample2.json").exists()
