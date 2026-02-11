@@ -10,7 +10,7 @@ import unicodedata
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from . import tts as tts_util
 from .text import SECTION_BREAK, normalize_section_breaks, read_clean_text
@@ -158,6 +158,13 @@ _SMALL_CAPS_STOPWORDS = {
     "your",
     "yours",
 }
+
+_RUBY_MARKER_OPEN = "\ue100"
+_RUBY_MARKER_CLOSE = "\ue101"
+_RUBY_MARKER_TOKEN_RE = re.compile(
+    rf"{re.escape(_RUBY_MARKER_OPEN)}(\d+){re.escape(_RUBY_MARKER_OPEN)}|"
+    rf"{re.escape(_RUBY_MARKER_CLOSE)}(\d+){re.escape(_RUBY_MARKER_CLOSE)}"
+)
 _VOWELS = set("aeiouyāīūṛṝḷḹ")
 
 
@@ -614,6 +621,204 @@ def apply_remove_patterns(
     return text, stats
 
 
+def _sanitize_text_for_ruby_tracking(
+    text: str,
+    cutoff_patterns: List[re.Pattern],
+    remove_patterns: List[re.Pattern],
+    case_words: Iterable[str],
+) -> str:
+    normalized = normalize_text(text)
+    cutoff_text, _ = apply_section_cutoff(normalized, cutoff_patterns)
+    cleaned, _ = apply_remove_patterns(cutoff_text, remove_patterns)
+    cleaned = normalize_text(cleaned)
+    cleaned = normalize_small_caps(cleaned, extra_words=case_words)
+    cleaned = normalize_all_caps(cleaned, extra_words=case_words)
+    return cleaned
+
+
+def _ruby_marker_token(span_id: int, is_start: bool) -> str:
+    marker = _RUBY_MARKER_OPEN if is_start else _RUBY_MARKER_CLOSE
+    return f"{marker}{span_id}{marker}"
+
+
+def _prepare_tracked_ruby_spans(
+    text: str, raw_spans: Sequence[dict]
+) -> List[dict]:
+    prepared: List[dict] = []
+    for item in raw_spans:
+        if not isinstance(item, dict):
+            continue
+        try:
+            start = int(item.get("start"))
+            end = int(item.get("end"))
+        except (TypeError, ValueError):
+            continue
+        if start < 0 or end <= start or end > len(text):
+            continue
+        base = str(item.get("base") or "")
+        reading = str(item.get("reading") or "")
+        if not reading:
+            continue
+        if base and text[start:end] != base:
+            continue
+        if not base:
+            base = text[start:end]
+        prepared.append(
+            {
+                "start": start,
+                "end": end,
+                "base": base,
+                "reading": reading,
+            }
+        )
+    prepared.sort(key=lambda span: (int(span["start"]), int(span["end"])))
+
+    tracked: List[dict] = []
+    cursor = 0
+    for span in prepared:
+        start = int(span["start"])
+        end = int(span["end"])
+        if start < cursor:
+            continue
+        tracked.append(
+            {
+                "id": len(tracked),
+                "start": start,
+                "end": end,
+                "base": str(span["base"]),
+                "reading": str(span["reading"]),
+            }
+        )
+        cursor = end
+    return tracked
+
+
+def _inject_ruby_markers(
+    text: str, spans: Sequence[dict], use_reading: bool
+) -> str:
+    if not spans:
+        return text
+    parts: List[str] = []
+    cursor = 0
+    for span in spans:
+        start = int(span["start"])
+        end = int(span["end"])
+        span_id = int(span["id"])
+        if start < cursor or end < start or end > len(text):
+            continue
+        parts.append(text[cursor:start])
+        parts.append(_ruby_marker_token(span_id, True))
+        if use_reading:
+            parts.append(str(span["reading"]))
+        else:
+            parts.append(str(span["base"]))
+        parts.append(_ruby_marker_token(span_id, False))
+        cursor = end
+    parts.append(text[cursor:])
+    return "".join(parts)
+
+
+def _extract_ruby_marker_ranges(
+    text: str,
+) -> Tuple[str, Dict[int, Tuple[int, int]]]:
+    plain_parts: List[str] = []
+    ranges: Dict[int, Tuple[int, int]] = {}
+    open_positions: Dict[int, int] = {}
+    last = 0
+    plain_pos = 0
+
+    for match in _RUBY_MARKER_TOKEN_RE.finditer(text):
+        segment = text[last : match.start()]
+        plain_parts.append(segment)
+        plain_pos += len(segment)
+        start_id = match.group(1)
+        end_id = match.group(2)
+        if start_id is not None:
+            span_id = int(start_id)
+            if span_id not in open_positions:
+                open_positions[span_id] = plain_pos
+        elif end_id is not None:
+            span_id = int(end_id)
+            start_pos = open_positions.pop(span_id, None)
+            if start_pos is not None and plain_pos >= start_pos:
+                ranges[span_id] = (start_pos, plain_pos)
+        last = match.end()
+
+    plain_parts.append(text[last:])
+    plain_text = "".join(plain_parts)
+    return plain_text, ranges
+
+
+def _collect_clean_ruby_spans_from_raw(
+    raw_text_original: str,
+    raw_spans: Sequence[dict],
+    cleaned_text: str,
+    cutoff_patterns: List[re.Pattern],
+    remove_patterns: List[re.Pattern],
+    case_words: Iterable[str],
+) -> Optional[List[dict]]:
+    if not raw_spans:
+        return []
+    if _RUBY_MARKER_OPEN in raw_text_original or _RUBY_MARKER_CLOSE in raw_text_original:
+        return None
+
+    tracked = _prepare_tracked_ruby_spans(raw_text_original, raw_spans)
+    if not tracked:
+        return []
+    for span in tracked:
+        base = str(span["base"])
+        reading = str(span["reading"])
+        if _RUBY_MARKER_OPEN in base or _RUBY_MARKER_CLOSE in base:
+            return None
+        if _RUBY_MARKER_OPEN in reading or _RUBY_MARKER_CLOSE in reading:
+            return None
+
+    base_marked = _inject_ruby_markers(raw_text_original, tracked, use_reading=False)
+    ruby_marked = _inject_ruby_markers(raw_text_original, tracked, use_reading=True)
+
+    base_cleaned_marked = _sanitize_text_for_ruby_tracking(
+        base_marked, cutoff_patterns, remove_patterns, case_words
+    )
+    ruby_cleaned_marked = _sanitize_text_for_ruby_tracking(
+        ruby_marked, cutoff_patterns, remove_patterns, case_words
+    )
+    plain_base, base_ranges = _extract_ruby_marker_ranges(base_cleaned_marked)
+    plain_ruby, ruby_ranges = _extract_ruby_marker_ranges(ruby_cleaned_marked)
+    if plain_base != cleaned_text:
+        if len(plain_base) != len(cleaned_text):
+            return None
+        if plain_base.lower() != cleaned_text.lower():
+            return None
+    if len(plain_base) != len(cleaned_text):
+        return None
+
+    spans: List[dict] = []
+    for span in tracked:
+        span_id = int(span["id"])
+        base_range = base_ranges.get(span_id)
+        ruby_range = ruby_ranges.get(span_id)
+        if base_range is None or ruby_range is None:
+            continue
+        base_start, base_end = base_range
+        ruby_start, ruby_end = ruby_range
+        if base_end <= base_start or ruby_end <= ruby_start:
+            continue
+        base = plain_base[base_start:base_end]
+        reading = plain_ruby[ruby_start:ruby_end]
+        if tts_util._is_suspicious_ruby_span(base, reading):
+            continue
+        spans.append(
+            {
+                "start": base_start,
+                "end": base_end,
+                "base": base,
+                "reading": reading,
+            }
+        )
+    spans.sort(key=lambda item: (int(item["start"]), int(item["end"])))
+    return spans
+
+
 def _split_ruby_span_on_kana(
     start: int,
     base: str,
@@ -640,52 +845,73 @@ def _split_ruby_span_on_kana(
 
     reading_nfkc = unicodedata.normalize("NFKC", reading)
     reading_hira = tts_util._katakana_to_hiragana(reading_nfkc)
-    spans: List[dict] = []
-    reading_pos = 0
-    pending: Optional[tuple[str, int, int]] = None
+    if not reading_hira:
+        return []
 
-    def flush_pending(end_pos: int) -> bool:
-        nonlocal pending
-        if pending is None:
-            return True
-        segment_text, segment_start, segment_end = pending
-        segment_reading = reading_hira[reading_pos:end_pos]
-        pending = None
-        if not segment_reading:
-            return False
-        if not tts_util._has_kanji(segment_text):
-            return True
-        spans.append(
-            {
-                "start": start + segment_start,
-                "end": start + segment_end,
-                "base": segment_text,
-                "reading": segment_reading,
-            }
-        )
-        return True
-
-    for is_kana, segment_text, segment_start, segment_end in segments:
-        if is_kana:
-            target = tts_util._katakana_to_hiragana(segment_text)
-            found = reading_hira.find(target, reading_pos)
-            if found == -1:
-                return []
-            if not flush_pending(found):
-                return []
-            reading_pos = found + len(target)
-        else:
+    def walk(
+        segment_idx: int,
+        reading_pos: int,
+        pending: Optional[tuple[str, int, int]],
+    ) -> Optional[List[dict]]:
+        if segment_idx >= len(segments):
             if pending is None:
-                pending = (segment_text, segment_start, segment_end)
+                return [] if reading_pos == len(reading_hira) else None
+            segment_text, segment_start, segment_end = pending
+            segment_reading = reading_hira[reading_pos:]
+            if not segment_reading:
+                return None
+            if not tts_util._has_kanji(segment_text):
+                return [] if reading_pos <= len(reading_hira) else None
+            return [
+                {
+                    "start": start + segment_start,
+                    "end": start + segment_end,
+                    "base": segment_text,
+                    "reading": segment_reading,
+                }
+            ]
+
+        is_kana, segment_text, segment_start, segment_end = segments[segment_idx]
+        if not is_kana:
+            if pending is None:
+                merged = (segment_text, segment_start, segment_end)
             else:
                 prev_text, prev_start, _prev_end = pending
-                pending = (prev_text + segment_text, prev_start, segment_end)
+                merged = (prev_text + segment_text, prev_start, segment_end)
+            return walk(segment_idx + 1, reading_pos, merged)
 
-    if pending is not None:
-        if not flush_pending(len(reading_hira)):
-            return []
+        target = tts_util._katakana_to_hiragana(segment_text)
+        positions: List[int] = []
+        search_pos = reading_hira.find(target, reading_pos)
+        while search_pos != -1:
+            positions.append(search_pos)
+            search_pos = reading_hira.find(target, search_pos + 1)
+        if not positions:
+            return None
 
-    return spans
+        for found in reversed(positions):
+            prefix: List[dict] = []
+            if pending is not None:
+                pending_text, pending_start, pending_end = pending
+                pending_reading = reading_hira[reading_pos:found]
+                if not pending_reading:
+                    continue
+                if tts_util._has_kanji(pending_text):
+                    prefix.append(
+                        {
+                            "start": start + pending_start,
+                            "end": start + pending_end,
+                            "base": pending_text,
+                            "reading": pending_reading,
+                        }
+                    )
+            tail = walk(segment_idx + 1, found + len(target), None)
+            if tail is not None:
+                return prefix + tail
+        return None
+
+    spans = walk(0, 0, None)
+    return spans if spans is not None else []
 
 
 def _diff_ruby_spans(plain: str, ruby: str) -> List[dict]:
@@ -876,26 +1102,34 @@ def sanitize_book(
             if isinstance(ruby_entry, dict):
                 raw_spans = ruby_entry.get("raw_spans")
                 if isinstance(raw_spans, list) and raw_spans:
-                    ruby_text = tts_util.apply_ruby_spans(
-                        raw_text_original, raw_spans
+                    clean_spans = _collect_clean_ruby_spans_from_raw(
+                        raw_text_original=raw_text_original,
+                        raw_spans=raw_spans,
+                        cleaned_text=cleaned,
+                        cutoff_patterns=cutoff_patterns,
+                        remove_patterns=remove_patterns,
+                        case_words=case_words,
                     )
-                    ruby_text = normalize_text(ruby_text)
-                    ruby_cutoff, _ruby_cutoff_reason = apply_section_cutoff(
-                        ruby_text, cutoff_patterns
-                    )
-                    ruby_cleaned, _ruby_stats = apply_remove_patterns(
-                        ruby_cutoff, remove_patterns
-                    )
-                    ruby_cleaned = normalize_text(ruby_cleaned)
-                    ruby_cleaned = normalize_small_caps(
-                        ruby_cleaned, extra_words=case_words
-                    )
-                    ruby_cleaned = normalize_all_caps(
-                        ruby_cleaned, extra_words=case_words
-                    )
-                    ruby_entry["clean_spans"] = _diff_ruby_spans(
-                        cleaned, ruby_cleaned
-                    )
+                    if clean_spans is None:
+                        ruby_text = tts_util.apply_ruby_spans(
+                            raw_text_original, raw_spans
+                        )
+                        ruby_text = normalize_text(ruby_text)
+                        ruby_cutoff, _ruby_cutoff_reason = apply_section_cutoff(
+                            ruby_text, cutoff_patterns
+                        )
+                        ruby_cleaned, _ruby_stats = apply_remove_patterns(
+                            ruby_cutoff, remove_patterns
+                        )
+                        ruby_cleaned = normalize_text(ruby_cleaned)
+                        ruby_cleaned = normalize_small_caps(
+                            ruby_cleaned, extra_words=case_words
+                        )
+                        ruby_cleaned = normalize_all_caps(
+                            ruby_cleaned, extra_words=case_words
+                        )
+                        clean_spans = _diff_ruby_spans(cleaned, ruby_cleaned)
+                    ruby_entry["clean_spans"] = clean_spans
                     ruby_entry_to_hash = ruby_entry
                     ruby_updated = True
 

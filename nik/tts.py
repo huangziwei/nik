@@ -3165,6 +3165,8 @@ def _is_suspicious_ruby_span(base: str, reading: str) -> bool:
         return True
     if not base.strip() or not reading.strip():
         return True
+    if _has_kanji(reading):
+        return True
     if "\n" in base or "\n" in reading:
         return True
     if SECTION_BREAK in base or SECTION_BREAK in reading:

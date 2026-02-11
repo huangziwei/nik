@@ -432,6 +432,10 @@ def test_apply_ruby_evidence_to_chunk_drops_suspicious_span() -> None:
     assert out == f"ホンチョウ{_default_first_token_separator()}に西田医院という耳鼻科があったのを覚えているか。"
 
 
+def test_is_suspicious_ruby_span_rejects_kanji_in_reading() -> None:
+    assert tts_util._is_suspicious_ruby_span("可", "おかしそうに女は")
+
+
 def test_apply_ruby_evidence_to_chunk_keeps_non_kanji_span() -> None:
     chunk_text = "TTSを試す。"
     chunk_span = (0, len(chunk_text))

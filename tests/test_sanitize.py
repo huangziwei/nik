@@ -127,6 +127,64 @@ def test_diff_ruby_spans_splits_kana_boundary() -> None:
     ]
 
 
+def test_split_ruby_span_on_kana_handles_ambiguous_repeated_boundary() -> None:
+    spans = sanitize_util._split_ruby_span_on_kana(
+        0,
+        "龍之介の姿",
+        "りゆうのすけのすがた",
+    )
+    assert spans == [
+        {"start": 0, "end": 3, "base": "龍之介", "reading": "りゆうのすけ"},
+        {"start": 4, "end": 5, "base": "姿", "reading": "すがた"},
+    ]
+
+
+def test_collect_clean_ruby_spans_from_raw_tracks_span_identity() -> None:
+    raw = (
+        "いいながら、自嘲するような笑い声を立てた。そしてすぐそれを打ち消すように早口で、\n\n"
+        "「シャンペンなの」と明るい声を出し「のみかけのシャンペン。あけたけど一人じゃのみきれなくて、"
+        "のんでいただこうと思って。すみません。明日まで置いたら気がぬけるでしょう」\n\n"
+        "可笑しそうに女は笑った。\n\n"
+        "「嬉しいけど」\n\n"
+        "私も笑顔をつくったが、動かなかった。"
+    )
+    clean = sanitize_util.normalize_text(raw)
+    clean, _ = sanitize_util.apply_section_cutoff(clean, [])
+    clean, _ = sanitize_util.apply_remove_patterns(clean, [])
+    clean = sanitize_util.normalize_text(clean)
+    clean = sanitize_util.normalize_small_caps(clean, extra_words=set())
+    clean = sanitize_util.normalize_all_caps(clean, extra_words=set())
+
+    i_okashi = raw.index("可笑")
+    i_ureshi = raw.index("嬉")
+    raw_spans = [
+        {"start": i_okashi, "end": i_okashi + 2, "base": "可笑", "reading": "おか"},
+        {"start": i_ureshi, "end": i_ureshi + 1, "base": "嬉", "reading": "うれ"},
+    ]
+    spans = sanitize_util._collect_clean_ruby_spans_from_raw(
+        raw_text_original=raw,
+        raw_spans=raw_spans,
+        cleaned_text=clean,
+        cutoff_patterns=[],
+        remove_patterns=[],
+        case_words=set(),
+    )
+
+    assert spans is not None
+    assert any(
+        span["base"] == "可笑" and span["reading"] == "おか"
+        for span in spans
+    )
+    assert any(
+        span["base"] == "嬉" and span["reading"] == "うれ"
+        for span in spans
+    )
+    assert not any(
+        span["base"] == "可" and span["reading"] == "おかしそうに女は"
+        for span in spans
+    )
+
+
 def test_diff_ruby_spans_drops_suspicious_long_reading() -> None:
     spans = sanitize_util._diff_ruby_spans(
         "と",
