@@ -1067,7 +1067,7 @@ def test_normalize_kana_first_token_partial() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "ナゲツケ好き"
+    assert out == "なげつけ好き"
 
 
 def test_normalize_kana_first_token_partial_kanji_run() -> None:
@@ -1095,7 +1095,55 @@ def test_normalize_kana_first_token_partial_kanji_run() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "ジテンシャ"
+    assert out == "じてんしゃ"
+
+
+def test_normalize_kana_first_token_partial_numeric_counter_run() -> None:
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            pos1: str | None = None,
+            pos2: str | None = None,
+            pos3: str | None = None,
+            type_: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+            self.pos2 = pos2
+            self.pos3 = pos3
+            self.type = type_
+
+    class DummyToken:
+        def __init__(self, surface: str, feature: DummyFeature) -> None:
+            self.surface = surface
+            self.feature = feature
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("十", DummyFeature("トオ", pos1="名詞", pos2="数詞", type_="数")),
+                DummyToken(
+                    "日",
+                    DummyFeature(
+                        "カ",
+                        pos1="接尾辞",
+                        pos2="名詞的",
+                        pos3="助数詞",
+                        type_="助数",
+                    ),
+                ),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "十日",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_token_to_kana=True,
+    )
+    assert out == "とおか"
 
 
 def test_normalize_kana_first_token_already_kana() -> None:
@@ -1285,7 +1333,7 @@ def test_normalize_kana_first_token_to_kana_leading_kanji() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "カンジテスト"
+    assert out == "かんじテスト"
 
 
 def test_normalize_kana_first_token_to_kana_handles_mixed_single_token() -> None:
@@ -1522,7 +1570,7 @@ def test_normalize_kana_weekday_reading() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "ドヨウビ"
+    assert out == "どようび"
 
 
 def test_normalize_kana_with_tagger_normalizes_kyujitai() -> None:
@@ -1553,7 +1601,7 @@ def test_normalize_kana_with_tagger_normalizes_kyujitai() -> None:
         force_first_token_to_kana=True,
     )
     assert tagger.last_input == "目覚め"
-    assert out == "メザメ"
+    assert out == "めざめ"
 
 
 def test_normalize_kana_with_tagger_normalizes_kyujitai_uso() -> None:
@@ -1584,7 +1632,7 @@ def test_normalize_kana_with_tagger_normalizes_kyujitai_uso() -> None:
         force_first_token_to_kana=True,
     )
     assert tagger.last_input == "嘘"
-    assert out == "ウソ"
+    assert out == "うそ"
 
 
 def test_synthesize_book_force_first_token_to_kana(

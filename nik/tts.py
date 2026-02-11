@@ -3705,6 +3705,18 @@ def _normalize_kana_with_tagger(
             attrs = _extract_token_attrs(token)
             action = run_action[idx]
             surface = _maybe_canonicalize_surface(surface, token, reading_kata)
+            if force_first:
+                converted = _apply_surface_kana(reading_kata, surface)
+                output = _katakana_to_hiragana(converted)
+                out.append(output)
+                _append_kana_debug(
+                    debug_sources,
+                    surface_original,
+                    output,
+                    source="unidic:first-token",
+                    reading=reading_kata,
+                )
+                continue
             if action == "keep":
                 out.append(surface)
                 _append_kana_debug(
@@ -3722,18 +3734,6 @@ def _normalize_kana_with_tagger(
                     surface_original,
                     output,
                     source="unidic:run-action",
-                    reading=reading_kata,
-                )
-                continue
-            if force_first:
-                converted = _apply_surface_kana(reading_kata, surface)
-                output = _hiragana_to_katakana(converted)
-                out.append(output)
-                _append_kana_debug(
-                    debug_sources,
-                    surface_original,
-                    output,
-                    source="unidic:first-token",
                     reading=reading_kata,
                 )
                 continue
