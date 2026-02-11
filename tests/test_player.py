@@ -30,6 +30,38 @@ def _make_book(root_dir: Path, book_id: str = "book") -> Path:
     return book_dir
 
 
+def test_book_details_includes_pause_multipliers(tmp_path: Path) -> None:
+    repo_root, root_dir = _make_repo(tmp_path)
+    book_dir = _make_book(root_dir)
+    (book_dir / "tts" / "manifest.json").write_text(
+        json.dumps(
+            {
+                "voice": "manifest-voice",
+                "chapters": [
+                    {
+                        "id": "c1",
+                        "title": "Chapter 1",
+                        "chunk_spans": [[0, 2], [2, 4]],
+                        "pause_multipliers": [4, 7],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    details = player_util._book_details(book_dir, repo_root)
+    assert details["chapters"] == [
+        {
+            "id": "c1",
+            "title": "Chapter 1",
+            "chunk_spans": [[0, 2], [2, 4]],
+            "pause_multipliers": [4, 7],
+            "chunk_count": 2,
+        }
+    ]
+
+
 def test_list_voice_ids(tmp_path: Path) -> None:
     voices_dir = tmp_path / "voices"
     voices_dir.mkdir()

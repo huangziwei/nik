@@ -94,6 +94,11 @@ _JP_QUOTE_CHARS = {
 _SECTION_PAD_MULT = 3
 _CHAPTER_BREAK_PAD_MULTIPLIER = 6
 _CHAPTER_PAD_MULT = _CHAPTER_BREAK_PAD_MULTIPLIER
+_SECTION_BREAK_PAUSE_MULTIPLIER = 1 + _SECTION_PAD_MULT
+_TITLE_BREAK_PAUSE_MULTIPLIER = 1 + _CHAPTER_PAD_MULT
+_HEADING_TOKEN_RE = re.compile(r"[^\W_]+(?:['’.\-][^\W_]+)*")
+_ROMAN_TOKEN_RE = re.compile(r"^[IVXLCDM]+$", re.IGNORECASE)
+_SENTENCE_END_RE = re.compile(r"[.!?。！？](?:[\"')\]\}\u201d\u2019»」』）】])*(?=\s|$)")
 _JP_OPEN_QUOTES = {"「", "『", "《", "〈", "【", "〔", "［", "｢", "〝"}
 _JP_CLOSE_QUOTES = {"」", "』", "》", "〉", "】", "〕", "］", "｣", "〞", "〟"}
 _DASH_RUN_RE = re.compile(r"[‐‑‒–—―─━]{2,}")
@@ -1135,6 +1140,274 @@ def make_chunk_spans(
 def make_chunks(text: str, max_chars: int, chunk_mode: str = "japanese") -> List[str]:
     spans = make_chunk_spans(text, max_chars=max_chars, chunk_mode=chunk_mode)
     return [text[start:end] for start, end in spans]
+
+
+def _coerce_span_pairs(spans: Sequence[Sequence[int]]) -> List[Tuple[int, int]]:
+    pairs: List[Tuple[int, int]] = []
+    for span in spans:
+        if not isinstance(span, (list, tuple)) or len(span) != 2:
+            continue
+        try:
+            start = int(span[0])
+            end = int(span[1])
+        except (TypeError, ValueError):
+            continue
+        if start < 0 or end < start:
+            continue
+        pairs.append((start, end))
+    return pairs
+
+
+def _pause_multiplier_from_gap(gap: str) -> int:
+    if not gap:
+        return 1
+    if SECTION_BREAK in gap:
+        return _SECTION_BREAK_PAUSE_MULTIPLIER
+    max_run = 0
+    for match in re.finditer(r"\n+", gap):
+        max_run = max(max_run, len(match.group(0)))
+    if max_run >= 5:
+        return _TITLE_BREAK_PAUSE_MULTIPLIER
+    if max_run >= 3:
+        return _SECTION_BREAK_PAUSE_MULTIPLIER
+    return 1
+
+
+def _heading_word_count(text: str) -> int:
+    return len(_HEADING_TOKEN_RE.findall(text))
+
+
+def _clean_heading_token(token: str) -> str:
+    cleaned = token.strip().strip("\"'“”‘’()[]{}<>「」『』【】")
+    return cleaned.rstrip(".,:;!?)]")
+
+
+def _is_heading_number_token(token: str) -> bool:
+    cleaned = _clean_heading_token(token)
+    if not cleaned:
+        return False
+    if re.fullmatch(r"\d+(?:\.\d+)*", cleaned):
+        return True
+    if _ROMAN_TOKEN_RE.fullmatch(cleaned):
+        return True
+    return False
+
+
+def _looks_like_numeric_heading(text: str) -> bool:
+    tokens = _HEADING_TOKEN_RE.findall(text)
+    if not tokens or len(tokens) > 6:
+        return False
+    return all(_is_heading_number_token(token) for token in tokens)
+
+
+def _looks_like_paragraph_chunk(stripped: str) -> bool:
+    words = _heading_word_count(stripped)
+    if words <= 0:
+        return False
+    sentence_endings = len(_SENTENCE_END_RE.findall(stripped))
+    clause_breaks = (
+        stripped.count(",")
+        + stripped.count(";")
+        + stripped.count("、")
+        + stripped.count("，")
+        + stripped.count("；")
+        + stripped.count("：")
+    )
+    if sentence_endings >= 2:
+        return True
+    if sentence_endings >= 1 and words >= 6:
+        return True
+    if clause_breaks >= 2 and words >= 12:
+        return True
+    return False
+
+
+def _looks_like_dialogue_chunk(stripped: str) -> bool:
+    text = stripped.strip()
+    if not text:
+        return False
+
+    # Dialogue lines are often isolated and wrapped by quote pairs.
+    trimmed = text.rstrip("。！？!?…．，、,;；:：")
+    if len(trimmed) >= 2 and trimmed[0] in _JP_OPEN_QUOTES and trimmed[-1] in _JP_CLOSE_QUOTES:
+        inner = trimmed[1:-1].strip()
+        if inner:
+            return True
+
+    if len(trimmed) >= 2 and trimmed[0] in _DOUBLE_QUOTE_CHARS and trimmed[-1] in _DOUBLE_QUOTE_CHARS:
+        inner = trimmed[1:-1].strip()
+        if inner:
+            return True
+
+    if len(trimmed) >= 2 and trimmed[0] in _SINGLE_QUOTE_CHARS and trimmed[-1] in _SINGLE_QUOTE_CHARS:
+        inner = trimmed[1:-1].strip()
+        if inner:
+            return True
+
+    return False
+
+
+def _ends_with_sentence_punct(text: str) -> bool:
+    trailing = "".join(_CLOSE_PUNCT) + "」』）】"
+    stripped = text.rstrip(trailing)
+    if not stripped:
+        return False
+    return stripped[-1] in (_END_PUNCT | {"。", "！", "？"})
+
+
+def _looks_like_heading_chunk(chunk: str) -> bool:
+    stripped = " ".join(part.strip() for part in chunk.splitlines() if part.strip())
+    if not stripped:
+        return False
+    if _looks_like_dialogue_chunk(stripped):
+        return False
+    if _looks_like_numeric_heading(stripped):
+        return True
+    tokens = _HEADING_TOKEN_RE.findall(stripped)
+    if not tokens:
+        return False
+    if _ends_with_sentence_punct(stripped):
+        return False
+    if _looks_like_paragraph_chunk(stripped):
+        return False
+    alpha_tokens = [token for token in tokens if any(ch.isalpha() for ch in token)]
+    if not alpha_tokens:
+        return False
+    return True
+
+
+def _looks_like_contextual_heading(chunk: str, prev_words: int, next_words: int) -> bool:
+    if _looks_like_heading_chunk(chunk):
+        return True
+    stripped = " ".join(part.strip() for part in chunk.splitlines() if part.strip())
+    if not stripped or _ends_with_sentence_punct(stripped):
+        return False
+    if _looks_like_dialogue_chunk(stripped):
+        return False
+    if _looks_like_paragraph_chunk(stripped):
+        return False
+    words = _heading_word_count(stripped)
+    if words <= 0:
+        return False
+    surrounding = max(prev_words, next_words)
+    return surrounding >= max(words + 2, int(words * 1.5))
+
+
+def _gap_has_symbolic_separator(gap: str) -> bool:
+    for line in gap.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if SECTION_BREAK in stripped:
+            return True
+        if any(ch.isalnum() for ch in stripped):
+            continue
+        return True
+    return False
+
+
+def compute_chunk_pause_multipliers(
+    text: str, spans: Sequence[Tuple[int, int]]
+) -> List[int]:
+    if not spans:
+        return []
+    multipliers = [1] * len(spans)
+    chunk_texts = [text[int(start) : int(end)] for start, end in spans]
+    chunk_word_counts = [_heading_word_count(chunk) for chunk in chunk_texts]
+    heading_like = [False] * len(spans)
+    for idx, chunk in enumerate(chunk_texts):
+        prev_words = chunk_word_counts[idx - 1] if idx > 0 else 0
+        next_words = chunk_word_counts[idx + 1] if idx + 1 < len(chunk_texts) else 0
+        heading_like[idx] = _looks_like_contextual_heading(chunk, prev_words, next_words)
+    first_body_idx = next(
+        (idx for idx, is_heading in enumerate(heading_like) if not is_heading),
+        len(heading_like),
+    )
+    for idx in range(len(spans) - 1):
+        end = int(spans[idx][1])
+        next_start = int(spans[idx + 1][0])
+        if next_start < end:
+            continue
+        gap = text[end:next_start]
+        pause = _pause_multiplier_from_gap(gap)
+        if "\n" in gap or SECTION_BREAK in gap:
+            if _gap_has_symbolic_separator(gap):
+                pause = max(pause, _SECTION_BREAK_PAUSE_MULTIPLIER)
+            if heading_like[idx] or heading_like[idx + 1]:
+                heading_pause = _SECTION_BREAK_PAUSE_MULTIPLIER
+                if heading_like[idx] and idx < first_body_idx:
+                    heading_pause = _TITLE_BREAK_PAUSE_MULTIPLIER
+                pause = max(pause, heading_pause)
+        multipliers[idx] = pause
+    return multipliers
+
+
+def _legacy_pause_multipliers(
+    chunk_section_breaks: object,
+    chunk_count: int,
+    add_chapter_boundary: bool,
+) -> List[int]:
+    legacy = [1] * max(0, chunk_count)
+    if (
+        isinstance(chunk_section_breaks, list)
+        and chunk_section_breaks
+        and chunk_count > 0
+    ):
+        for idx in range(min(chunk_count, len(chunk_section_breaks))):
+            if chunk_section_breaks[idx]:
+                legacy[idx] = max(legacy[idx], _SECTION_BREAK_PAUSE_MULTIPLIER)
+    if add_chapter_boundary and legacy:
+        legacy[-1] = max(legacy[-1], _TITLE_BREAK_PAUSE_MULTIPLIER)
+    return legacy
+
+
+def _normalize_pause_multipliers(
+    pause_multipliers: object,
+    chunk_count: int,
+    fallback: Optional[Sequence[int]] = None,
+) -> List[int]:
+    if chunk_count <= 0:
+        return []
+    normalized = [1] * chunk_count
+    if isinstance(fallback, Sequence):
+        for idx in range(min(chunk_count, len(fallback))):
+            try:
+                parsed = int(fallback[idx])
+            except (TypeError, ValueError):
+                parsed = 1
+            normalized[idx] = parsed if parsed > 0 else 1
+    if isinstance(pause_multipliers, list) and len(pause_multipliers) == chunk_count:
+        for idx, value in enumerate(pause_multipliers):
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                continue
+            if parsed > 0:
+                normalized[idx] = parsed
+    return normalized
+
+
+def _apply_chapter_boundary_pause_multipliers(manifest_chapters: Sequence[dict]) -> None:
+    for idx, entry in enumerate(manifest_chapters):
+        if idx >= len(manifest_chapters) - 1:
+            break
+        if not isinstance(entry, dict):
+            continue
+        chunks = entry.get("chunks")
+        if not isinstance(chunks, list) or not chunks:
+            continue
+        fallback = _legacy_pause_multipliers(
+            entry.get("chunk_section_breaks"),
+            len(chunks),
+            add_chapter_boundary=False,
+        )
+        normalized = _normalize_pause_multipliers(
+            entry.get("pause_multipliers"),
+            len(chunks),
+            fallback=fallback,
+        )
+        normalized[-1] = max(normalized[-1], _TITLE_BREAK_PAUSE_MULTIPLIER)
+        entry["pause_multipliers"] = normalized
 
 
 def _strip_double_quotes(text: str) -> str:
@@ -4457,7 +4730,9 @@ def _prepare_manifest(
                 "Run with --rechunk to regenerate."
             )
         chapter_chunks: List[List[str]] = []
-        for ch_manifest, chapter in zip(manifest_chapters, chapters):
+        for chapter_idx, (ch_manifest, chapter) in enumerate(
+            zip(manifest_chapters, chapters)
+        ):
             if ch_manifest.get("text_sha256") != sha256_str(chapter.text):
                 raise ValueError(
                     "manifest.json text hash differs from input. "
@@ -4466,7 +4741,27 @@ def _prepare_manifest(
             chunks = ch_manifest.get("chunks", [])
             if not isinstance(chunks, list) or not chunks:
                 raise ValueError("manifest.json missing chunks. Run with --rechunk.")
+            chunk_spans = _coerce_span_pairs(ch_manifest.get("chunk_spans") or [])
+            computed_pause = (
+                compute_chunk_pause_multipliers(chapter.text, chunk_spans)
+                if len(chunk_spans) == len(chunks)
+                else [1] * len(chunks)
+            )
+            legacy_pause = _legacy_pause_multipliers(
+                ch_manifest.get("chunk_section_breaks"),
+                len(chunks),
+                add_chapter_boundary=chapter_idx < len(chapters) - 1,
+            )
+            fallback_pause = [
+                max(computed_pause[idx], legacy_pause[idx]) for idx in range(len(chunks))
+            ]
+            ch_manifest["pause_multipliers"] = _normalize_pause_multipliers(
+                ch_manifest.get("pause_multipliers"),
+                len(chunks),
+                fallback=fallback_pause,
+            )
             chapter_chunks.append([str(c) for c in chunks])
+        _apply_chapter_boundary_pause_multipliers(manifest_chapters)
         manifest["voice"] = voice
         manifest["pad_ms"] = int(pad_ms)
         atomic_write_json(manifest_path, manifest)
@@ -4476,6 +4771,7 @@ def _prepare_manifest(
     manifest_chapters: List[dict] = []
     for ch in chapters:
         spans = make_chunk_spans(ch.text, max_chars=max_chars, chunk_mode="japanese")
+        pause_multipliers = compute_chunk_pause_multipliers(ch.text, spans)
         section_breaks = [idx for idx, chv in enumerate(ch.text) if chv == SECTION_BREAK]
         chunk_section_breaks = [False] * len(spans)
         if section_breaks and spans:
@@ -4500,9 +4796,11 @@ def _prepare_manifest(
                 "chunks": chunks,
                 "chunk_spans": [[start, end] for start, end in spans],
                 "chunk_section_breaks": chunk_section_breaks,
+                "pause_multipliers": pause_multipliers,
                 "durations_ms": [None] * len(chunks),
             }
         )
+    _apply_chapter_boundary_pause_multipliers(manifest_chapters)
 
     manifest = {
         "created_unix": int(time.time()),
@@ -4879,17 +5177,27 @@ def synthesize_book(
         overall_task = progress.add_task("Total", total=total_chunks)
         chapter_task = progress.add_task("Chapter", total=0)
 
-        for ch_entry, chunks in zip(manifest["chapters"], chapter_chunks):
+        chapter_entries = manifest.get("chapters", [])
+        chapter_total_count = len(chapter_entries) if isinstance(chapter_entries, list) else 0
+        for chapter_idx, (ch_entry, chunks) in enumerate(zip(manifest["chapters"], chapter_chunks)):
             chapter_id = ch_entry.get("id") or "chapter"
             chapter_title = ch_entry.get("title") or chapter_id
             chapter_total = len(chunks)
             chunk_section_breaks = ch_entry.get("chunk_section_breaks") or []
-            section_pad_ms = int(
-                manifest.get("section_pad_ms") or int(pad_ms) * _SECTION_PAD_MULT
+            chapter_pause_multipliers = _normalize_pause_multipliers(
+                ch_entry.get("pause_multipliers"),
+                chapter_total,
+                fallback=_legacy_pause_multipliers(
+                    chunk_section_breaks,
+                    chapter_total,
+                    add_chapter_boundary=chapter_idx < chapter_total_count - 1,
+                ),
             )
-            chapter_pad_ms = int(
-                manifest.get("chapter_pad_ms") or int(pad_ms) * _CHAPTER_PAD_MULT
-            )
+            if chapter_idx < chapter_total_count - 1 and chapter_pause_multipliers:
+                chapter_pause_multipliers[-1] = max(
+                    chapter_pause_multipliers[-1], _TITLE_BREAK_PAUSE_MULTIPLIER
+                )
+            ch_entry["pause_multipliers"] = chapter_pause_multipliers
             if selected_ids and chapter_id not in selected_ids:
                 continue
             progress.update(
@@ -4988,13 +5296,15 @@ def synthesize_book(
                 else:
                     audio = np.concatenate([np.asarray(w).flatten() for w in wavs])
 
-                extra_pad_ms = 0
-                if chunk_idx - 1 < len(chunk_section_breaks):
-                    if chunk_section_breaks[chunk_idx - 1]:
-                        extra_pad_ms += section_pad_ms
-                if chunk_idx == chapter_total:
-                    extra_pad_ms += chapter_pad_ms
-                pad_ms_total = int(pad_ms) + extra_pad_ms
+                pause_multiplier = 1
+                if chunk_idx - 1 < len(chapter_pause_multipliers):
+                    try:
+                        pause_multiplier = max(
+                            1, int(chapter_pause_multipliers[chunk_idx - 1])
+                        )
+                    except (TypeError, ValueError):
+                        pause_multiplier = 1
+                pad_ms_total = int(pad_ms) * pause_multiplier
                 if pad_ms_total > 0:
                     pad_samples = int(round(sample_rate * (pad_ms_total / 1000.0)))
                     if pad_samples > 0:
@@ -5126,9 +5436,11 @@ def synthesize_chunk(
         raise ValueError("manifest.json chapters missing or invalid")
 
     entry = None
-    for item in chapters:
+    entry_index = -1
+    for idx, item in enumerate(chapters):
         if isinstance(item, dict) and item.get("id") == chapter_id:
             entry = item
+            entry_index = idx
             break
     if entry is None:
         raise ValueError(f"Unknown chapter_id: {chapter_id}")
@@ -5164,6 +5476,36 @@ def synthesize_chunk(
         durations = [None] * chunk_count
         entry["durations_ms"] = durations
     chunk_section_breaks = entry.get("chunk_section_breaks") or []
+    span_pairs = _coerce_span_pairs(spans)
+    pause_multipliers = entry.get("pause_multipliers")
+    computed_pause = [1] * chunk_count
+    if len(span_pairs) == chunk_count:
+        rel_path = entry.get("path")
+        if isinstance(rel_path, str) and rel_path:
+            clean_path = (out_dir.parent / rel_path).resolve()
+            if clean_path.exists():
+                chapter_text = _normalize_text(read_clean_text(clean_path))
+                computed_pause = compute_chunk_pause_multipliers(
+                    chapter_text, span_pairs
+                )
+    legacy_pause = _legacy_pause_multipliers(
+        chunk_section_breaks,
+        chunk_count,
+        add_chapter_boundary=entry_index >= 0 and entry_index < len(chapters) - 1,
+    )
+    fallback_pause = [
+        max(computed_pause[idx], legacy_pause[idx]) for idx in range(chunk_count)
+    ]
+    pause_multipliers = _normalize_pause_multipliers(
+        pause_multipliers,
+        chunk_count,
+        fallback=fallback_pause,
+    )
+    if entry_index >= 0 and entry_index < len(chapters) - 1 and pause_multipliers:
+        pause_multipliers[-1] = max(
+            pause_multipliers[-1], _TITLE_BREAK_PAUSE_MULTIPLIER
+        )
+    entry["pause_multipliers"] = pause_multipliers
 
     default_voice = voice or entry.get("voice") or manifest.get("voice") or ""
     if not default_voice:
@@ -5310,19 +5652,12 @@ def synthesize_chunk(
         audio = np.concatenate([np.asarray(w).flatten() for w in wavs])
 
     pad_ms = int(manifest.get("pad_ms") or 0)
-    section_pad_ms = int(
-        manifest.get("section_pad_ms") or pad_ms * _SECTION_PAD_MULT
-    )
-    chapter_pad_ms = int(
-        manifest.get("chapter_pad_ms") or pad_ms * _CHAPTER_PAD_MULT
-    )
-    extra_pad_ms = 0
-    if chunk_index < len(chunk_section_breaks):
-        if chunk_section_breaks[chunk_index]:
-            extra_pad_ms += section_pad_ms
-    if chunk_index + 1 == chunk_count:
-        extra_pad_ms += chapter_pad_ms
-    pad_ms_total = pad_ms + extra_pad_ms
+    pause_multiplier = 1
+    try:
+        pause_multiplier = max(1, int(pause_multipliers[chunk_index]))
+    except (TypeError, ValueError, IndexError):
+        pause_multiplier = 1
+    pad_ms_total = pad_ms * pause_multiplier
     if pad_ms_total > 0:
         pad_samples = int(round(sample_rate * (pad_ms_total / 1000.0)))
         if pad_samples > 0:

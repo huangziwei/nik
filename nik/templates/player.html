@@ -1267,11 +1267,18 @@
         margin: 0 0 16px;
       }
 
-      .chapter-text .section-break {
-        height: 1px;
-        background: var(--line);
-        margin: 18px 0;
-        opacity: 0.6;
+      .chapter-text hr.section-break {
+        border: 0;
+        border-top: 1px solid var(--line);
+        margin: 18px auto 20px;
+        max-width: 72px;
+        opacity: 0.75;
+      }
+
+      .chapter-text hr.section-break.title-break {
+        border-top-width: 2px;
+        max-width: 120px;
+        opacity: 0.95;
       }
 
       .chapter-text ruby {
@@ -2126,7 +2133,8 @@
                 <div class="edit-section-title" id="editRulesTitle">ルール</div>
                 <label for="rulesParagraphs" id="rulesParagraphsLabel">段落区切り</label>
                 <select id="rulesParagraphs">
-                  <option value="double">二重改行（既定）</option>
+                  <option value="auto">自動判定（推奨）</option>
+                  <option value="double">二重改行</option>
                   <option value="single">単一改行（改行を段落として扱う）</option>
                 </select>
                 <label for="rulesDrop" id="rulesDropLabel">章タイトルの除外パターン</label>
@@ -2745,7 +2753,8 @@
           saveOverrides: "置換を保存",
           rulesTitle: "ルール",
           rulesParagraphs: "段落区切り",
-          rulesParagraphsDouble: "二重改行（既定）",
+          rulesParagraphsAuto: "自動判定（推奨）",
+          rulesParagraphsDouble: "二重改行",
           rulesParagraphsSingle: "単一改行（改行を段落として扱う）",
           rulesDrop: "章タイトルの除外パターン",
           rulesCutoff: "セクション打ち切りパターン",
@@ -3073,7 +3082,8 @@
           saveOverrides: "Save overrides",
           rulesTitle: "Rules",
           rulesParagraphs: "Paragraph breaks",
-          rulesParagraphsDouble: "Double newline (default)",
+          rulesParagraphsAuto: "Auto detect (recommended)",
+          rulesParagraphsDouble: "Double newline",
           rulesParagraphsSingle: "Single newline (treat line breaks as paragraphs)",
           rulesDrop: "Drop chapter title patterns",
           rulesCutoff: "Section cutoff patterns",
@@ -3417,9 +3427,10 @@
         if (rulesParagraphsLabel) {
           rulesParagraphsLabel.textContent = t("rulesParagraphs");
         }
-        if (rulesParagraphs && rulesParagraphs.options.length >= 2) {
-          rulesParagraphs.options[0].textContent = t("rulesParagraphsDouble");
-          rulesParagraphs.options[1].textContent = t("rulesParagraphsSingle");
+        if (rulesParagraphs && rulesParagraphs.options.length >= 3) {
+          rulesParagraphs.options[0].textContent = t("rulesParagraphsAuto");
+          rulesParagraphs.options[1].textContent = t("rulesParagraphsDouble");
+          rulesParagraphs.options[2].textContent = t("rulesParagraphsSingle");
         }
         if (rulesDropLabel) {
           rulesDropLabel.textContent = t("rulesDrop");
@@ -6083,9 +6094,43 @@
 
       const SECTION_BREAK = "\ue000";
 
+      function getChunkPauseMultiplier(chapter, chunkIndex) {
+        if (!chapter || !Array.isArray(chapter.pause_multipliers)) {
+          return 1;
+        }
+        const value = Number(chapter.pause_multipliers[chunkIndex]);
+        if (!Number.isFinite(value) || value < 1) {
+          return 1;
+        }
+        return Math.max(1, Math.round(value));
+      }
+
+      function classifyPauseBreak(multiplier) {
+        if (multiplier >= 5) {
+          return "title";
+        }
+        if (multiplier >= 3) {
+          return "section";
+        }
+        return null;
+      }
+
       function splitParagraphSpans(text) {
         const spans = [];
-        const re = /\n\s*\n+/g;
+        const re = /\n(?:[ \t]*\n)+/g;
+        const classifyBreak = (delimiter) => {
+          if (delimiter.includes(SECTION_BREAK)) {
+            return "section";
+          }
+          const newlineCount = (delimiter.match(/\n/g) || []).length;
+          if (newlineCount >= 5) {
+            return "title";
+          }
+          if (newlineCount >= 3) {
+            return "section";
+          }
+          return "paragraph";
+        };
         let start = 0;
         let match;
         while ((match = re.exec(text)) !== null) {
@@ -6099,7 +6144,11 @@
             paraEnd -= 1;
           }
           if (paraStart < paraEnd) {
-            spans.push([paraStart, paraEnd]);
+            spans.push({
+              start: paraStart,
+              end: paraEnd,
+              breakAfter: classifyBreak(match[0]),
+            });
           }
           start = match.index + match[0].length;
         }
@@ -6112,7 +6161,7 @@
           tailEnd -= 1;
         }
         if (tailStart < tailEnd) {
-          spans.push([tailStart, tailEnd]);
+          spans.push({ start: tailStart, end: tailEnd, breakAfter: null });
         }
         return spans;
       }
@@ -7429,6 +7478,26 @@
           chapter.ruby_prop_spans || []
         );
         let spanIndex = 0;
+        const appendBreakRule = (kind) => {
+          if (kind !== "section" && kind !== "title") {
+            return;
+          }
+          const prev = chapterText.lastElementChild;
+          if (
+            prev &&
+            prev.tagName === "HR" &&
+            prev.classList.contains("section-break")
+          ) {
+            if (kind === "title") {
+              prev.classList.add("title-break");
+            }
+            return;
+          }
+          const rule = document.createElement("hr");
+          rule.className =
+            kind === "title" ? "section-break title-break" : "section-break";
+          chapterText.appendChild(rule);
+        };
 
         if (!paragraphs.length) {
           chapterText.innerHTML = `<p class="empty-state">${t(
@@ -7436,18 +7505,19 @@
           )}</p>`;
         } else {
           chapterText.innerHTML = "";
-          paragraphs.forEach(([paraStart, paraEnd]) => {
+          paragraphs.forEach((paragraph) => {
+            const paraStart = paragraph.start;
+            const paraEnd = paragraph.end;
             const paragraphText = cleanText
               .slice(paraStart, paraEnd)
               .trim();
             if (paragraphText === SECTION_BREAK) {
-              const divider = document.createElement("div");
-              divider.className = "section-break";
-              chapterText.appendChild(divider);
+              appendBreakRule("section");
               return;
             }
             const p = document.createElement("p");
             let cursor = paraStart;
+            let lastChunkIndexInParagraph = -1;
 
             while (spanIndex < spans.length && spans[spanIndex][1] <= paraStart) {
               spanIndex += 1;
@@ -7455,6 +7525,7 @@
 
             while (spanIndex < spans.length && spans[spanIndex][0] < paraEnd) {
               const spanEntry = spans[spanIndex];
+              const chunkIndexInChapter = spanIndex;
               const spanStart = spanEntry[0];
               const spanEnd = spanEntry[1];
               if (spanStart > cursor) {
@@ -7470,6 +7541,7 @@
               );
               p.appendChild(span);
               cursor = spanEnd;
+              lastChunkIndexInParagraph = chunkIndexInChapter;
               spanIndex += 1;
             }
 
@@ -7479,6 +7551,20 @@
               );
             }
             chapterText.appendChild(p);
+
+            let pauseMultiplier = 1;
+            if (
+              lastChunkIndexInParagraph >= 0 &&
+              lastChunkIndexInParagraph < spans.length - 1
+            ) {
+              pauseMultiplier = getChunkPauseMultiplier(
+                chapter,
+                lastChunkIndexInParagraph
+              );
+            }
+            const pauseBreak = classifyPauseBreak(pauseMultiplier);
+            const visualBreak = pauseBreak || paragraph.breakAfter;
+            appendBreakRule(visualBreak);
           });
         }
         applyLastPlayedHighlight();
@@ -7675,7 +7761,7 @@
 
       function rulesFromForm() {
         return {
-          paragraph_breaks: rulesParagraphs.value || "double",
+          paragraph_breaks: rulesParagraphs.value || "auto",
           drop_chapter_title_patterns: parseRuleLines(rulesDrop.value || ""),
           section_cutoff_patterns: parseRuleLines(rulesCutoff.value || ""),
           remove_patterns: parseRuleLines(rulesRemove.value || ""),
@@ -7685,7 +7771,7 @@
 
       function applyRulesToForm(rules) {
         state.rulesLoading = true;
-        rulesParagraphs.value = rules.paragraph_breaks || "double";
+        rulesParagraphs.value = rules.paragraph_breaks || "auto";
         rulesDrop.value = (rules.drop_chapter_title_patterns || []).join("\n");
         rulesCutoff.value = (rules.section_cutoff_patterns || []).join("\n");
         rulesRemove.value = (rules.remove_patterns || []).join("\n");

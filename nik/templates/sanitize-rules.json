@@ -22,5 +22,5 @@
   ],
   "remove_patterns": [
   ],
-  "paragraph_breaks": "double"
+  "paragraph_breaks": "auto"
 }

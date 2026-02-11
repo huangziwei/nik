@@ -408,9 +408,12 @@ def _effective_rules_payload(book_dir: Path) -> dict:
 
 
 def _write_rules_payload(rules_path: Path, payload: dict) -> None:
-    paragraph_breaks = str(payload.get("paragraph_breaks", "double") or "double").strip().lower()
+    paragraph_breaks = str(
+        payload.get("paragraph_breaks", sanitize.DEFAULT_PARAGRAPH_BREAKS)
+        or sanitize.DEFAULT_PARAGRAPH_BREAKS
+    ).strip().lower()
     if paragraph_breaks not in sanitize.PARAGRAPH_BREAK_OPTIONS:
-        paragraph_breaks = "double"
+        paragraph_breaks = sanitize.DEFAULT_PARAGRAPH_BREAKS
     data = {
         "replace_defaults": bool(payload.get("replace_defaults", False)),
         "drop_chapter_title_patterns": list(
@@ -791,15 +794,30 @@ def _book_details(book_dir: Path, repo_root: Path) -> dict:
         except (TypeError, ValueError):
             pad_ms = 0
         last_voice = _normalize_voice_value(manifest.get("voice"), repo_root)
-        for entry in manifest["chapters"]:
+        chapter_total = len(manifest["chapters"])
+        for chapter_idx, entry in enumerate(manifest["chapters"]):
             chunk_spans = entry.get("chunk_spans", [])
             if not isinstance(chunk_spans, list):
                 chunk_spans = []
+            pause_multipliers = entry.get("pause_multipliers", [])
+            if not isinstance(pause_multipliers, list):
+                pause_multipliers = []
+            if len(pause_multipliers) != len(chunk_spans):
+                pause_multipliers = tts_util._normalize_pause_multipliers(
+                    pause_multipliers,
+                    len(chunk_spans),
+                    fallback=tts_util._legacy_pause_multipliers(
+                        entry.get("chunk_section_breaks"),
+                        len(chunk_spans),
+                        add_chapter_boundary=chapter_idx < chapter_total - 1,
+                    ),
+                )
             chapters.append(
                 {
                     "id": entry.get("id") or "",
                     "title": entry.get("title") or entry.get("id") or "Chapter",
                     "chunk_spans": chunk_spans,
+                    "pause_multipliers": pause_multipliers,
                     "chunk_count": len(chunk_spans),
                 }
             )
@@ -1352,7 +1370,7 @@ class RulesPayload(BaseModel):
     drop_chapter_title_patterns: List[str] = []
     section_cutoff_patterns: List[str] = []
     remove_patterns: List[str] = []
-    paragraph_breaks: str = "double"
+    paragraph_breaks: str = sanitize.DEFAULT_PARAGRAPH_BREAKS
     replace_defaults: bool = False
 
 

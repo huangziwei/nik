@@ -59,6 +59,27 @@ def test_normalize_text_converts_star_section_break() -> None:
     assert "☆" not in cleaned
 
 
+def test_infer_paragraph_breaks_detects_single_newline_paragraphs() -> None:
+    text = (
+        "First paragraph ends here.\n"
+        "Second paragraph ends here.\n"
+        "Third paragraph ends here.\n"
+        "Fourth paragraph ends here.\n"
+        "Fifth paragraph ends here."
+    )
+    assert sanitize_util.infer_paragraph_breaks(text) == "single"
+
+
+def test_normalize_text_single_breaks_preserve_section_strength() -> None:
+    raw = "First.\nSecond.\n\nSection start.\nThird."
+    cleaned = sanitize_util.normalize_text(
+        raw, unwrap_lines=False, paragraph_breaks="single"
+    )
+    assert SECTION_BREAK in cleaned
+    assert "First.\n\nSecond." in cleaned
+    assert "Section start.\n\nThird." in cleaned
+
+
 def test_diff_ruby_spans_splits_kana_boundary() -> None:
     spans = sanitize_util._diff_ruby_spans("荘で監視", "そうでかんし")
     assert spans == [

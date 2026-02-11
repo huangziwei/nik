@@ -68,6 +68,36 @@ def test_chunking_splits_on_punct_only_line() -> None:
     assert chunks == ["「……」", "「空太？」"]
 
 
+def test_compute_chunk_pause_multipliers_detects_title_and_section_breaks() -> None:
+    text = f"序章\n\n本文一。\n\n{SECTION_BREAK}\n\n本文二。"
+    spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["序章", "本文一。", "本文二。"]
+    multipliers = tts_util.compute_chunk_pause_multipliers(text, spans)
+    assert len(multipliers) == len(spans)
+    assert multipliers[0] >= 5
+    assert multipliers[1] >= 3
+    assert multipliers[2] == 1
+
+
+@pytest.mark.parametrize(
+    "dialogue",
+    [
+        "「静かすぎる」",
+        "「いい出してくれて、よかったわ」",
+    ],
+)
+def test_compute_chunk_pause_multipliers_does_not_promote_dialogue_lines(
+    dialogue: str,
+) -> None:
+    text = f"前の段落。\n\n{dialogue}\n\n次の段落。"
+    spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["前の段落。", dialogue, "次の段落。"]
+    multipliers = tts_util.compute_chunk_pause_multipliers(text, spans)
+    assert multipliers == [1, 1, 1]
+
+
 def test_chunk_book_writes_manifest(tmp_path: Path) -> None:
     book_dir = tmp_path / "book"
     clean_dir = book_dir / "clean" / "chapters"
@@ -92,6 +122,39 @@ def test_chunk_book_writes_manifest(tmp_path: Path) -> None:
     manifest = tts_util.chunk_book(book_dir)
     assert manifest["chapters"]
     assert (book_dir / "tts" / "manifest.json").exists()
+
+
+def test_prepare_manifest_applies_chapter_boundary_pause_multiplier(
+    tmp_path: Path,
+) -> None:
+    chapters = [
+        tts_util.ChapterInput(
+            index=1,
+            id="c1",
+            title="Chapter 1",
+            text="第一章本文。",
+            path="clean/chapters/0001-c1.txt",
+        ),
+        tts_util.ChapterInput(
+            index=2,
+            id="c2",
+            title="Chapter 2",
+            text="第二章本文。",
+            path="clean/chapters/0002-c2.txt",
+        ),
+    ]
+    manifest, _chunks = tts_util._prepare_manifest(
+        chapters=chapters,
+        out_dir=tmp_path / "tts",
+        voice="voice",
+        max_chars=120,
+        pad_ms=300,
+        rechunk=True,
+    )
+    first = manifest["chapters"][0]["pause_multipliers"]
+    second = manifest["chapters"][1]["pause_multipliers"]
+    assert first[-1] >= 5
+    assert second[-1] == 1
 
 
 def test_prepare_voice_prompt_accepts_language_param(tmp_path: Path) -> None:
