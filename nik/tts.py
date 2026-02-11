@@ -1897,15 +1897,24 @@ def _to_katakana_reading(reading: str) -> str:
     return _hiragana_to_katakana(unicodedata.normalize("NFKC", reading))
 
 
-def _katakanize_reading_entries(entries: Sequence[dict]) -> List[dict]:
+def _katakanize_reading_entries(
+    entries: Sequence[dict],
+    *,
+    append_separator: bool = False,
+    separator: Optional[str] = None,
+) -> List[dict]:
     out: List[dict] = []
+    sep = separator if separator is not None else (_first_token_separator() if append_separator else "")
     for item in entries:
         if not isinstance(item, dict):
             continue
         updated = dict(item)
         reading = str(updated.get("reading") or "")
         if reading:
-            updated["reading"] = _to_katakana_reading(reading)
+            reading_kata = _to_katakana_reading(reading)
+            if sep:
+                reading_kata = f"{reading_kata}{sep}"
+            updated["reading"] = reading_kata
         out.append(updated)
     return out
 
@@ -3493,7 +3502,10 @@ def _latin_prefix_to_kana(surface: str) -> str:
 
 
 def _force_first_latin_phrase(
-    text: str, *, debug_sources: Optional[List[str]] = None
+    text: str,
+    *,
+    debug_sources: Optional[List[str]] = None,
+    separator: str = "",
 ) -> tuple[str, bool]:
     normalized = unicodedata.normalize("NFKC", text or "")
     if not normalized:
@@ -3516,6 +3528,7 @@ def _force_first_latin_phrase(
 
     out: List[str] = [normalized[:idx]]
     consumed = True
+    converted_any = False
     while idx < length:
         if not (normalized[idx].isascii() and normalized[idx].isalpha()):
             break
@@ -3529,6 +3542,7 @@ def _force_first_latin_phrase(
             converted, source = _latin_prefix_to_kana_with_source(word)
             if converted:
                 out.append(converted)
+                converted_any = True
                 _append_kana_debug(
                     debug_sources,
                     word,
@@ -3548,6 +3562,8 @@ def _force_first_latin_phrase(
         ):
             break
 
+    if converted_any and separator:
+        out.append(separator)
     out.append(normalized[idx:])
     return "".join(out), consumed
 
@@ -3714,6 +3730,12 @@ def _normalize_kana_with_tagger(
                         run_action[pos] = action
             idx = end
 
+    def _append_first_force_separator() -> None:
+        nonlocal first_force_separator_inserted
+        if not first_force_separator_inserted and first_force_separator:
+            out.append(first_force_separator)
+            first_force_separator_inserted = True
+
     def _adjust_weekday_reading(idx: int, reading_kata: str) -> str:
         if not reading_kata:
             return reading_kata
@@ -3744,6 +3766,7 @@ def _normalize_kana_with_tagger(
                     converted = _apply_surface_kana(reading_kata, surface)
                     output = _hiragana_to_katakana(converted)
                     out.append(output)
+                    _append_first_force_separator()
                     _append_kana_debug(
                         debug_sources,
                         surface_original,
@@ -3755,6 +3778,7 @@ def _normalize_kana_with_tagger(
                 fallback, source = _latin_prefix_to_kana_with_source(surface)
                 if fallback:
                     out.append(fallback)
+                    _append_first_force_separator()
                     _append_kana_debug(
                         debug_sources,
                         surface_original,
@@ -3777,6 +3801,7 @@ def _normalize_kana_with_tagger(
                 fallback, source = _latin_prefix_to_kana_with_source(surface)
                 if fallback:
                     out.append(fallback)
+                    _append_first_force_separator()
                     _append_kana_debug(
                         debug_sources,
                         surface_original,
@@ -3812,9 +3837,7 @@ def _normalize_kana_with_tagger(
                 converted = _apply_surface_kana(reading_kata, surface)
                 output = _katakana_to_hiragana(converted)
                 out.append(output)
-                if not first_force_separator_inserted and first_force_separator:
-                    out.append(first_force_separator)
-                    first_force_separator_inserted = True
+                _append_first_force_separator()
                 _append_kana_debug(
                     debug_sources,
                     surface_original,
@@ -3924,8 +3947,11 @@ def _normalize_kana_text(
         return text
     first_token_consumed = False
     if force_first_token_to_kana:
+        first_token_separator = _first_token_separator()
         text, first_token_consumed = _force_first_latin_phrase(
-            text, debug_sources=debug_sources
+            text,
+            debug_sources=debug_sources,
+            separator=first_token_separator,
         )
     if not _has_kanji(text):
         return text
@@ -4146,17 +4172,26 @@ def _apply_ruby_evidence(
 ) -> str:
     if not ruby_data:
         return text
+    first_token_separator = _first_token_separator()
     spans = _select_ruby_spans(chapter_id, text, ruby_data)
     if spans:
         spans = _filter_ruby_spans(spans)
         if spans:
             spans = _maybe_normalize_ruby_entries(spans)
-            spans = _katakanize_reading_entries(spans)
+            spans = _katakanize_reading_entries(
+                spans,
+                append_separator=True,
+                separator=first_token_separator,
+            )
             text = apply_ruby_spans(text, spans)
     ruby_global = _ruby_global_overrides(ruby_data)
     if ruby_global:
         ruby_global = _maybe_normalize_ruby_entries(ruby_global)
-        ruby_global = _katakanize_reading_entries(ruby_global)
+        ruby_global = _katakanize_reading_entries(
+            ruby_global,
+            append_separator=True,
+            separator=first_token_separator,
+        )
         if skip_bases:
             ruby_global = [
                 item
@@ -4215,17 +4250,26 @@ def _apply_ruby_evidence_to_chunk(
     skip_bases: Optional[set[str]] = None,
 ) -> str:
     text = chunk_text
+    first_token_separator = _first_token_separator()
     spans = _chunk_ruby_spans(chunk_span, chapter_spans)
     if spans:
         spans = _filter_ruby_spans(spans)
         if spans:
             spans = _maybe_normalize_ruby_entries(spans)
-            spans = _katakanize_reading_entries(spans)
+            spans = _katakanize_reading_entries(
+                spans,
+                append_separator=True,
+                separator=first_token_separator,
+            )
             text = apply_ruby_spans(text, spans)
     ruby_global = _ruby_global_overrides(ruby_data)
     if ruby_global:
         ruby_global = _maybe_normalize_ruby_entries(ruby_global)
-        ruby_global = _katakanize_reading_entries(ruby_global)
+        ruby_global = _katakanize_reading_entries(
+            ruby_global,
+            append_separator=True,
+            separator=first_token_separator,
+        )
         if skip_bases:
             ruby_global = [
                 item

@@ -353,7 +353,8 @@ def test_apply_ruby_evidence_to_chunk_katakanizes_readings() -> None:
         chapter_spans,
         ruby_data,
     )
-    assert out == "前ニホン。コウハン。"
+    sep = _default_first_token_separator()
+    assert out == f"前ニホン{sep}。コウハン{sep}。"
 
 
 def test_apply_ruby_evidence_to_chunk_skips_single_kanji_global() -> None:
@@ -387,7 +388,7 @@ def test_apply_ruby_evidence_to_chunk_drops_suspicious_span() -> None:
         chapter_spans,
         {},
     )
-    assert out == "ホンチョウに西田医院という耳鼻科があったのを覚えているか。"
+    assert out == f"ホンチョウ{_default_first_token_separator()}に西田医院という耳鼻科があったのを覚えているか。"
 
 
 def test_apply_ruby_evidence_to_chunk_keeps_non_kanji_span() -> None:
@@ -402,7 +403,7 @@ def test_apply_ruby_evidence_to_chunk_keeps_non_kanji_span() -> None:
         chapter_spans,
         {},
     )
-    assert out == "ティーティーエスを試す。"
+    assert out == f"ティーティーエス{_default_first_token_separator()}を試す。"
 
 
 def test_normalize_kana_with_stub_tagger() -> None:
@@ -1270,7 +1271,7 @@ def test_normalize_kana_first_token_to_kana_latin_before_kanji() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "ティーブイ化"
+    assert out == f"ティーブイ{_default_first_token_separator()}化"
 
 
 def test_normalize_kana_first_token_to_kana_latin_starter() -> None:
@@ -1300,7 +1301,7 @@ def test_normalize_kana_first_token_to_kana_latin_starter() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "ブイシリーズ全十冊"
+    assert out == f"ブイ{_default_first_token_separator()}シリーズ全十冊"
 
 
 def test_normalize_kana_text_force_first_latin_phrase() -> None:
@@ -1310,7 +1311,7 @@ def test_normalize_kana_text_force_first_latin_phrase() -> None:
         kana_style="partial",
         force_first_token_to_kana=True,
     )
-    assert out == "ザ イエロー モンキー「天国旅行」"
+    assert out == f"ザ イエロー モンキー{_default_first_token_separator()}「天国旅行」"
 
 
 def test_normalize_kana_text_force_first_token_chunk_only() -> None:
@@ -1348,7 +1349,7 @@ def test_normalize_kana_first_token_to_kana_lowercase_latin_uses_reading() -> No
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "ロムを"
+    assert out == f"ロム{_default_first_token_separator()}を"
 
 
 def test_normalize_kana_first_token_to_kana_lowercase_latin_fallback() -> None:
@@ -1376,7 +1377,7 @@ def test_normalize_kana_first_token_to_kana_lowercase_latin_fallback() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "ロムを"
+    assert out == f"ロム{_default_first_token_separator()}を"
 
 
 def test_normalize_kana_first_token_to_kana_leading_kanji() -> None:
@@ -1429,7 +1430,7 @@ def test_normalize_kana_first_token_to_kana_handles_mixed_single_token() -> None
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "ティーブイアニメ化"
+    assert out == f"ティーブイアニメ{_default_first_token_separator()}化"
 
 
 def test_normalize_kana_first_token_to_kana_mixed_no_reading() -> None:
@@ -1457,7 +1458,7 @@ def test_normalize_kana_first_token_to_kana_mixed_no_reading() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "ロム取り出した"
+    assert out == f"ロム取り出し{_default_first_token_separator()}た"
 
 
 def test_normalize_kana_first_token_to_kana_skips_epub_noise() -> None:
@@ -1498,17 +1499,17 @@ def test_normalize_kana_first_token_to_kana_skips_epub_noise() -> None:
                 ("ＨＲ", "エイチアール"),
                 ("前の教室では、クラスメイトの女子から何度も同じ質問をされた。", None),
             ],
-            "エイチアール前の教室では、クラスメイトの女子から何度も同じ質問をされた。",
+            f"エイチアール{_default_first_token_separator()}前の教室では、クラスメイトの女子から何度も同じ質問をされた。",
         ),
         (
             "ＴＶの前では、よく美咲と一緒にゲームをした。",
             [("ＴＶ", "ティーブイ"), ("の前では、よく美咲と一緒にゲームをした。", None)],
-            "ティーブイの前では、よく美咲と一緒にゲームをした。",
+            f"ティーブイ{_default_first_token_separator()}の前では、よく美咲と一緒にゲームをした。",
         ),
         (
             "ＰＣの前に座って龍之介に疑問をぶつける。",
             [("ＰＣ", "ピーシー"), ("の前に座って龍之介に疑問をぶつける。", None)],
-            "ピーシーの前に座って龍之介に疑問をぶつける。",
+            f"ピーシー{_default_first_token_separator()}の前に座って龍之介に疑問をぶつける。",
         ),
         (
             "ＯＳが起動すると、まずはさくら荘の自室に設置してあるサーバーに接続する。",
@@ -1516,22 +1517,22 @@ def test_normalize_kana_first_token_to_kana_skips_epub_noise() -> None:
                 ("ＯＳ", "オーエス"),
                 ("が起動すると、まずはさくら荘の自室に設置してあるサーバーに接続する。", None),
             ],
-            "オーエスが起動すると、まずはさくら荘の自室に設置してあるサーバーに接続する。",
+            f"オーエス{_default_first_token_separator()}が起動すると、まずはさくら荘の自室に設置してあるサーバーに接続する。",
         ),
         (
             "ＳＤの何倍も時間がかかるんだもん！",
             [("ＳＤ", "エスディー"), ("の何倍も時間がかかるんだもん！", None)],
-            "エスディーの何倍も時間がかかるんだもん！",
+            f"エスディー{_default_first_token_separator()}の何倍も時間がかかるんだもん！",
         ),
         (
             "ＡＩにもてあそばれる俺って……",
             [("ＡＩ", "エーアイ"), ("にもてあそばれる俺って……", None)],
-            "エーアイにもてあそばれる俺って……",
+            f"エーアイ{_default_first_token_separator()}にもてあそばれる俺って……",
         ),
         (
             "Ｕターンした車は、札幌駅のある方へと曲がっていく。",
             [("Ｕ", "ユー"), ("ターンした車は、札幌駅のある方へと曲がっていく。", None)],
-            "ユーターンした車は、札幌駅のある方へと曲がっていく。",
+            f"ユー{_default_first_token_separator()}ターンした車は、札幌駅のある方へと曲がっていく。",
         ),
     ],
 )
@@ -1569,7 +1570,7 @@ def test_normalize_kana_first_token_to_kana_real_sakurasou_cases(
         (
             "ｉｆ』と『ｆｏｒ』の使い方は理解しているな。",
             [("ｉｆ", "イフ"), ("』と『ｆｏｒ』の使い方は理解しているな。", None)],
-            "イフ』と『ｆｏｒ』の使い方は理解しているな。",
+            f"イフ{_default_first_token_separator()}』と『ｆｏｒ』の使い方は理解しているな。",
         ),
         # Copyright metadata lead should remain unchanged.
         (
