@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from nik import sanitize as sanitize_util
+from nik import tts as tts_util
 from nik.text import SECTION_BREAK
 
 
@@ -239,3 +240,91 @@ def test_sanitize_dropped_chapter_clears_ruby_clean_spans(tmp_path: Path) -> Non
     entry = updated["ruby"]["chapters"]["0001-chapter"]
     assert "clean_spans" not in entry
     assert "clean_sha256" not in entry
+
+
+def test_sanitize_book_preserves_ruby_span_identity_for_dialogue_excerpt(
+    tmp_path: Path,
+) -> None:
+    book_dir = tmp_path / "book"
+    raw_dir = book_dir / "raw" / "chapters"
+    raw_dir.mkdir(parents=True)
+    raw_path = raw_dir / "0001-chapter.txt"
+    raw_text = (
+        "いいながら、自嘲するような笑い声を立てた。そしてすぐそれを打ち消すように早口で、\n\n"
+        "「シャンペンなの」と明るい声を出し「のみかけのシャンペン。あけたけど一人じゃのみきれなくて、"
+        "のんでいただこうと思って。すみません。明日まで置いたら気がぬけるでしょう」\n\n"
+        "可笑しそうに女は笑った。\n\n"
+        "「嬉しいけど」\n\n"
+        "私も笑顔をつくったが、動かなかった。"
+    )
+    raw_path.write_text(raw_text, encoding="utf-8")
+
+    toc = {
+        "created_unix": 0,
+        "source_epub": "book.epub",
+        "metadata": {"title": "Test Book"},
+        "chapters": [
+            {
+                "index": 1,
+                "title": "Chapter 1",
+                "path": raw_path.relative_to(book_dir).as_posix(),
+            }
+        ],
+    }
+    (book_dir / "toc.json").write_text(
+        json.dumps(toc, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    i_okashi = raw_text.index("可笑")
+    i_ureshi = raw_text.index("嬉")
+    overrides = {
+        "ruby": {
+            "chapters": {
+                "0001-chapter": {
+                    "raw_sha256": "dummy",
+                    "raw_spans": [
+                        {
+                            "start": i_okashi,
+                            "end": i_okashi + 2,
+                            "base": "可笑",
+                            "reading": "おか",
+                        },
+                        {
+                            "start": i_ureshi,
+                            "end": i_ureshi + 1,
+                            "base": "嬉",
+                            "reading": "うれ",
+                        },
+                    ],
+                }
+            }
+        }
+    }
+    overrides_path = book_dir / "reading-overrides.json"
+    overrides_path.write_text(
+        json.dumps(overrides, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    sanitize_util.sanitize_book(book_dir=book_dir, overwrite=True)
+    updated = json.loads(overrides_path.read_text(encoding="utf-8"))
+    clean_spans = updated["ruby"]["chapters"]["0001-chapter"]["clean_spans"]
+
+    assert any(
+        span["base"] == "可笑" and span["reading"] == "おか"
+        for span in clean_spans
+    )
+    assert any(
+        span["base"] == "嬉" and span["reading"] == "うれ"
+        for span in clean_spans
+    )
+    assert not any(
+        span["base"] == "可" and span["reading"] == "おかしそうに女は"
+        for span in clean_spans
+    )
+    for span in clean_spans:
+        assert not tts_util._is_suspicious_ruby_span(
+            str(span.get("base") or ""),
+            str(span.get("reading") or ""),
+        )
