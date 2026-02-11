@@ -18,6 +18,18 @@ def _make_repo(tmp_path: Path) -> tuple[Path, Path]:
     return repo_root, root_dir
 
 
+def _make_book(root_dir: Path, book_id: str = "book") -> Path:
+    book_dir = root_dir / book_id
+    (book_dir / "clean").mkdir(parents=True)
+    (book_dir / "clean" / "toc.json").write_text("{}", encoding="utf-8")
+    (book_dir / "tts").mkdir(parents=True, exist_ok=True)
+    (book_dir / "tts" / "manifest.json").write_text(
+        json.dumps({"voice": "manifest-voice", "chapters": [{"id": "c1", "chunks": ["chunk"]}]}),
+        encoding="utf-8",
+    )
+    return book_dir
+
+
 def test_list_voice_ids(tmp_path: Path) -> None:
     voices_dir = tmp_path / "voices"
     voices_dir.mkdir()
@@ -245,3 +257,65 @@ def test_voice_metadata_update_and_delete(tmp_path: Path) -> None:
     assert deleted.json() == {"status": "deleted", "voice": "Sample2"}
     assert not (voices_dir / "Sample2.wav").exists()
     assert not (voices_dir / "Sample2.json").exists()
+
+
+def test_synth_chunk_passes_selected_voice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _, root_dir = _make_repo(tmp_path)
+    _make_book(root_dir)
+    captured: dict = {}
+
+    def fake_synthesize_chunk(**kwargs):
+        captured.update(kwargs)
+        return {"chapter_id": "c1", "chunk_index": 0}
+
+    monkeypatch.setattr(player_util.tts_util, "synthesize_chunk", fake_synthesize_chunk)
+
+    app = player_util.create_app(root_dir)
+    client = TestClient(app)
+    response = client.post(
+        "/api/synth/chunk",
+        json={
+            "book_id": "book",
+            "chapter_id": "c1",
+            "chunk_index": 0,
+            "voice": "new-voice",
+            "use_voice_map": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["voice"] == "new-voice"
+    assert captured["voice_map_path"] is None
+
+
+def test_synth_chunk_passes_voice_map_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _, root_dir = _make_repo(tmp_path)
+    book_dir = _make_book(root_dir)
+    (book_dir / "voice-map.json").write_text(
+        json.dumps({"default": "advanced-default", "chapters": {"c1": "chapter-voice"}}),
+        encoding="utf-8",
+    )
+    captured: dict = {}
+
+    def fake_synthesize_chunk(**kwargs):
+        captured.update(kwargs)
+        return {"chapter_id": "c1", "chunk_index": 0}
+
+    monkeypatch.setattr(player_util.tts_util, "synthesize_chunk", fake_synthesize_chunk)
+
+    app = player_util.create_app(root_dir)
+    client = TestClient(app)
+    response = client.post(
+        "/api/synth/chunk",
+        json={
+            "book_id": "book",
+            "chapter_id": "c1",
+            "chunk_index": 0,
+            "voice": "selected-default",
+            "use_voice_map": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["voice"] == "selected-default"
+    assert captured["voice_map_path"] == book_dir / "voice-map.json"

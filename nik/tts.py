@@ -5191,7 +5191,11 @@ def synthesize_chunk(
             )
             voice_id = _normalize_voice_id(raw_voice, default_voice)
     else:
-        voice_id = _normalize_voice_id(entry.get("voice"), default_voice)
+        # Explicit voice overrides chapter-level manifest voice for manual regen.
+        if voice:
+            voice_id = _normalize_voice_id(voice, default_voice)
+        else:
+            voice_id = _normalize_voice_id(entry.get("voice"), default_voice)
 
     config = voice_util.resolve_voice_config(voice=voice_id, base_dir=base_dir)
     if backend_name == "torch":

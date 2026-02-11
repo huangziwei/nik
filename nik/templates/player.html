@@ -6492,6 +6492,13 @@
         if (!ok) {
           return;
         }
+        if (state.advancedMode) {
+          const saved = await saveVoiceMap();
+          if (!saved) {
+            setStatus(t("voiceMapSaveFailed"));
+            return;
+          }
+        }
         state.chunkRegenRunning = true;
         updateRegenButtonState();
         setStatus(t("regenChunkRegenerating", { label }));
@@ -6504,6 +6511,8 @@
               chapter_id: item.chapterId,
               chunk_index: item.chunkIndex,
               kana_style: state.kanaStyle,
+              voice: getSelectedVoice(),
+              use_voice_map: state.advancedMode,
             }),
           });
           state.chunkCacheBust[chunkCacheKey(item)] = Date.now();

@@ -1330,6 +1330,7 @@ class ChunkSynthRequest(BaseModel):
     chapter_id: str
     chunk_index: int
     kana_style: Optional[str] = None
+    voice: Optional[str] = None
     use_voice_map: bool = False
 
 
@@ -2678,14 +2679,14 @@ def create_app(root_dir: Path) -> FastAPI:
         if not manifest_path.exists():
             raise HTTPException(status_code=404, detail="Missing TTS manifest.")
 
-        voice_map_path = None
+        voice_map_path = _voice_map_path(book_dir) if payload.use_voice_map else None
 
         try:
             result = tts_util.synthesize_chunk(
                 out_dir=tts_dir,
                 chapter_id=payload.chapter_id,
                 chunk_index=payload.chunk_index,
-                voice=None,
+                voice=payload.voice,
                 voice_map_path=voice_map_path,
                 base_dir=repo_root,
                 kana_style=payload.kana_style,

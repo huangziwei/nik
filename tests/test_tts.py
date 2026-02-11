@@ -1599,6 +1599,73 @@ def test_synthesize_book_force_first_token_to_kana(
     assert calls.get("force_first_token_to_kana") is True
 
 
+def test_synthesize_chunk_prefers_explicit_voice_over_manifest_entry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    out_dir = tmp_path / "book" / "tts"
+    out_dir.mkdir(parents=True)
+    manifest = {
+        "voice": "高橋一生",
+        "chapters": [
+            {
+                "id": "c1",
+                "title": "Chapter 1",
+                "voice": "高橋一生",
+                "chunks": ["こんにちは"],
+                "chunk_spans": [[0, 5]],
+                "durations_ms": [None],
+            }
+        ],
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_resolve_voice_config(voice: str, base_dir: Path, **_kwargs):
+        captured["voice"] = voice
+        return voice_util.VoiceConfig(
+            name=voice,
+            ref_audio="dummy.wav",
+            ref_text="dummy",
+            language="Japanese",
+            x_vector_only_mode=False,
+        )
+
+    monkeypatch.setattr(tts_util, "_select_backend", lambda _backend: "mlx")
+    monkeypatch.setattr(tts_util, "_resolve_model_name", lambda _name, _backend: "dummy")
+    monkeypatch.setattr(tts_util, "_load_mlx_model", lambda _name: object())
+    monkeypatch.setattr(
+        tts_util, "_generate_audio_mlx", lambda *_args, **_kwargs: ([tts_util.np.zeros(1)], 24000)
+    )
+    monkeypatch.setattr(tts_util, "_load_ruby_data", lambda _book_dir: {"chapters": {}})
+    monkeypatch.setattr(tts_util, "_load_reading_overrides", lambda _book_dir: ([], {}))
+    monkeypatch.setattr(
+        tts_util,
+        "_prepare_tts_pipeline",
+        lambda *_args, **_kwargs: tts_util.TtsPipeline(
+            ruby_text="こんにちは",
+            after_overrides="こんにちは",
+            after_numbers="こんにちは",
+            after_kana="こんにちは",
+            prepared="こんにちは",
+        ),
+    )
+    monkeypatch.setattr(tts_util, "_write_wav", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(tts_util.voice_util, "resolve_voice_config", fake_resolve_voice_config)
+
+    result = tts_util.synthesize_chunk(
+        out_dir=out_dir,
+        chapter_id="c1",
+        chunk_index=0,
+        voice="堀江由衣",
+        base_dir=tmp_path,
+    )
+    assert result["status"] == "ok"
+    assert captured["voice"] == "堀江由衣"
+
+
 def test_normalize_numbers_standalone_digits() -> None:
     text = "全7冊 合本版"
     assert tts_util._normalize_numbers(text) == "全ななさつ 合本版"
