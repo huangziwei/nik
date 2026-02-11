@@ -3724,6 +3724,7 @@ def _normalize_kana_with_tagger(
     run_action: List[str] = [""] * len(tokens)
     force_first_kanji_indices: set[int] = set()
     force_first_token_idx: Optional[int] = None
+    force_first_kanji_last_idx: Optional[int] = None
     first_force_separator_inserted = False
     first_force_separator = ""
     if kana_style == "partial":
@@ -3731,6 +3732,8 @@ def _normalize_kana_with_tagger(
             tokens,
             force_first_token_to_kana=force_first_token_to_kana,
         )
+        if force_first_kanji_indices:
+            force_first_kanji_last_idx = max(force_first_kanji_indices)
         first_force_separator = _first_token_separator()
     if kana_style == "partial" and tokens:
         if partial_mid_kanji and zh_lexicon is None:
@@ -3845,7 +3848,8 @@ def _normalize_kana_with_tagger(
                 fallback, source = _latin_prefix_to_kana_with_source(surface)
                 if fallback:
                     out.append(fallback)
-                    _append_first_force_separator()
+                    if idx == force_first_kanji_last_idx:
+                        _append_first_force_separator()
                     _append_kana_debug(
                         debug_sources,
                         surface_original,
@@ -3881,7 +3885,8 @@ def _normalize_kana_with_tagger(
                 converted = _apply_surface_kana(reading_kata, surface)
                 output = _katakana_to_hiragana(converted)
                 out.append(output)
-                _append_first_force_separator()
+                if idx == force_first_kanji_last_idx:
+                    _append_first_force_separator()
                 _append_kana_debug(
                     debug_sources,
                     surface_original,

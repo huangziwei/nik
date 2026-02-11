@@ -1231,7 +1231,7 @@ def test_normalize_kana_first_token_partial_kanji_run() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == f"じてん{_default_first_token_separator()}しゃ"
+    assert out == f"じてんしゃ{_default_first_token_separator()}"
 
 
 def test_normalize_kana_first_token_partial_numeric_counter_run() -> None:
@@ -1279,7 +1279,7 @@ def test_normalize_kana_first_token_partial_numeric_counter_run() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == f"とお{_default_first_token_separator()}か"
+    assert out == f"とおか{_default_first_token_separator()}"
 
 
 def test_normalize_kana_first_token_already_kana() -> None:
@@ -1706,7 +1706,7 @@ def test_normalize_kana_weekday_reading() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == f"どよう{_default_first_token_separator()}び"
+    assert out == f"どようび{_default_first_token_separator()}"
 
 
 def test_normalize_kana_with_tagger_normalizes_kyujitai() -> None:
