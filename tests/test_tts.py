@@ -2256,6 +2256,20 @@ def test_load_reading_overrides(tmp_path: Path) -> None:
     assert overrides == {"0001-test": [{"base": "漢字", "reading": "かんじ"}]}
 
 
+def test_ruby_global_overrides_supports_regex_entries() -> None:
+    ruby_data = {
+        "global": [
+            {"base": "暗殺者", "reading": "あんさつしや"},
+            {"base": "巻", "reading": "ま"},
+            {"base": "上手", "pattern": "上手(?=い)", "reading": "うま"},
+        ]
+    }
+    overrides = tts_util._ruby_global_overrides(ruby_data)
+    assert {"base": "暗殺者", "reading": "あんさつしや"} in overrides
+    assert {"pattern": "上手(?=い)", "reading": "うま"} in overrides
+    assert {"base": "巻", "reading": "ま"} not in overrides
+
+
 def test_merge_reading_overrides_prefers_chapter() -> None:
     global_overrides = [{"base": "山田太一", "reading": "やまだたいち"}]
     chapter_overrides = [{"base": "山田太一", "reading": "やまだたいいち"}]

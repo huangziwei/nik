@@ -4593,15 +4593,14 @@ def _ruby_global_overrides(ruby_data: dict) -> List[dict[str, str]]:
     items = ruby_data.get("global") if isinstance(ruby_data, dict) else None
     if isinstance(items, list):
         for item in items:
-            if not isinstance(item, dict):
+            entry = _normalize_reading_override_entry(item)
+            if not entry:
                 continue
-            base = str(item.get("base") or "").strip()
-            reading = str(item.get("reading") or "").strip()
-            if base and reading:
-                if len(base) == 1:
-                    continue
-                entry = {"base": base, "reading": reading}
-                overrides.append(entry)
+            base = str(entry.get("base") or "").strip()
+            # Keep legacy single-kanji protection for literal global base overrides.
+            if base and len(base) == 1:
+                continue
+            overrides.append(entry)
     return overrides
 
 

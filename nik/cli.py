@@ -5,6 +5,7 @@ import importlib
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -137,6 +138,143 @@ def _select_preferred_ruby_reading(
     return majority, majority_count
 
 
+def _ruby_token_spans(text: str, tagger: Optional[object]) -> list[tuple[int, int, str]]:
+    if not text or tagger is None:
+        return []
+    try:
+        tokens = list(tagger(text))
+    except Exception:
+        return []
+    spans: list[tuple[int, int, str]] = []
+    cursor = 0
+    for token in tokens:
+        surface = str(getattr(token, "surface", "") or "")
+        if not surface:
+            continue
+        start = text.find(surface, cursor)
+        if start == -1:
+            if text[cursor : cursor + len(surface)] == surface:
+                start = cursor
+            else:
+                continue
+        end = start + len(surface)
+        if end <= start or end > len(text):
+            continue
+        spans.append((start, end, surface))
+        cursor = end
+    return spans
+
+
+def _ruby_surface_context(
+    text: str,
+    start: int,
+    end: int,
+    token_spans: list[tuple[int, int, str]],
+) -> str:
+    if not text:
+        return ""
+    if 0 <= start < end <= len(text) and token_spans:
+        overlaps = [
+            idx
+            for idx, (tok_start, tok_end, _surface) in enumerate(token_spans)
+            if tok_start < end and tok_end > start
+        ]
+        if overlaps:
+            first = overlaps[0]
+            last = overlaps[-1]
+            context = text[token_spans[first][0] : token_spans[last][1]].strip()
+            if context:
+                return context
+    return text[start:end].strip() if 0 <= start < end <= len(text) else ""
+
+
+def _contextual_ruby_pattern(base: str, surface: str) -> str:
+    if not base or not surface:
+        return ""
+    if surface.count(base) != 1:
+        return ""
+    idx = surface.find(base)
+    if idx < 0:
+        return ""
+    prefix = surface[:idx]
+    suffix = surface[idx + len(base) :]
+    if not prefix and not suffix:
+        return ""
+    pattern = re.escape(base)
+    if prefix:
+        pattern = f"(?<={re.escape(prefix)}){pattern}"
+    if suffix:
+        pattern = f"{pattern}(?={re.escape(suffix)})"
+    return pattern
+
+
+def _build_global_ruby_entries_for_base(
+    base: str,
+    counts: dict[str, int],
+    order: dict[str, int],
+    selected_reading: str,
+    selected_count: int,
+    context_counts: Optional[dict[str, dict[str, int]]] = None,
+) -> list[dict]:
+    if not base or not selected_reading or selected_count <= 0:
+        return []
+    # Single-kanji propagation is too noisy even with context constraints.
+    if len(base) <= 1:
+        return []
+    total = sum(count for count in counts.values() if count > 0)
+    if total <= 0:
+        return []
+
+    # Non-conflict entries can still use a literal global override.
+    if len(counts) <= 1:
+        return [
+            {
+                "base": base,
+                "reading": selected_reading,
+                "count": selected_count,
+                "total": total,
+            }
+        ]
+
+    # For conflict cases, only propagate if selected reading is a strict global majority.
+    if selected_count * 2 <= total:
+        return []
+
+    # Context-sensitive propagation:
+    # convert only surfaces where selected reading is also the strict local majority.
+    if not context_counts:
+        return []
+
+    entries: list[dict] = []
+    for surface, reading_counts in sorted(context_counts.items(), key=lambda item: item[0]):
+        if not surface or not reading_counts:
+            continue
+        surface_total = sum(count for count in reading_counts.values() if count > 0)
+        if surface_total <= 0:
+            continue
+        surface_order = {reading: order.get(reading, 1 << 30) for reading in reading_counts}
+        surface_majority = _majority_ruby_reading(reading_counts, surface_order)
+        surface_majority_count = reading_counts.get(surface_majority, 0)
+        if surface_majority_count * 2 <= surface_total:
+            continue
+        if surface_majority != selected_reading:
+            continue
+        pattern = _contextual_ruby_pattern(base, surface)
+        if not pattern:
+            continue
+        entries.append(
+            {
+                "base": base,
+                "pattern": pattern,
+                "context": surface,
+                "reading": selected_reading,
+                "count": surface_majority_count,
+                "total": surface_total,
+            }
+        )
+    return entries
+
+
 def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
     book = epub_util.read_epub(input_path)
     metadata = epub_util.extract_metadata(book)
@@ -163,6 +301,8 @@ def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
     ruby_chapters: dict[str, dict] = {}
     ruby_counts: dict[str, dict[str, int]] = {}
     ruby_order: dict[str, list[str]] = {}
+    ruby_context_counts: dict[str, dict[str, dict[str, int]]] = {}
+    unidic_tagger = _load_unidic_tagger_if_available()
     for idx, chapter in enumerate(chapters, start=1):
         title = chapter.title or f"Chapter {idx}"
         slug = epub_util.slugify(title)
@@ -180,9 +320,10 @@ def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
                 "raw_sha256": tts_util.sha256_str(raw_for_hash),
                 "raw_spans": chapter.ruby_spans,
             }
-        for base, reading in chapter.ruby_pairs:
-            base_text = str(base).strip()
-            reading_text = str(reading).strip()
+        chapter_token_spans = _ruby_token_spans(chapter.text, unidic_tagger)
+        for span in chapter.ruby_spans:
+            base_text = str(span.get("base", "")).strip()
+            reading_text = str(span.get("reading", "")).strip()
             if not base_text or not reading_text:
                 continue
             ruby_counts.setdefault(base_text, {})
@@ -192,6 +333,24 @@ def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
             ruby_order.setdefault(base_text, [])
             if reading_text not in ruby_order[base_text]:
                 ruby_order[base_text].append(reading_text)
+            try:
+                span_start = int(span.get("start"))
+                span_end = int(span.get("end"))
+            except (TypeError, ValueError):
+                span_start = -1
+                span_end = -1
+            surface = _ruby_surface_context(
+                chapter.text,
+                span_start,
+                span_end,
+                chapter_token_spans,
+            )
+            if surface:
+                ruby_context_counts.setdefault(base_text, {})
+                ruby_context_counts[base_text].setdefault(surface, {})
+                ruby_context_counts[base_text][surface][reading_text] = (
+                    ruby_context_counts[base_text][surface].get(reading_text, 0) + 1
+                )
         toc_items.append(
             {
                 "index": idx,
@@ -219,9 +378,7 @@ def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
         overrides_path = out_dir / "reading-overrides.json"
         ruby_global: list[dict] = []
         ruby_conflicts: list[dict] = []
-        unidic_tagger = _load_unidic_tagger_if_available()
         for base, counts in sorted(ruby_counts.items(), key=lambda item: item[0]):
-            total = sum(counts.values())
             order = {reading: idx for idx, reading in enumerate(ruby_order.get(base, []))}
             majority_reading = _majority_ruby_reading(counts, order)
             selected_reading, selected_count = _select_preferred_ruby_reading(
@@ -230,15 +387,16 @@ def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
                 order=order,
                 tagger=unidic_tagger,
             )
-            if selected_reading:
-                ruby_global.append(
-                    {
-                        "base": base,
-                        "reading": selected_reading,
-                        "count": selected_count,
-                        "total": total,
-                    }
+            ruby_global.extend(
+                _build_global_ruby_entries_for_base(
+                    base=base,
+                    counts=counts,
+                    order=order,
+                    selected_reading=selected_reading,
+                    selected_count=selected_count,
+                    context_counts=ruby_context_counts.get(base),
                 )
+            )
             if len(counts) > 1:
                 readings = [
                     {"reading": reading, "count": count}

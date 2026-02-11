@@ -102,6 +102,60 @@ def test_select_preferred_ruby_reading_falls_back_to_majority_without_alignment(
     assert selected_count == 2
 
 
+def test_contextual_ruby_pattern_requires_full_word_context() -> None:
+    assert cli._contextual_ruby_pattern("上手", "上手") == ""
+    assert cli._contextual_ruby_pattern("上手", "上手い") == "上手(?=い)"
+    assert cli._contextual_ruby_pattern("上手", "お上手") == "(?<=お)上手"
+
+
+def test_build_global_ruby_entries_for_conflict_uses_context_patterns() -> None:
+    entries = cli._build_global_ruby_entries_for_base(
+        base="上手",
+        counts={"うま": 10, "じようず": 5},
+        order={"うま": 0, "じようず": 1},
+        selected_reading="うま",
+        selected_count=10,
+        context_counts={
+            "上手い": {"うま": 8},
+            "上手": {"うま": 2, "じようず": 5},
+        },
+    )
+    assert entries == [
+        {
+            "base": "上手",
+            "pattern": "上手(?=い)",
+            "context": "上手い",
+            "reading": "うま",
+            "count": 8,
+            "total": 8,
+        }
+    ]
+
+
+def test_build_global_ruby_entries_for_conflict_skips_ambiguous_word() -> None:
+    entries = cli._build_global_ruby_entries_for_base(
+        base="暗殺者",
+        counts={"おれ": 1, "あんさつしや": 1},
+        order={"おれ": 0, "あんさつしや": 1},
+        selected_reading="あんさつしや",
+        selected_count=1,
+        context_counts={"暗殺者": {"おれ": 1, "あんさつしや": 1}},
+    )
+    assert entries == []
+
+
+def test_build_global_ruby_entries_skips_single_kanji_even_with_context() -> None:
+    entries = cli._build_global_ruby_entries_for_base(
+        base="巻",
+        counts={"ま": 3, "かん": 1},
+        order={"ま": 0, "かん": 1},
+        selected_reading="ま",
+        selected_count=3,
+        context_counts={"巻き": {"ま": 2}},
+    )
+    assert entries == []
+
+
 def test_synth_parser_supports_backend() -> None:
     parser = cli.build_parser()
     args = parser.parse_args(["synth", "--book", "out", "--voice", "voice.json", "--backend", "mlx"])
