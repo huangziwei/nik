@@ -3720,6 +3720,7 @@ def _normalize_kana_with_tagger(
     text = _normalize_kyujitai(text, debug_sources=debug_sources)
     kana_style = _normalize_kana_style(kana_style)
     out: List[str] = []
+    first_force_separator_marker = "\0NIK_FIRST_FORCE_SEPARATOR\0"
     tokens = list(tagger(text))
     run_action: List[str] = [""] * len(tokens)
     force_first_kanji_indices: set[int] = set()
@@ -3780,7 +3781,7 @@ def _normalize_kana_with_tagger(
     def _append_first_force_separator() -> None:
         nonlocal first_force_separator_inserted
         if not first_force_separator_inserted and first_force_separator:
-            out.append(first_force_separator)
+            out.append(first_force_separator_marker)
             first_force_separator_inserted = True
 
     def _adjust_weekday_reading(idx: int, reading_kata: str) -> str:
@@ -3980,6 +3981,32 @@ def _normalize_kana_with_tagger(
                 source="unidic",
                 reading=reading_kata,
             )
+    if first_force_separator_marker not in out:
+        return "".join(out)
+
+    marker_idx = out.index(first_force_separator_marker)
+    prev_chunk = out[marker_idx - 1] if marker_idx > 0 else ""
+    if prev_chunk.endswith(("っ", "ッ")):
+        moved = False
+        for idx in range(marker_idx + 1, len(out)):
+            chunk = out[idx]
+            kana_idx = -1
+            for pos, ch in enumerate(chunk):
+                if _is_kana_char(ch):
+                    kana_idx = pos
+                    break
+            if kana_idx < 0:
+                continue
+            out[idx] = (
+                chunk[: kana_idx + 1] + first_force_separator + chunk[kana_idx + 1 :]
+            )
+            out[marker_idx] = ""
+            moved = True
+            break
+        if moved:
+            return "".join(out)
+
+    out[marker_idx] = first_force_separator
     return "".join(out)
 
 

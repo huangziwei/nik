@@ -1206,6 +1206,36 @@ def test_normalize_kana_first_token_partial_separator_custom(
     assert out == "なげつけ・好き"
 
 
+def test_normalize_kana_first_token_partial_separator_after_sokuon() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("待っ", "マッ"),
+                DummyToken("て", "テ"),
+                DummyToken("くれ", "クレ"),
+                DummyToken("。", "。"),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "待ってくれ。",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_token_to_kana=True,
+    )
+    assert out == f"まって{_default_first_token_separator()}くれ。"
+
+
 def test_normalize_kana_first_token_partial_kanji_run() -> None:
     class DummyFeature:
         def __init__(self, kana: str | None) -> None:
