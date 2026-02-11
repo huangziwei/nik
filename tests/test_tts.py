@@ -13,6 +13,10 @@ def _reset_first_token_separator_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(tts_util.FIRST_TOKEN_SEPARATOR_ENV, raising=False)
 
 
+def _default_first_token_separator() -> str:
+    return tts_util._first_token_separator()
+
+
 def test_make_chunk_spans_splits_japanese_sentences() -> None:
     text = "今日は良い天気です。明日も晴れるでしょう。"
     spans = tts_util.make_chunk_spans(text, max_chars=10, chunk_mode="japanese")
@@ -1072,7 +1076,7 @@ def test_normalize_kana_first_token_partial() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "なげつけ'好き"
+    assert out == f"なげつけ{_default_first_token_separator()}好き"
 
 
 def test_normalize_kana_first_token_partial_separator_none(
@@ -1162,7 +1166,7 @@ def test_normalize_kana_first_token_partial_kanji_run() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "じてん'しゃ"
+    assert out == f"じてん{_default_first_token_separator()}しゃ"
 
 
 def test_normalize_kana_first_token_partial_numeric_counter_run() -> None:
@@ -1210,7 +1214,7 @@ def test_normalize_kana_first_token_partial_numeric_counter_run() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "とお'か"
+    assert out == f"とお{_default_first_token_separator()}か"
 
 
 def test_normalize_kana_first_token_already_kana() -> None:
@@ -1400,7 +1404,7 @@ def test_normalize_kana_first_token_to_kana_leading_kanji() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "かんじ'テスト"
+    assert out == f"かんじ{_default_first_token_separator()}テスト"
 
 
 def test_normalize_kana_first_token_to_kana_handles_mixed_single_token() -> None:
@@ -1637,7 +1641,7 @@ def test_normalize_kana_weekday_reading() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "どよう'び"
+    assert out == f"どよう{_default_first_token_separator()}び"
 
 
 def test_normalize_kana_with_tagger_normalizes_kyujitai() -> None:
@@ -1668,7 +1672,7 @@ def test_normalize_kana_with_tagger_normalizes_kyujitai() -> None:
         force_first_token_to_kana=True,
     )
     assert tagger.last_input == "目覚め"
-    assert out == "めざめ'"
+    assert out == f"めざめ{_default_first_token_separator()}"
 
 
 def test_normalize_kana_with_tagger_normalizes_kyujitai_uso() -> None:
@@ -1699,7 +1703,7 @@ def test_normalize_kana_with_tagger_normalizes_kyujitai_uso() -> None:
         force_first_token_to_kana=True,
     )
     assert tagger.last_input == "嘘"
-    assert out == "うそ'"
+    assert out == f"うそ{_default_first_token_separator()}"
 
 
 def test_synthesize_book_force_first_token_to_kana(
