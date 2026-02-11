@@ -128,7 +128,7 @@ except ValueError:
     _JP_COMMON_ZIPF = 4.0
 
 DEFAULT_TORCH_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
-DEFAULT_MLX_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16"
+DEFAULT_MLX_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"
 MIN_MLX_AUDIO_VERSION = "0.3.1"
 FORCED_LANGUAGE = "Japanese"
 READING_TEMPLATE_FILENAME = "global-reading-overrides.md"
@@ -1271,6 +1271,17 @@ def _looks_like_dialogue_chunk(stripped: str) -> bool:
         if inner:
             return True
 
+    # Chunking can split quoted dialogue at sentence punctuation, leaving only one
+    # quote edge in a fragment (e.g., "「いいえ。" / "ありがとうございます」").
+    if len(trimmed) >= 2 and trimmed[0] in _JP_OPEN_QUOTES:
+        inner = trimmed[1:].strip()
+        if inner:
+            return True
+    if len(trimmed) >= 2 and trimmed[-1] in _JP_CLOSE_QUOTES:
+        inner = trimmed[:-1].strip()
+        if inner:
+            return True
+
     if (
         len(trimmed) >= 2
         and trimmed[0] in _DOUBLE_QUOTE_CHARS
@@ -1340,6 +1351,26 @@ def _looks_like_contextual_heading(
     return surrounding >= max(words + 2, int(words * 1.5))
 
 
+def _looks_like_dialogue_bridge_chunk(
+    chunk: str, prev_chunk: str, next_chunk: str
+) -> bool:
+    stripped = " ".join(part.strip() for part in chunk.splitlines() if part.strip())
+    if not stripped:
+        return False
+    if _looks_like_dialogue_chunk(stripped):
+        return False
+    prev_is_dialogue = bool(prev_chunk and _looks_like_dialogue_chunk(prev_chunk))
+    next_is_dialogue = bool(next_chunk and _looks_like_dialogue_chunk(next_chunk))
+    if not (prev_is_dialogue or next_is_dialogue):
+        return False
+    if prev_is_dialogue and next_is_dialogue:
+        return True
+    # Speaker-attribution bridges are often attached with a trailing comma/colon.
+    if stripped.endswith(("、", ",", "，", ":", "：", "――", "—")):
+        return True
+    return False
+
+
 def _gap_has_symbolic_separator(gap: str) -> bool:
     for line in gap.splitlines():
         stripped = line.strip()
@@ -1368,6 +1399,13 @@ def compute_chunk_pause_multipliers(
         heading_like[idx] = _looks_like_contextual_heading(
             chunk, prev_words, next_words
         )
+    for idx, is_heading in enumerate(heading_like):
+        if not is_heading:
+            continue
+        prev_chunk = chunk_texts[idx - 1] if idx > 0 else ""
+        next_chunk = chunk_texts[idx + 1] if idx + 1 < len(chunk_texts) else ""
+        if _looks_like_dialogue_bridge_chunk(chunk_texts[idx], prev_chunk, next_chunk):
+            heading_like[idx] = False
     first_body_idx = next(
         (idx for idx, is_heading in enumerate(heading_like) if not is_heading),
         len(heading_like),
@@ -1904,7 +1942,11 @@ def _katakanize_reading_entries(
     separator: Optional[str] = None,
 ) -> List[dict]:
     out: List[dict] = []
-    sep = separator if separator is not None else (_first_token_separator() if append_separator else "")
+    sep = (
+        separator
+        if separator is not None
+        else (_first_token_separator() if append_separator else "")
+    )
     for item in entries:
         if not isinstance(item, dict):
             continue

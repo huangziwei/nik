@@ -2131,12 +2131,6 @@
               </div>
               <div class="panel edit-rules">
                 <div class="edit-section-title" id="editRulesTitle">ルール</div>
-                <label for="rulesParagraphs" id="rulesParagraphsLabel">段落区切り</label>
-                <select id="rulesParagraphs">
-                  <option value="auto">自動判定（推奨）</option>
-                  <option value="double">二重改行</option>
-                  <option value="single">単一改行（改行を段落として扱う）</option>
-                </select>
                 <label for="rulesDrop" id="rulesDropLabel">章タイトルの除外パターン</label>
                 <textarea id="rulesDrop"></textarea>
                 <label for="rulesCutoff" id="rulesCutoffLabel">セクション打ち切りパターン</label>
@@ -2530,10 +2524,6 @@
       const rulesCutoffLabel = document.getElementById("rulesCutoffLabel");
       const rulesRemove = document.getElementById("rulesRemove");
       const rulesRemoveLabel = document.getElementById("rulesRemoveLabel");
-      const rulesParagraphs = document.getElementById("rulesParagraphs");
-      const rulesParagraphsLabel = document.getElementById(
-        "rulesParagraphsLabel"
-      );
       const rulesReplace = document.getElementById("rulesReplace");
       const rulesReplaceLabel = document.getElementById("rulesReplaceLabel");
       const status = document.getElementById("status");
@@ -2752,10 +2742,6 @@
             "1 行 1 件: 漢字=かな。re: で正規表現可（例: re:御(存知|迷惑)=ご\\1）。TTS 時のみ適用。",
           saveOverrides: "置換を保存",
           rulesTitle: "ルール",
-          rulesParagraphs: "段落区切り",
-          rulesParagraphsAuto: "自動判定（推奨）",
-          rulesParagraphsDouble: "二重改行",
-          rulesParagraphsSingle: "単一改行（改行を段落として扱う）",
           rulesDrop: "章タイトルの除外パターン",
           rulesCutoff: "セクション打ち切りパターン",
           rulesRemove: "削除パターン",
@@ -3081,10 +3067,6 @@
             "One per line: 漢字=かな. Prefix with re: for regex (e.g., re:御(存知|迷惑)=ご\\1). Applied at TTS time only.",
           saveOverrides: "Save overrides",
           rulesTitle: "Rules",
-          rulesParagraphs: "Paragraph breaks",
-          rulesParagraphsAuto: "Auto detect (recommended)",
-          rulesParagraphsDouble: "Double newline",
-          rulesParagraphsSingle: "Single newline (treat line breaks as paragraphs)",
           rulesDrop: "Drop chapter title patterns",
           rulesCutoff: "Section cutoff patterns",
           rulesRemove: "Remove patterns",
@@ -3423,14 +3405,6 @@
         }
         if (editRulesTitle) {
           editRulesTitle.textContent = t("rulesTitle");
-        }
-        if (rulesParagraphsLabel) {
-          rulesParagraphsLabel.textContent = t("rulesParagraphs");
-        }
-        if (rulesParagraphs && rulesParagraphs.options.length >= 3) {
-          rulesParagraphs.options[0].textContent = t("rulesParagraphsAuto");
-          rulesParagraphs.options[1].textContent = t("rulesParagraphsDouble");
-          rulesParagraphs.options[2].textContent = t("rulesParagraphsSingle");
         }
         if (rulesDropLabel) {
           rulesDropLabel.textContent = t("rulesDrop");
@@ -6117,7 +6091,7 @@
 
       function splitParagraphSpans(text) {
         const spans = [];
-        const re = /\n(?:[ \t]*\n)+/g;
+        const re = /\n(?:[ \t]*\n)*/g;
         const classifyBreak = (delimiter) => {
           if (delimiter.includes(SECTION_BREAK)) {
             return "section";
@@ -7761,7 +7735,6 @@
 
       function rulesFromForm() {
         return {
-          paragraph_breaks: rulesParagraphs.value || "auto",
           drop_chapter_title_patterns: parseRuleLines(rulesDrop.value || ""),
           section_cutoff_patterns: parseRuleLines(rulesCutoff.value || ""),
           remove_patterns: parseRuleLines(rulesRemove.value || ""),
@@ -7771,7 +7744,6 @@
 
       function applyRulesToForm(rules) {
         state.rulesLoading = true;
-        rulesParagraphs.value = rules.paragraph_breaks || "auto";
         rulesDrop.value = (rules.drop_chapter_title_patterns || []).join("\n");
         rulesCutoff.value = (rules.section_cutoff_patterns || []).join("\n");
         rulesRemove.value = (rules.remove_patterns || []).join("\n");
@@ -8544,7 +8516,6 @@
       rulesDrop.addEventListener("input", scheduleRulesSave);
       rulesCutoff.addEventListener("input", scheduleRulesSave);
       rulesRemove.addEventListener("input", scheduleRulesSave);
-      rulesParagraphs.addEventListener("change", scheduleRulesSave);
       rulesReplace.addEventListener("change", scheduleRulesSave);
       bookmarkBtn.addEventListener("click", () => {
         if (bookmarkPanel.classList.contains("open")) {

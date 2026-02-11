@@ -401,7 +401,6 @@ def _rules_payload_from_ruleset(rules: sanitize.Ruleset) -> dict:
         "drop_chapter_title_patterns": list(rules.drop_chapter_title_patterns),
         "section_cutoff_patterns": list(rules.section_cutoff_patterns),
         "remove_patterns": list(rules.remove_patterns),
-        "paragraph_breaks": rules.paragraph_breaks,
     }
 
 
@@ -412,12 +411,6 @@ def _effective_rules_payload(book_dir: Path) -> dict:
 
 
 def _write_rules_payload(rules_path: Path, payload: dict) -> None:
-    paragraph_breaks = str(
-        payload.get("paragraph_breaks", sanitize.DEFAULT_PARAGRAPH_BREAKS)
-        or sanitize.DEFAULT_PARAGRAPH_BREAKS
-    ).strip().lower()
-    if paragraph_breaks not in sanitize.PARAGRAPH_BREAK_OPTIONS:
-        paragraph_breaks = sanitize.DEFAULT_PARAGRAPH_BREAKS
     data = {
         "replace_defaults": bool(payload.get("replace_defaults", False)),
         "drop_chapter_title_patterns": list(
@@ -425,7 +418,6 @@ def _write_rules_payload(rules_path: Path, payload: dict) -> None:
         ),
         "section_cutoff_patterns": list(payload.get("section_cutoff_patterns", [])),
         "remove_patterns": list(payload.get("remove_patterns", [])),
-        "paragraph_breaks": paragraph_breaks,
     }
     if not data["replace_defaults"]:
         for key, defaults in sanitize.DEFAULT_RULES.items():
@@ -1374,7 +1366,6 @@ class RulesPayload(BaseModel):
     drop_chapter_title_patterns: List[str] = []
     section_cutoff_patterns: List[str] = []
     remove_patterns: List[str] = []
-    paragraph_breaks: str = sanitize.DEFAULT_PARAGRAPH_BREAKS
     replace_defaults: bool = False
 
 
@@ -2199,7 +2190,6 @@ def create_app(root_dir: Path) -> FastAPI:
                 "drop_chapter_title_patterns": rules.drop_chapter_title_patterns,
                 "section_cutoff_patterns": rules.section_cutoff_patterns,
                 "remove_patterns": rules.remove_patterns,
-                "paragraph_breaks": rules.paragraph_breaks,
             },
         }
         return _no_store(payload)

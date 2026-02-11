@@ -59,25 +59,64 @@ def test_normalize_text_converts_star_section_break() -> None:
     assert "☆" not in cleaned
 
 
-def test_infer_paragraph_breaks_detects_single_newline_paragraphs() -> None:
-    text = (
-        "First paragraph ends here.\n"
-        "Second paragraph ends here.\n"
-        "Third paragraph ends here.\n"
-        "Fourth paragraph ends here.\n"
-        "Fifth paragraph ends here."
-    )
-    assert sanitize_util.infer_paragraph_breaks(text) == "single"
-
-
-def test_normalize_text_single_breaks_preserve_section_strength() -> None:
+def test_normalize_text_preserves_raw_line_breaks() -> None:
     raw = "First.\nSecond.\n\nSection start.\nThird."
-    cleaned = sanitize_util.normalize_text(
-        raw, unwrap_lines=False, paragraph_breaks="single"
+    cleaned = sanitize_util.normalize_text(raw)
+    assert SECTION_BREAK not in cleaned
+    assert "First.\nSecond." in cleaned
+    assert "Section start.\nThird." in cleaned
+
+
+def test_normalize_text_preserves_dialogue_runs() -> None:
+    raw = (
+        "「三年前、僕が研究所にはいったばかりの頃だ。"
+        "そいつはペーアゼン博士の研究室に頻繁に出入りしていたよ。"
+        "あるときからぱったり見かけなくなったが」\n"
+        "「学者かい」\n"
+        "　そう訊くと男は大きく手を振って、"
     )
-    assert SECTION_BREAK in cleaned
-    assert "First.\n\nSecond." in cleaned
-    assert "Section start.\n\nThird." in cleaned
+    cleaned = sanitize_util.normalize_text(raw)
+    assert (
+        "ぱったり見かけなくなったが」\n「学者かい」\n　そう訊くと男は大きく手を振って、"
+        in cleaned
+    )
+
+
+def test_normalize_text_collapses_dialogue_continuation_break() -> None:
+    raw = (
+        "いいながら、自嘲するような笑い声を立てた。そしてすぐそれを打ち消すように早口で、\n\n"
+        "「シャンペンなの」と明るい声を出し「のみかけのシャンペン。」"
+    )
+    cleaned = sanitize_util.normalize_text(raw)
+    assert (
+        "早口で、\n「シャンペンなの」と明るい声を出し「のみかけのシャンペン。」"
+        in cleaned
+    )
+    assert "早口で、\n\n「シャンペンなの」" not in cleaned
+
+
+def test_normalize_text_preserves_dialogue_linebreak_on_reclean() -> None:
+    raw = (
+        "いいながら、自嘲するような笑い声を立てた。そしてすぐそれを打ち消すように早口で、\n\n"
+        "「シャンペンなの」と明るい声を出し「のみかけのシャンペン。」"
+    )
+    first = sanitize_util.normalize_text(raw)
+    second = sanitize_util.normalize_text(first)
+    assert "早口で、\n「シャンペンなの」" in second
+    assert "早口で、 「シャンペンなの」" not in second
+
+
+def test_normalize_text_does_not_promote_breaks_on_reclean() -> None:
+    raw = (
+        "　夜間は警戒が厳しくて駄目だ。むしろ昼間のほうがいい。\n"
+        "　方針さえ決まれば具体的なシナリオは自然に組みあがっていく。\n"
+        "　まず、カメラ。"
+    )
+    first = sanitize_util.normalize_text(raw)
+    second = sanitize_util.normalize_text(first)
+    assert SECTION_BREAK not in second
+    assert "\n\n\n" not in second
+    assert "ほうがいい。\n　方針さえ決まれば" in second
 
 
 def test_diff_ruby_spans_splits_kana_boundary() -> None:
@@ -106,7 +145,6 @@ def test_sanitize_dropped_chapter_clears_ruby_clean_spans(tmp_path: Path) -> Non
                 "drop_chapter_title_patterns": ["^Chapter 1$"],
                 "section_cutoff_patterns": [],
                 "remove_patterns": [],
-                "paragraph_breaks": "double",
             }
         ),
         encoding="utf-8",

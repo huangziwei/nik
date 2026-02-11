@@ -21,6 +21,5 @@
     "^\\s*引用文献\\s*$"
   ],
   "remove_patterns": [
-  ],
-  "paragraph_breaks": "auto"
+  ]
 }

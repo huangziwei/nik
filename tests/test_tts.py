@@ -107,6 +107,47 @@ def test_compute_chunk_pause_multipliers_does_not_promote_dialogue_lines(
     assert multipliers == [1, 1, 1]
 
 
+def test_compute_chunk_pause_multipliers_does_not_promote_split_dialogue_fragments() -> None:
+    text = (
+        "前の段落。\n\n"
+        "「いいえ。もしお嫌じゃなかったら、一度どうぞ、のみにいらして下さい」\n\n"
+        "「ありがとうございます。はずかしいわ」\n\n"
+        "次の段落。"
+    )
+    spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    multipliers = tts_util.compute_chunk_pause_multipliers(text, spans)
+
+    # Quote fragments that lost one quote edge after chunking should still
+    # behave like dialogue, not heading-like section breaks.
+    assert any(chunk.endswith("下さい」") for chunk in chunks)
+    assert any(chunk.endswith("わ」") for chunk in chunks)
+    for chunk, pause in zip(chunks, multipliers):
+        if chunk.endswith("下さい」") or chunk.endswith("わ」"):
+            assert pause == 1
+
+
+def test_compute_chunk_pause_multipliers_does_not_promote_dialogue_bridge_between_quotes() -> None:
+    text = (
+        "前文。\n\n"
+        "「実をいうとちょっと面白いことがあったんだ。いいか。こいつはここだけの話だぜ」\n"
+        "男は首を突き出しながら声をひそめ、\n"
+        "「五年くらい前のことかな。博士の研究室にたびたび大きな荷物が送られてくるんだよ。\n\n"
+        "後文。"
+    )
+    spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    multipliers = tts_util.compute_chunk_pause_multipliers(text, spans)
+
+    for target in (
+        "こいつはここだけの話だぜ」",
+        "男は首を突き出しながら声をひそめ、",
+        "「五年くらい前のことかな。",
+    ):
+        idx = next(i for i, chunk in enumerate(chunks) if chunk == target)
+        assert multipliers[idx] == 1
+
+
 def test_chunk_book_writes_manifest(tmp_path: Path) -> None:
     book_dir = tmp_path / "book"
     clean_dir = book_dir / "clean" / "chapters"
