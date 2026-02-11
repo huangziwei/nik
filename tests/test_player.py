@@ -1,6 +1,7 @@
 import json
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -237,6 +238,53 @@ def test_clone_preview_and_save_reuses_preview(
     assert payload["ref_audio"] == "narrator.wav"
     assert payload["ref_text"] == "hello world"
     assert payload["gender"] == "female"
+
+
+def test_run_clone_ffmpeg_applies_normalization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    input_path = tmp_path / "in.wav"
+    output_path = tmp_path / "out.wav"
+    seen_cmd: list[str] = []
+
+    def fake_run(cmd: list[str], capture_output: bool, text: bool) -> SimpleNamespace:
+        seen_cmd[:] = cmd
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"RIFFFAKEWAVE")
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    normalized: list[Path] = []
+    monkeypatch.setattr(player_util.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        player_util.audio_norm_util,
+        "normalize_clone_wav",
+        lambda path: normalized.append(path),
+    )
+
+    player_util._run_clone_ffmpeg(input_path, output_path, "0", "2")
+    assert seen_cmd
+    assert normalized == [output_path]
+
+
+def test_run_clone_ffmpeg_raises_when_normalization_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    input_path = tmp_path / "in.wav"
+    output_path = tmp_path / "out.wav"
+
+    def fake_run(cmd: list[str], capture_output: bool, text: bool) -> SimpleNamespace:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"RIFFFAKEWAVE")
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    def fail_normalize(path: Path) -> float:
+        raise RuntimeError("bad normalize")
+
+    monkeypatch.setattr(player_util.subprocess, "run", fake_run)
+    monkeypatch.setattr(player_util.audio_norm_util, "normalize_clone_wav", fail_normalize)
+
+    with pytest.raises(RuntimeError, match="Failed to normalize clone audio"):
+        player_util._run_clone_ffmpeg(input_path, output_path, "0", "2")
 
 
 def test_voice_metadata_update_and_delete(tmp_path: Path) -> None:

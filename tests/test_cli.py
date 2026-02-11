@@ -1,5 +1,8 @@
 import argparse
+from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
 from nik import cli
 
 
@@ -102,3 +105,70 @@ def test_boundary_report_recommends_pad_adjustment_with_latency_data() -> None:
     assert payload["output_latency_coverage"] == 1.0
     assert recommendation["basis"] == "p50(delta_ms + output_latency_ms)"
     assert recommendation["recommended_pad_adjust_ms"] == 34
+
+
+def test_clone_applies_audio_normalization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='nik'\n", encoding="utf-8")
+    source = tmp_path / "source.wav"
+    source.write_bytes(b"src")
+
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        ["clone", str(source), "--name", "sample", "--text", "hello", "--duration", "1"]
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli.shutil, "which", lambda name: "/usr/bin/ffmpeg" if name == "ffmpeg" else None
+    )
+
+    def fake_run(cmd: list[str]) -> SimpleNamespace:
+        out = Path(cmd[-1])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"RIFFFAKEWAVE")
+        return SimpleNamespace(returncode=0)
+
+    normalized: list[Path] = []
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        cli.audio_norm_util, "normalize_clone_wav", lambda path: normalized.append(path)
+    )
+
+    code = cli._clone(args)
+    assert code == 0
+    assert normalized == [tmp_path / "voices" / "sample.wav"]
+
+
+def test_clone_returns_error_when_normalization_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='nik'\n", encoding="utf-8")
+    source = tmp_path / "source.wav"
+    source.write_bytes(b"src")
+
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        ["clone", str(source), "--name", "sample", "--text", "hello", "--duration", "1"]
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli.shutil, "which", lambda name: "/usr/bin/ffmpeg" if name == "ffmpeg" else None
+    )
+
+    def fake_run(cmd: list[str]) -> SimpleNamespace:
+        out = Path(cmd[-1])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"RIFFFAKEWAVE")
+        return SimpleNamespace(returncode=0)
+
+    def fail_normalize(path: Path) -> float:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    monkeypatch.setattr(cli.audio_norm_util, "normalize_clone_wav", fail_normalize)
+
+    code = cli._clone(args)
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "Failed to normalize cloned audio" in captured.err

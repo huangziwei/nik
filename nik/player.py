@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from . import audio_norm as audio_norm_util
 from . import asr as asr_util
 from . import epub as epub_util
 from . import sanitize
@@ -260,13 +261,16 @@ def _run_clone_ffmpeg(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = _build_clone_ffmpeg_cmd(input_path, output_path, start, duration)
     result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode == 0:
-        return
-    detail = (result.stderr or result.stdout or "").strip()
-    if detail:
-        tail = detail.splitlines()[-1]
-        raise RuntimeError(f"ffmpeg failed to process the audio: {tail}")
-    raise RuntimeError("ffmpeg failed to process the audio.")
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        if detail:
+            tail = detail.splitlines()[-1]
+            raise RuntimeError(f"ffmpeg failed to process the audio: {tail}")
+        raise RuntimeError("ffmpeg failed to process the audio.")
+    try:
+        audio_norm_util.normalize_clone_wav(output_path)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to normalize clone audio: {exc}") from exc
 
 
 def _normalize_clone_text(value: Optional[str]) -> Optional[str]:

@@ -15,6 +15,7 @@ import urllib.request
 from pathlib import Path
 from typing import Callable, Optional
 
+from . import audio_norm as audio_norm_util
 from . import asr as asr_util
 from . import epub as epub_util
 from . import merge as merge_util
@@ -393,6 +394,12 @@ def _clone(args: argparse.Namespace) -> int:
         if result.returncode != 0:
             sys.stderr.write("ffmpeg failed to process the audio.\n")
             return 2
+
+    try:
+        audio_norm_util.normalize_clone_wav(output_path)
+    except Exception as exc:
+        sys.stderr.write(f"Failed to normalize cloned audio: {exc}\n")
+        return 2
 
     if not voice_text and args.auto_text:
         whisper_language = args.whisper_language or args.language
