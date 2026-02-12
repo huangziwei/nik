@@ -134,6 +134,16 @@ def test_prepare_tts_pipeline_skips_chunk_tail_separator_when_disabled(
     assert pipeline.prepared == "こんにちは"
 
 
+def test_prepare_tts_pipeline_strips_leading_chunk_separator() -> None:
+    sep = _default_first_token_separator()
+    pipeline = tts_util._prepare_tts_pipeline(
+        f"『{sep}ばんがいへん{sep}』",
+        kana_normalize=False,
+        add_short_punct=True,
+    )
+    assert pipeline.prepared == f"ばんがいへん{sep}。{sep}"
+
+
 def test_compute_chunk_pause_multipliers_detects_title_and_section_breaks() -> None:
     text = f"序章\n\n本文一。\n\n{SECTION_BREAK}\n\n本文二。"
     spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")

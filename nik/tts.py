@@ -4453,6 +4453,17 @@ def _append_chunk_tail_separator(text: str) -> str:
     return f"{text}{sep}"
 
 
+def _strip_leading_chunk_separator(text: str) -> str:
+    if not text:
+        return text
+    sep = _first_token_separator()
+    if not sep:
+        return text
+    while text.startswith(sep):
+        text = text[len(sep) :]
+    return text
+
+
 def _prepare_tts_pipeline(
     chunk_text: str,
     *,
@@ -4507,6 +4518,7 @@ def _prepare_tts_pipeline(
             sys.stderr.write(f"Failed kana normalization: {exc}\n")
             after_kana = after_numbers
     prepared = prepare_tts_text(after_kana, add_short_punct=add_short_punct)
+    prepared = _strip_leading_chunk_separator(prepared)
     prepared = _append_chunk_tail_separator(prepared)
     return TtsPipeline(
         ruby_text=text,
