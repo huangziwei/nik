@@ -108,6 +108,20 @@ _SENTENCE_END_RE = re.compile(
 )
 _JP_OPEN_QUOTES = {"「", "『", "《", "〈", "【", "〔", "［", "｢", "〝"}
 _JP_CLOSE_QUOTES = {"」", "』", "》", "〉", "】", "〕", "］", "｣", "〞", "〟"}
+_OPEN_QUOTE_TO_CLOSES: dict[str, set[str]] = {
+    "「": {"」"},
+    "『": {"』"},
+    "《": {"》"},
+    "〈": {"〉"},
+    "【": {"】"},
+    "〔": {"〕"},
+    "［": {"］"},
+    "｢": {"｣"},
+    "〝": {"〞", "〟"},
+    "“": {"”"},
+    "«": {"»"},
+    "❝": {"❞"},
+}
 _DASH_RUN_RE = re.compile(r"[‐‑‒–—―─━]{2,}")
 _KANJI_SAFE_MARKS = {"々", "〆", "ヶ", "ヵ", "ゝ", "ゞ"}
 _RUBY_SUTEGANA_LARGE_CHARS = "あいうえおつやゆよわかけアイウエオツヤユヨワカケ"
@@ -1157,17 +1171,195 @@ def _split_long_span(
     return spans
 
 
+def _collect_quote_pair_spans(text: str) -> List[Tuple[int, int]]:
+    spans: List[Tuple[int, int]] = []
+    stack: List[Tuple[str, int]] = []
+    for idx, ch in enumerate(text):
+        close_quotes = _OPEN_QUOTE_TO_CLOSES.get(ch)
+        if close_quotes:
+            stack.append((ch, idx))
+            continue
+        if not stack:
+            continue
+        open_quote, open_idx = stack[-1]
+        expected_close = _OPEN_QUOTE_TO_CLOSES.get(open_quote)
+        if expected_close and ch in expected_close:
+            stack.pop()
+            spans.append((open_idx, idx + 1))
+    spans.sort()
+    return spans
+
+
+def _is_protectable_quote_span(
+    text: str, start: int, end: int, max_chars: int
+) -> bool:
+    if end <= start:
+        return False
+    if max_chars > 0 and end - start > max_chars:
+        return False
+    segment = text[start:end]
+    if "\n" in segment or SECTION_BREAK in segment:
+        return False
+    inner = segment[1:-1].strip() if len(segment) > 2 else ""
+    if not inner:
+        return False
+    return True
+
+
+def _split_spans_on_cut_points(
+    text: str, spans: Sequence[Tuple[int, int]], cut_points: Sequence[int]
+) -> List[Tuple[int, int]]:
+    if not spans:
+        return []
+    cuts = sorted(set(cut_points))
+    segmented: List[Tuple[int, int]] = []
+    for start, end in spans:
+        points = [start]
+        for cut in cuts:
+            if start < cut < end:
+                points.append(cut)
+        points.append(end)
+        points = sorted(set(points))
+        for idx in range(len(points) - 1):
+            span = _trim_span(text, points[idx], points[idx + 1])
+            if span:
+                segmented.append(span)
+    return segmented
+
+
+def _enclosing_quote_span_index(
+    start: int, end: int, quote_spans: Sequence[Tuple[int, int]]
+) -> Optional[int]:
+    best_idx: Optional[int] = None
+    best_len = -1
+    for idx, (quote_start, quote_end) in enumerate(quote_spans):
+        if quote_start <= start and end <= quote_end:
+            span_len = quote_end - quote_start
+            if span_len > best_len:
+                best_idx = idx
+                best_len = span_len
+    return best_idx
+
+
+def _is_hard_chunk_boundary(
+    text: str, prev_span: Tuple[int, int], next_span: Tuple[int, int]
+) -> bool:
+    prev_start, prev_end = prev_span
+    next_start, _next_end = next_span
+    gap = text[prev_end:next_start]
+    if "\n" in gap or SECTION_BREAK in gap:
+        return True
+    if gap and gap.strip() == "":
+        prev_text = text[prev_start:prev_end]
+        if not _ends_with_sentence_punct(prev_text):
+            return True
+    return False
+
+
+def _build_chunk_units(
+    text: str,
+    sentence_spans: Sequence[Tuple[int, int]],
+    max_chars: int,
+) -> List[Tuple[int, int, bool, bool]]:
+    if not sentence_spans:
+        return []
+
+    quote_spans = [
+        span
+        for span in _collect_quote_pair_spans(text)
+        if _is_protectable_quote_span(text, span[0], span[1], max_chars)
+    ]
+    if not quote_spans:
+        return [(start, end, False, False) for start, end in sentence_spans]
+
+    cut_points = [idx for span in quote_spans for idx in span]
+    segmented = _split_spans_on_cut_points(text, sentence_spans, cut_points)
+    grouped: List[List[Optional[int]]] = []
+    for start, end in segmented:
+        quote_idx = _enclosing_quote_span_index(start, end, quote_spans)
+        if grouped and quote_idx is not None and grouped[-1][2] == quote_idx:
+            grouped[-1][1] = end
+            continue
+        grouped.append([start, end, quote_idx])
+
+    units: List[Tuple[int, int, bool, bool]] = []
+    for idx, (start, end, quote_idx) in enumerate(grouped):
+        is_quote = quote_idx is not None
+        adjacent_quote = False
+        if not is_quote:
+            if idx > 0 and grouped[idx - 1][2] is not None:
+                adjacent_quote = True
+            if idx + 1 < len(grouped) and grouped[idx + 1][2] is not None:
+                adjacent_quote = True
+        units.append((int(start), int(end), is_quote, adjacent_quote))
+    return units
+
+
+def _pack_chunk_units(
+    text: str,
+    units: Sequence[Tuple[int, int, bool, bool]],
+    max_chars: int,
+) -> List[Tuple[int, int]]:
+    if not units:
+        return []
+    if max_chars <= 0:
+        return [(start, end) for start, end, _is_quote, _adj in units]
+
+    packed: List[Tuple[int, int]] = []
+    current_start: Optional[int] = None
+    current_end: Optional[int] = None
+    for idx, (start, end, is_quote, adjacent_quote) in enumerate(units):
+        if is_quote or adjacent_quote:
+            if current_start is not None and current_end is not None:
+                packed.append((current_start, current_end))
+                current_start = None
+                current_end = None
+            packed.append((start, end))
+            continue
+
+        hard_boundary = False
+        if idx > 0:
+            prev_start, prev_end, prev_is_quote, prev_adjacent_quote = units[idx - 1]
+            if prev_is_quote or prev_adjacent_quote:
+                hard_boundary = True
+            else:
+                hard_boundary = _is_hard_chunk_boundary(
+                    text, (prev_start, prev_end), (start, end)
+                )
+        if hard_boundary and current_start is not None and current_end is not None:
+            packed.append((current_start, current_end))
+            current_start = None
+            current_end = None
+
+        if current_start is None or current_end is None:
+            current_start = start
+            current_end = end
+            continue
+
+        if end - current_start <= max_chars:
+            current_end = end
+        else:
+            packed.append((current_start, current_end))
+            current_start = start
+            current_end = end
+
+    if current_start is not None and current_end is not None:
+        packed.append((current_start, current_end))
+    return packed
+
+
 def make_chunk_spans(
     text: str, max_chars: int, chunk_mode: str = "japanese"
 ) -> List[Tuple[int, int]]:
     _ = chunk_mode
-    spans: List[Tuple[int, int]] = []
+    sentence_spans: List[Tuple[int, int]] = []
     for sent_start, sent_end in split_sentence_spans(text):
         if max_chars > 0 and sent_end - sent_start > max_chars:
-            spans.extend(_split_long_span(text, sent_start, sent_end, max_chars))
+            sentence_spans.extend(_split_long_span(text, sent_start, sent_end, max_chars))
         else:
-            spans.append((sent_start, sent_end))
-    return spans
+            sentence_spans.append((sent_start, sent_end))
+    units = _build_chunk_units(text, sentence_spans, max_chars)
+    return _pack_chunk_units(text, units, max_chars)
 
 
 def make_chunks(text: str, max_chars: int, chunk_mode: str = "japanese") -> List[str]:

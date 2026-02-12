@@ -51,6 +51,27 @@ def test_chunking_splits_on_space_with_digits() -> None:
     assert chunks == ["さくら荘のペットな彼女", "全13巻"]
 
 
+def test_chunking_packs_sentences_toward_max_chars() -> None:
+    text = "一。二。三。四。"
+    spans = tts_util.make_chunk_spans(text, max_chars=4, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["一。二。", "三。四。"]
+
+
+def test_chunking_keeps_balanced_quote_as_own_chunk() -> None:
+    text = "彼は「いいえ。ありがとうございます」と言った。"
+    spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["彼は", "「いいえ。ありがとうございます」", "と言った。"]
+
+
+def test_chunking_splits_long_quote_when_over_max_chars() -> None:
+    text = "「あいうえお。かきくけこ。さしすせそ。」"
+    spans = tts_util.make_chunk_spans(text, max_chars=10, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["「あいうえお。", "かきくけこ。", "さしすせそ。」"]
+
+
 def test_normalize_numbers_hatachi() -> None:
     assert tts_util._normalize_numbers("20歳を過ぎた") == "はたちを過ぎた"
     assert tts_util._normalize_numbers("二十歳") == "はたち"
@@ -118,12 +139,13 @@ def test_compute_chunk_pause_multipliers_does_not_promote_split_dialogue_fragmen
     chunks = [text[start:end] for start, end in spans]
     multipliers = tts_util.compute_chunk_pause_multipliers(text, spans)
 
-    # Quote fragments that lost one quote edge after chunking should still
-    # behave like dialogue, not heading-like section breaks.
-    assert any(chunk.endswith("下さい」") for chunk in chunks)
-    assert any(chunk.endswith("わ」") for chunk in chunks)
+    assert "「いいえ。もしお嫌じゃなかったら、一度どうぞ、のみにいらして下さい」" in chunks
+    assert "「ありがとうございます。はずかしいわ」" in chunks
     for chunk, pause in zip(chunks, multipliers):
-        if chunk.endswith("下さい」") or chunk.endswith("わ」"):
+        if chunk in {
+            "「いいえ。もしお嫌じゃなかったら、一度どうぞ、のみにいらして下さい」",
+            "「ありがとうございます。はずかしいわ」",
+        }:
             assert pause == 1
 
 
@@ -140,9 +162,9 @@ def test_compute_chunk_pause_multipliers_does_not_promote_dialogue_bridge_betwee
     multipliers = tts_util.compute_chunk_pause_multipliers(text, spans)
 
     for target in (
-        "こいつはここだけの話だぜ」",
+        "「実をいうとちょっと面白いことがあったんだ。いいか。こいつはここだけの話だぜ」",
         "男は首を突き出しながら声をひそめ、",
-        "「五年くらい前のことかな。",
+        "「五年くらい前のことかな。博士の研究室にたびたび大きな荷物が送られてくるんだよ。",
     ):
         idx = next(i for i, chunk in enumerate(chunks) if chunk == target)
         assert multipliers[idx] == 1
