@@ -2154,17 +2154,29 @@ def _to_katakana_reading(reading: str) -> str:
     return _hiragana_to_katakana(unicodedata.normalize("NFKC", reading))
 
 
+def _is_explicit_katakana_reading(reading: str) -> bool:
+    if not reading:
+        return False
+    normalized = unicodedata.normalize("NFKC", reading)
+    has_katakana = any(_is_katakana_char(ch) for ch in normalized)
+    has_hiragana = any(_is_hiragana_char(ch) for ch in normalized)
+    return has_katakana and not has_hiragana
+
+
 def _katakanize_reading_entries(
     entries: Sequence[dict],
     *,
     append_separator: bool = False,
+    prepend_separator: bool = False,
     separator: Optional[str] = None,
+    prefer_hiragana: bool = False,
+    preserve_explicit_katakana: bool = False,
 ) -> List[dict]:
     out: List[dict] = []
     sep = (
         separator
         if separator is not None
-        else (_first_token_separator() if append_separator else "")
+        else (_first_token_separator() if append_separator or prepend_separator else "")
     )
     for item in entries:
         if not isinstance(item, dict):
@@ -2172,9 +2184,18 @@ def _katakanize_reading_entries(
         updated = dict(item)
         reading = str(updated.get("reading") or "")
         if reading:
-            reading_kata = _to_katakana_reading(reading)
+            normalized = unicodedata.normalize("NFKC", reading)
+            if prefer_hiragana and not (
+                preserve_explicit_katakana and _is_explicit_katakana_reading(normalized)
+            ):
+                reading_kata = _katakana_to_hiragana(normalized)
+            else:
+                reading_kata = _to_katakana_reading(normalized)
             if sep:
-                reading_kata = f"{reading_kata}{sep}"
+                if prepend_separator:
+                    reading_kata = f"{sep}{reading_kata}"
+                if append_separator:
+                    reading_kata = f"{reading_kata}{sep}"
             updated["reading"] = reading_kata
         out.append(updated)
     return out
@@ -3826,6 +3847,7 @@ def _force_first_latin_phrase(
             break
 
     if converted_any and separator:
+        out.insert(1, separator)
         out.append(separator)
     out.append(normalized[idx:])
     return "".join(out), consumed
@@ -3939,11 +3961,13 @@ def _normalize_kana_with_tagger(
     text = _normalize_kyujitai(text, debug_sources=debug_sources)
     kana_style = _normalize_kana_style(kana_style)
     out: List[str] = []
+    token_separator = _first_token_separator()
     first_force_separator_marker = "\0NIK_FIRST_FORCE_SEPARATOR\0"
     tokens = list(tagger(text))
     run_action: List[str] = [""] * len(tokens)
     force_first_kanji_indices: set[int] = set()
     force_first_token_idx: Optional[int] = None
+    force_first_kanji_first_idx: Optional[int] = None
     force_first_kanji_last_idx: Optional[int] = None
     first_force_separator_inserted = False
     first_force_separator = ""
@@ -3953,8 +3977,9 @@ def _normalize_kana_with_tagger(
             force_first_token_to_kana=force_first_token_to_kana,
         )
         if force_first_kanji_indices:
+            force_first_kanji_first_idx = min(force_first_kanji_indices)
             force_first_kanji_last_idx = max(force_first_kanji_indices)
-        first_force_separator = _first_token_separator()
+        first_force_separator = token_separator
     if kana_style == "partial" and tokens:
         if partial_mid_kanji and zh_lexicon is None:
             zh_lexicon = _load_zh_lexicon()
@@ -4003,6 +4028,29 @@ def _normalize_kana_with_tagger(
             out.append(first_force_separator_marker)
             first_force_separator_inserted = True
 
+    def _prepend_transform_separator(value: str) -> str:
+        if not token_separator or not value:
+            return value
+        return f"{token_separator}{value}"
+
+    def _append_transform_separator(value: str) -> str:
+        if not token_separator or not value:
+            return value
+        return f"{value}{token_separator}"
+
+    def _wrap_transform_separator(value: str) -> str:
+        if not token_separator or not value:
+            return value
+        return f"{token_separator}{value}{token_separator}"
+
+    def _collapse_repeated_token_separators(value: str) -> str:
+        if not token_separator or not value:
+            return value
+        doubled = token_separator + token_separator
+        while doubled in value:
+            value = value.replace(doubled, token_separator)
+        return value
+
     def _adjust_weekday_reading(idx: int, reading_kata: str) -> str:
         if not reading_kata:
             return reading_kata
@@ -4031,7 +4079,11 @@ def _normalize_kana_with_tagger(
                 if reading and reading != "*":
                     reading_kata = _hiragana_to_katakana(reading)
                     converted = _apply_surface_kana(reading_kata, surface)
-                    output = _hiragana_to_katakana(converted)
+                    if _latin_prefix_to_kana(surface):
+                        output = _hiragana_to_katakana(converted)
+                    else:
+                        output = _katakana_to_hiragana(converted)
+                    output = _prepend_transform_separator(output)
                     out.append(output)
                     _append_first_force_separator()
                     _append_kana_debug(
@@ -4044,7 +4096,7 @@ def _normalize_kana_with_tagger(
                     continue
                 fallback, source = _latin_prefix_to_kana_with_source(surface)
                 if fallback:
-                    out.append(fallback)
+                    out.append(_prepend_transform_separator(fallback))
                     _append_first_force_separator()
                     _append_kana_debug(
                         debug_sources,
@@ -4067,7 +4119,10 @@ def _normalize_kana_with_tagger(
             if force_first:
                 fallback, source = _latin_prefix_to_kana_with_source(surface)
                 if fallback:
-                    out.append(fallback)
+                    output = fallback
+                    if idx == force_first_kanji_first_idx:
+                        output = _prepend_transform_separator(output)
+                    out.append(output)
                     if idx == force_first_kanji_last_idx:
                         _append_first_force_separator()
                     _append_kana_debug(
@@ -4104,6 +4159,8 @@ def _normalize_kana_with_tagger(
             if force_first:
                 converted = _apply_surface_kana(reading_kata, surface)
                 output = _katakana_to_hiragana(converted)
+                if idx == force_first_kanji_first_idx:
+                    output = _prepend_transform_separator(output)
                 out.append(output)
                 if idx == force_first_kanji_last_idx:
                     _append_first_force_separator()
@@ -4127,7 +4184,14 @@ def _normalize_kana_with_tagger(
                 )
                 continue
             if action == "convert":
-                output = _apply_surface_kana(reading_kata, surface)
+                output = _katakana_to_hiragana(_apply_surface_kana(reading_kata, surface))
+                if token_separator:
+                    is_start = idx == 0 or run_action[idx - 1] != "convert"
+                    is_end = idx + 1 >= len(run_action) or run_action[idx + 1] != "convert"
+                    if is_start:
+                        output = _prepend_transform_separator(output)
+                    if is_end:
+                        output = _append_transform_separator(output)
                 out.append(output)
                 _append_kana_debug(
                     debug_sources,
@@ -4138,7 +4202,8 @@ def _normalize_kana_with_tagger(
                 )
                 continue
             if _should_convert_honorific_prefix(surface, reading_kata, attrs):
-                output = _apply_surface_kana(reading_kata, surface)
+                output = _katakana_to_hiragana(_apply_surface_kana(reading_kata, surface))
+                output = _wrap_transform_separator(output)
                 out.append(output)
                 _append_kana_debug(
                     debug_sources,
@@ -4151,7 +4216,8 @@ def _normalize_kana_with_tagger(
             if partial_mid_kanji and _should_partial_convert(
                 surface, attrs, zh_lexicon or set()
             ):
-                output = _apply_surface_kana(reading_kata, surface)
+                output = _katakana_to_hiragana(_apply_surface_kana(reading_kata, surface))
+                output = _wrap_transform_separator(output)
                 out.append(output)
                 _append_kana_debug(
                     debug_sources,
@@ -4201,7 +4267,7 @@ def _normalize_kana_with_tagger(
                 reading=reading_kata,
             )
     if first_force_separator_marker not in out:
-        return "".join(out)
+        return _collapse_repeated_token_separators("".join(out))
 
     marker_idx = out.index(first_force_separator_marker)
     prev_chunk = out[marker_idx - 1] if marker_idx > 0 else ""
@@ -4223,10 +4289,10 @@ def _normalize_kana_with_tagger(
             moved = True
             break
         if moved:
-            return "".join(out)
+            return _collapse_repeated_token_separators("".join(out))
 
     out[marker_idx] = first_force_separator
-    return "".join(out)
+    return _collapse_repeated_token_separators("".join(out))
 
 
 def _normalize_kana_text(
@@ -4476,7 +4542,10 @@ def _apply_ruby_evidence(
             spans = _katakanize_reading_entries(
                 spans,
                 append_separator=True,
+                prepend_separator=True,
                 separator=first_token_separator,
+                prefer_hiragana=True,
+                preserve_explicit_katakana=True,
             )
             text = apply_ruby_spans(text, spans)
     ruby_global = _ruby_global_overrides(ruby_data)
@@ -4485,7 +4554,10 @@ def _apply_ruby_evidence(
         ruby_global = _katakanize_reading_entries(
             ruby_global,
             append_separator=True,
+            prepend_separator=True,
             separator=first_token_separator,
+            prefer_hiragana=True,
+            preserve_explicit_katakana=True,
         )
         if skip_bases:
             ruby_global = [
@@ -4554,7 +4626,10 @@ def _apply_ruby_evidence_to_chunk(
             spans = _katakanize_reading_entries(
                 spans,
                 append_separator=True,
+                prepend_separator=True,
                 separator=first_token_separator,
+                prefer_hiragana=True,
+                preserve_explicit_katakana=True,
             )
             text = apply_ruby_spans(text, spans)
     ruby_global = _ruby_global_overrides(ruby_data)
@@ -4563,7 +4638,10 @@ def _apply_ruby_evidence_to_chunk(
         ruby_global = _katakanize_reading_entries(
             ruby_global,
             append_separator=True,
+            prepend_separator=True,
             separator=first_token_separator,
+            prefer_hiragana=True,
+            preserve_explicit_katakana=True,
         )
         if skip_bases:
             ruby_global = [
@@ -4935,7 +5013,17 @@ def _apply_reading_overrides_for_tts(
 ) -> str:
     if not overrides:
         return text
-    return apply_reading_overrides(text, _katakanize_reading_entries(overrides))
+    return apply_reading_overrides(
+        text,
+        _katakanize_reading_entries(
+            overrides,
+            append_separator=True,
+            prepend_separator=True,
+            separator=_first_token_separator(),
+            prefer_hiragana=True,
+            preserve_explicit_katakana=True,
+        ),
+    )
 
 
 def _reading_override_spans(

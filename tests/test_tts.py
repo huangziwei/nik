@@ -435,15 +435,16 @@ def test_apply_reading_overrides_regex() -> None:
     assert tts_util.apply_reading_overrides(text, overrides) == "ご存知でした。ご迷惑でした。"
 
 
-def test_apply_reading_overrides_for_tts_katakanizes_readings() -> None:
+def test_apply_reading_overrides_for_tts_formats_readings() -> None:
     text = "私は漢字と東京。"
     overrides = [
         {"base": "漢字", "reading": "かんじ"},
         {"base": "東京", "reading": "とうきょう"},
     ]
+    sep = _default_first_token_separator()
     assert (
         tts_util._apply_reading_overrides_for_tts(text, overrides)
-        == "私はカンジとトウキョウ。"
+        == f"私は{sep}かんじ{sep}と{sep}とうきょう{sep}。"
     )
 
 
@@ -453,7 +454,7 @@ def test_apply_ruby_spans() -> None:
     assert tts_util.apply_ruby_spans(text, spans) == "前かんじ後"
 
 
-def test_apply_ruby_evidence_to_chunk_katakanizes_readings() -> None:
+def test_apply_ruby_evidence_to_chunk_formats_readings() -> None:
     chunk_text = "前日本。後半。"
     chunk_span = (0, len(chunk_text))
     chapter_spans = [{"start": 1, "end": 3, "base": "日本", "reading": "にほん"}]
@@ -465,7 +466,7 @@ def test_apply_ruby_evidence_to_chunk_katakanizes_readings() -> None:
         ruby_data,
     )
     sep = _default_first_token_separator()
-    assert out == f"前ニホン{sep}。コウハン{sep}。"
+    assert out == f"前{sep}にほん{sep}。{sep}こうはん{sep}。"
 
 
 def test_apply_ruby_evidence_to_chunk_skips_single_kanji_global() -> None:
@@ -499,7 +500,8 @@ def test_apply_ruby_evidence_to_chunk_drops_suspicious_span() -> None:
         chapter_spans,
         {},
     )
-    assert out == f"ホンチョウ{_default_first_token_separator()}に西田医院という耳鼻科があったのを覚えているか。"
+    sep = _default_first_token_separator()
+    assert out == f"{sep}ほんちょう{sep}に西田医院という耳鼻科があったのを覚えているか。"
 
 
 def test_is_suspicious_ruby_span_rejects_kanji_in_reading() -> None:
@@ -518,7 +520,8 @@ def test_apply_ruby_evidence_to_chunk_keeps_non_kanji_span() -> None:
         chapter_spans,
         {},
     )
-    assert out == f"ティーティーエス{_default_first_token_separator()}を試す。"
+    sep = _default_first_token_separator()
+    assert out == f"{sep}ティーティーエス{sep}を試す。"
 
 
 def test_apply_ruby_evidence_to_chunk_keeps_inline_ruby_over_global_override() -> None:
@@ -535,9 +538,23 @@ def test_apply_ruby_evidence_to_chunk_keeps_inline_ruby_over_global_override() -
         ruby_data,
     )
     sep = _default_first_token_separator()
-    assert out.startswith(f"オレ{sep}は")
-    assert f"アンサツシャ{sep}だ。" in out
+    assert out.startswith(f"{sep}おれ{sep}は")
+    assert f"{sep}あんさつしゃ{sep}だ。" in out
     assert "暗殺者" not in out
+
+
+def test_apply_ruby_evidence_to_chunk_keeps_explicit_katakana_ruby() -> None:
+    chunk_text = "前森野後"
+    chunk_span = (0, len(chunk_text))
+    chapter_spans = [{"start": 1, "end": 3, "base": "森野", "reading": "モリノ"}]
+    out = tts_util._apply_ruby_evidence_to_chunk(
+        chunk_text,
+        chunk_span,
+        chapter_spans,
+        {},
+    )
+    sep = _default_first_token_separator()
+    assert out == f"前{sep}モリノ{sep}後"
 
 
 def test_normalize_kana_with_stub_tagger() -> None:
@@ -722,7 +739,7 @@ def test_normalize_kana_with_stub_tagger_partial() -> None:
         zh_lexicon={"漢字"},
         partial_mid_kanji=True,
     )
-    assert out == "カンジ始まる"
+    assert out == "\\かんじ\\始まる"
 
 
 def test_normalize_kana_with_stub_tagger_partial_common_noun(monkeypatch) -> None:
@@ -793,7 +810,7 @@ def test_normalize_kana_with_stub_tagger_partial_honorific_prefix(monkeypatch) -
         zh_lexicon=set(),
         partial_mid_kanji=True,
     )
-    assert out == "ゴゾンジ"
+    assert out == "\\ご\\ぞんじ\\"
 
 
 def test_normalize_kana_with_stub_tagger_partial_honorific_prefix_other_reading(
@@ -824,7 +841,7 @@ def test_normalize_kana_with_stub_tagger_partial_honorific_prefix_other_reading(
         kana_style="partial",
         zh_lexicon=set(),
     )
-    assert out == "ミ子"
+    assert out == "\\み\\子"
 
 
 def test_normalize_kana_with_stub_tagger_partial_honorific_prefix_go_o_choice(
@@ -864,7 +881,7 @@ def test_normalize_kana_with_stub_tagger_partial_honorific_prefix_go_o_choice(
         zh_lexicon=set(),
         partial_mid_kanji=True,
     )
-    assert out == "ゴゾンジ"
+    assert out == "\\ご\\ぞんじ\\"
 
 
 @pytest.mark.parametrize(
@@ -944,7 +961,7 @@ def test_normalize_kana_with_stub_tagger_partial_common_noun_guard(monkeypatch) 
         zh_lexicon=set(),
         partial_mid_kanji=True,
     )
-    assert out == "ゼンリャク"
+    assert out == "\\ぜんりゃく\\"
 
 
 def test_normalize_kana_with_stub_tagger_partial_rare() -> None:
@@ -980,7 +997,7 @@ def test_normalize_kana_with_stub_tagger_partial_rare() -> None:
         zh_lexicon={"妻子"},
         partial_mid_kanji=True,
     )
-    assert out == "サイシ"
+    assert out == "\\さいし\\"
 
 
 def _normalize_ruby_reading_with_stub(
@@ -1111,7 +1128,7 @@ def test_normalize_kana_with_stub_tagger_partial_kanji_run_convert() -> None:
         zh_lexicon={"漢字"},
         partial_mid_kanji=True,
     )
-    assert out == "カンジ"
+    assert out == "\\かんじ\\"
 
 
 def test_normalize_kana_with_stub_tagger_partial_numeric_counter() -> None:
@@ -1150,7 +1167,7 @@ def test_normalize_kana_with_stub_tagger_partial_numeric_counter() -> None:
     out = tts_util._normalize_kana_with_tagger(
         "十日", DummyTagger(), kana_style="partial", zh_lexicon=set()
     )
-    assert out == "トオカ"
+    assert out == "\\とおか\\"
 
 
 def test_normalize_kana_with_stub_tagger_partial_kanji_run_keep() -> None:
@@ -1211,7 +1228,7 @@ def test_normalize_kana_first_token_partial() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == f"なげつけ{_default_first_token_separator()}好き"
+    assert out == f"{_default_first_token_separator()}なげつけ{_default_first_token_separator()}好き"
 
 
 def test_normalize_kana_first_token_partial_separator_none(
@@ -1273,7 +1290,7 @@ def test_normalize_kana_first_token_partial_separator_custom(
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == "なげつけ・好き"
+    assert out == "・なげつけ・好き"
 
 
 def test_normalize_kana_first_token_partial_separator_after_sokuon() -> None:
@@ -1303,7 +1320,7 @@ def test_normalize_kana_first_token_partial_separator_after_sokuon() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == f"まって{_default_first_token_separator()}くれ。"
+    assert out == f"{_default_first_token_separator()}まって{_default_first_token_separator()}くれ。"
 
 
 def test_normalize_kana_first_token_partial_kanji_run() -> None:
@@ -1331,7 +1348,7 @@ def test_normalize_kana_first_token_partial_kanji_run() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == f"じてんしゃ{_default_first_token_separator()}"
+    assert out == f"{_default_first_token_separator()}じてんしゃ{_default_first_token_separator()}"
 
 
 def test_normalize_kana_first_token_partial_numeric_counter_run() -> None:
@@ -1379,7 +1396,7 @@ def test_normalize_kana_first_token_partial_numeric_counter_run() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == f"とおか{_default_first_token_separator()}"
+    assert out == f"{_default_first_token_separator()}とおか{_default_first_token_separator()}"
 
 
 def test_normalize_kana_first_token_already_kana() -> None:
@@ -1435,7 +1452,7 @@ def test_normalize_kana_first_token_to_kana_latin_before_kanji() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == f"ティーブイ{_default_first_token_separator()}化"
+    assert out == f"{_default_first_token_separator()}ティーブイ{_default_first_token_separator()}化"
 
 
 def test_normalize_kana_first_token_to_kana_latin_starter() -> None:
@@ -1465,7 +1482,7 @@ def test_normalize_kana_first_token_to_kana_latin_starter() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == f"ブイ{_default_first_token_separator()}シリーズ全十冊"
+    assert out == f"{_default_first_token_separator()}ブイ{_default_first_token_separator()}シリーズ全十冊"
 
 
 def test_normalize_kana_text_force_first_latin_phrase() -> None:
@@ -1475,7 +1492,7 @@ def test_normalize_kana_text_force_first_latin_phrase() -> None:
         kana_style="partial",
         force_first_token_to_kana=True,
     )
-    assert out == f"ザ イエロー モンキー{_default_first_token_separator()}「天国旅行」"
+    assert out == f"{_default_first_token_separator()}ザ イエロー モンキー{_default_first_token_separator()}「天国旅行」"
 
 
 def test_normalize_kana_text_force_first_token_chunk_only() -> None:
@@ -1513,7 +1530,7 @@ def test_normalize_kana_first_token_to_kana_lowercase_latin_uses_reading() -> No
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == f"ロム{_default_first_token_separator()}を"
+    assert out == f"{_default_first_token_separator()}ロム{_default_first_token_separator()}を"
 
 
 def test_normalize_kana_first_token_to_kana_lowercase_latin_fallback() -> None:
@@ -1541,7 +1558,7 @@ def test_normalize_kana_first_token_to_kana_lowercase_latin_fallback() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == f"ロム{_default_first_token_separator()}を"
+    assert out == f"{_default_first_token_separator()}ロム{_default_first_token_separator()}を"
 
 
 def test_normalize_kana_first_token_to_kana_leading_kanji() -> None:
@@ -1569,7 +1586,7 @@ def test_normalize_kana_first_token_to_kana_leading_kanji() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == f"かんじ{_default_first_token_separator()}テスト"
+    assert out == f"{_default_first_token_separator()}かんじ{_default_first_token_separator()}テスト"
 
 
 def test_normalize_kana_first_token_to_kana_handles_mixed_single_token() -> None:
@@ -1594,7 +1611,7 @@ def test_normalize_kana_first_token_to_kana_handles_mixed_single_token() -> None
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == f"ティーブイアニメ{_default_first_token_separator()}化"
+    assert out == f"{_default_first_token_separator()}ティーブイアニメ{_default_first_token_separator()}化"
 
 
 def test_normalize_kana_first_token_to_kana_mixed_no_reading() -> None:
@@ -1622,7 +1639,7 @@ def test_normalize_kana_first_token_to_kana_mixed_no_reading() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == f"ロム取り出し{_default_first_token_separator()}た"
+    assert out == f"{_default_first_token_separator()}ロム取り出し{_default_first_token_separator()}た"
 
 
 def test_normalize_kana_first_token_to_kana_skips_epub_noise() -> None:
@@ -1663,17 +1680,17 @@ def test_normalize_kana_first_token_to_kana_skips_epub_noise() -> None:
                 ("ＨＲ", "エイチアール"),
                 ("前の教室では、クラスメイトの女子から何度も同じ質問をされた。", None),
             ],
-            f"エイチアール{_default_first_token_separator()}前の教室では、クラスメイトの女子から何度も同じ質問をされた。",
+            f"{_default_first_token_separator()}エイチアール{_default_first_token_separator()}前の教室では、クラスメイトの女子から何度も同じ質問をされた。",
         ),
         (
             "ＴＶの前では、よく美咲と一緒にゲームをした。",
             [("ＴＶ", "ティーブイ"), ("の前では、よく美咲と一緒にゲームをした。", None)],
-            f"ティーブイ{_default_first_token_separator()}の前では、よく美咲と一緒にゲームをした。",
+            f"{_default_first_token_separator()}ティーブイ{_default_first_token_separator()}の前では、よく美咲と一緒にゲームをした。",
         ),
         (
             "ＰＣの前に座って龍之介に疑問をぶつける。",
             [("ＰＣ", "ピーシー"), ("の前に座って龍之介に疑問をぶつける。", None)],
-            f"ピーシー{_default_first_token_separator()}の前に座って龍之介に疑問をぶつける。",
+            f"{_default_first_token_separator()}ピーシー{_default_first_token_separator()}の前に座って龍之介に疑問をぶつける。",
         ),
         (
             "ＯＳが起動すると、まずはさくら荘の自室に設置してあるサーバーに接続する。",
@@ -1681,22 +1698,22 @@ def test_normalize_kana_first_token_to_kana_skips_epub_noise() -> None:
                 ("ＯＳ", "オーエス"),
                 ("が起動すると、まずはさくら荘の自室に設置してあるサーバーに接続する。", None),
             ],
-            f"オーエス{_default_first_token_separator()}が起動すると、まずはさくら荘の自室に設置してあるサーバーに接続する。",
+            f"{_default_first_token_separator()}オーエス{_default_first_token_separator()}が起動すると、まずはさくら荘の自室に設置してあるサーバーに接続する。",
         ),
         (
             "ＳＤの何倍も時間がかかるんだもん！",
             [("ＳＤ", "エスディー"), ("の何倍も時間がかかるんだもん！", None)],
-            f"エスディー{_default_first_token_separator()}の何倍も時間がかかるんだもん！",
+            f"{_default_first_token_separator()}エスディー{_default_first_token_separator()}の何倍も時間がかかるんだもん！",
         ),
         (
             "ＡＩにもてあそばれる俺って……",
             [("ＡＩ", "エーアイ"), ("にもてあそばれる俺って……", None)],
-            f"エーアイ{_default_first_token_separator()}にもてあそばれる俺って……",
+            f"{_default_first_token_separator()}エーアイ{_default_first_token_separator()}にもてあそばれる俺って……",
         ),
         (
             "Ｕターンした車は、札幌駅のある方へと曲がっていく。",
             [("Ｕ", "ユー"), ("ターンした車は、札幌駅のある方へと曲がっていく。", None)],
-            f"ユー{_default_first_token_separator()}ターンした車は、札幌駅のある方へと曲がっていく。",
+            f"{_default_first_token_separator()}ユー{_default_first_token_separator()}ターンした車は、札幌駅のある方へと曲がっていく。",
         ),
     ],
 )
@@ -1734,7 +1751,7 @@ def test_normalize_kana_first_token_to_kana_real_sakurasou_cases(
         (
             "ｉｆ』と『ｆｏｒ』の使い方は理解しているな。",
             [("ｉｆ", "イフ"), ("』と『ｆｏｒ』の使い方は理解しているな。", None)],
-            f"イフ{_default_first_token_separator()}』と『ｆｏｒ』の使い方は理解しているな。",
+            f"{_default_first_token_separator()}イフ{_default_first_token_separator()}』と『ｆｏｒ』の使い方は理解しているな。",
         ),
         # Copyright metadata lead should remain unchanged.
         (
@@ -1806,7 +1823,7 @@ def test_normalize_kana_weekday_reading() -> None:
         zh_lexicon=set(),
         force_first_token_to_kana=True,
     )
-    assert out == f"どようび{_default_first_token_separator()}"
+    assert out == f"{_default_first_token_separator()}どようび{_default_first_token_separator()}"
 
 
 def test_normalize_kana_with_tagger_normalizes_kyujitai() -> None:
@@ -1837,7 +1854,7 @@ def test_normalize_kana_with_tagger_normalizes_kyujitai() -> None:
         force_first_token_to_kana=True,
     )
     assert tagger.last_input == "目覚め"
-    assert out == f"めざめ{_default_first_token_separator()}"
+    assert out == f"{_default_first_token_separator()}めざめ{_default_first_token_separator()}"
 
 
 def test_normalize_kana_with_tagger_normalizes_kyujitai_uso() -> None:
@@ -1868,7 +1885,7 @@ def test_normalize_kana_with_tagger_normalizes_kyujitai_uso() -> None:
         force_first_token_to_kana=True,
     )
     assert tagger.last_input == "嘘"
-    assert out == f"うそ{_default_first_token_separator()}"
+    assert out == f"{_default_first_token_separator()}うそ{_default_first_token_separator()}"
 
 
 def test_synthesize_book_force_first_token_to_kana(
