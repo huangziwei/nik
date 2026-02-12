@@ -101,6 +101,11 @@ _CHAPTER_BREAK_PAD_MULTIPLIER = 4
 _CHAPTER_PAD_MULT = _CHAPTER_BREAK_PAD_MULTIPLIER
 _SECTION_BREAK_PAUSE_MULTIPLIER = 1 + _SECTION_PAD_MULT
 _TITLE_BREAK_PAUSE_MULTIPLIER = 1 + _CHAPTER_PAD_MULT
+_DEFAULT_OUTPUT_SAMPLE_RATE = 24000
+_ELLIPSIS_ONLY_RE = re.compile(r"[…⋯]+")
+_ELLIPSIS_PAUSE_BASE_MS = 380
+_ELLIPSIS_PAUSE_STEP_MS = 120
+_ELLIPSIS_PAUSE_MAX_MS = 1200
 _HEADING_TOKEN_RE = re.compile(r"[^\W_]+(?:['’.\-][^\W_]+)*")
 _ROMAN_TOKEN_RE = re.compile(r"^[IVXLCDM]+$", re.IGNORECASE)
 _SENTENCE_END_RE = re.compile(
@@ -972,7 +977,9 @@ def _generate_audio_mlx(
     if isinstance(outputs, np.ndarray):
         audio = outputs
         sample_rate = getattr(outputs, "sample_rate", None)
-        return [np.asarray(audio).flatten()], int(sample_rate or 24000)
+        return [np.asarray(audio).flatten()], int(
+            sample_rate or _DEFAULT_OUTPUT_SAMPLE_RATE
+        )
 
     audio_parts: List[np.ndarray] = []
     sample_rate: Optional[int] = None
@@ -982,10 +989,10 @@ def _generate_audio_mlx(
         if sample_rate is None:
             sample_rate = getattr(result, "sample_rate", None)
     if not audio_parts:
-        return [], int(sample_rate or 24000)
+        return [], int(sample_rate or _DEFAULT_OUTPUT_SAMPLE_RATE)
     if sample_rate is None:
         sample_rate = getattr(model, "sample_rate", None)
-    return audio_parts, int(sample_rate or 24000)
+    return audio_parts, int(sample_rate or _DEFAULT_OUTPUT_SAMPLE_RATE)
 
 
 def _normalize_text(text: str) -> str:
@@ -4428,9 +4435,9 @@ def _normalize_wave_dashes_for_tts(text: str) -> str:
 def _normalize_ellipsis_for_tts(text: str) -> str:
     if not text:
         return text
-    # Keep normal ellipsis, but collapse long runs that can trigger cutoff bugs.
-    text = re.sub(r"[…⋯]{3,}", "…", text)
-    return text.replace("⋯", "…")
+    # Keep short ellipsis as-is, but collapse long runs that can trigger cutoff bugs.
+    # Canonicalize collapsed runs to a single midline ellipsis.
+    return re.sub(r"[…⋯]{3,}", "⋯", text)
 
 
 def prepare_tts_text(text: str, *, add_short_punct: bool = False) -> str:
@@ -4462,6 +4469,69 @@ def _append_chunk_tail_separator(text: str) -> str:
     if text.endswith(sep):
         return text
     return f"{text}{sep}"
+
+
+def _compact_ellipsis_candidate(text: str) -> str:
+    if not text:
+        return ""
+    compact = re.sub(r"\s+", "", text)
+    if not compact:
+        return ""
+    sep = _first_token_separator()
+    if sep:
+        compact = compact.replace(sep, "")
+    if not compact:
+        return ""
+    quote_chars = _JP_QUOTE_CHARS | _DOUBLE_QUOTE_CHARS | _SINGLE_QUOTE_CHARS
+    if quote_chars:
+        compact = "".join(ch for ch in compact if ch not in quote_chars)
+    return compact
+
+
+def _ellipsis_only_run_length(text: str) -> int:
+    compact = _compact_ellipsis_candidate(text)
+    if not compact:
+        return 0
+    if _ELLIPSIS_ONLY_RE.fullmatch(compact):
+        return len(compact)
+    return 0
+
+
+def _ellipsis_pause_ms(run_length: int) -> int:
+    if run_length <= 0:
+        return 0
+    total = _ELLIPSIS_PAUSE_BASE_MS + (run_length - 1) * _ELLIPSIS_PAUSE_STEP_MS
+    return max(_ELLIPSIS_PAUSE_BASE_MS, min(_ELLIPSIS_PAUSE_MAX_MS, total))
+
+
+def _resolve_output_sample_rate(
+    *,
+    model: Any,
+    manifest: Optional[dict] = None,
+) -> int:
+    if isinstance(manifest, dict):
+        try:
+            sample_rate = int(manifest.get("sample_rate") or 0)
+            if sample_rate > 0:
+                return sample_rate
+        except (TypeError, ValueError):
+            pass
+    try:
+        sample_rate = int(getattr(model, "sample_rate", 0) or 0)
+        if sample_rate > 0:
+            return sample_rate
+    except (TypeError, ValueError):
+        pass
+    return _DEFAULT_OUTPUT_SAMPLE_RATE
+
+
+def _silence_audio(duration_ms: int, sample_rate: int) -> np.ndarray:
+    if duration_ms <= 0 or sample_rate <= 0:
+        return np.zeros(0, dtype=np.float32)
+    sample_count = int(round(sample_rate * (duration_ms / 1000.0)))
+    if sample_count <= 0:
+        sample_count = 1
+    return np.zeros(sample_count, dtype=np.float32)
 
 
 def _strip_leading_chunk_separator(text: str) -> str:
@@ -5825,13 +5895,47 @@ def synthesize_book(
                     chapter_task,
                     description=f"{chapter_id}: {chapter_title} ({chunk_idx}/{chapter_total})",
                 )
+                pause_multiplier = 1
+                if chunk_idx - 1 < len(chapter_pause_multipliers):
+                    try:
+                        pause_multiplier = max(
+                            1, int(chapter_pause_multipliers[chunk_idx - 1])
+                        )
+                    except (TypeError, ValueError):
+                        pause_multiplier = 1
+                pad_ms_total = int(pad_ms) * pause_multiplier
+                raw_ellipsis_run = _ellipsis_only_run_length(str(chunk_text))
 
-                if seg_path.exists() and _is_valid_wav(seg_path):
+                if (
+                    seg_path.exists()
+                    and _is_valid_wav(seg_path)
+                    and raw_ellipsis_run <= 0
+                ):
                     segment_paths.append(seg_path)
                     dms = _wav_duration_ms(seg_path)
                     if ch_entry["durations_ms"][chunk_idx - 1] != dms:
                         ch_entry["durations_ms"][chunk_idx - 1] = dms
                         atomic_write_json(manifest_path, manifest)
+                    progress.advance(chapter_task, 1)
+                    progress.advance(overall_task, 1)
+                    continue
+
+                if raw_ellipsis_run > 0:
+                    sample_rate = _resolve_output_sample_rate(
+                        model=model,
+                        manifest=manifest,
+                    )
+                    silence_ms = _ellipsis_pause_ms(raw_ellipsis_run) + pad_ms_total
+                    audio = _silence_audio(silence_ms, sample_rate)
+                    _write_wav(seg_path, audio, sample_rate)
+                    segment_paths.append(seg_path)
+
+                    dms = int(round(audio.shape[0] * 1000.0 / sample_rate))
+                    ch_entry["durations_ms"][chunk_idx - 1] = dms
+                    if manifest.get("sample_rate") != sample_rate:
+                        manifest["sample_rate"] = sample_rate
+                    atomic_write_json(manifest_path, manifest)
+
                     progress.advance(chapter_task, 1)
                     progress.advance(overall_task, 1)
                     continue
@@ -5864,6 +5968,26 @@ def synthesize_book(
                     progress.advance(chapter_task, 1)
                     progress.advance(overall_task, 1)
                     continue
+                ellipsis_run = _ellipsis_only_run_length(tts_text)
+                if ellipsis_run > 0:
+                    sample_rate = _resolve_output_sample_rate(
+                        model=model,
+                        manifest=manifest,
+                    )
+                    silence_ms = _ellipsis_pause_ms(ellipsis_run) + pad_ms_total
+                    audio = _silence_audio(silence_ms, sample_rate)
+                    _write_wav(seg_path, audio, sample_rate)
+                    segment_paths.append(seg_path)
+
+                    dms = int(round(audio.shape[0] * 1000.0 / sample_rate))
+                    ch_entry["durations_ms"][chunk_idx - 1] = dms
+                    if manifest.get("sample_rate") != sample_rate:
+                        manifest["sample_rate"] = sample_rate
+                    atomic_write_json(manifest_path, manifest)
+
+                    progress.advance(chapter_task, 1)
+                    progress.advance(overall_task, 1)
+                    continue
 
                 if backend_name == "torch":
                     wavs, sample_rate = _generate_audio(
@@ -5892,16 +6016,6 @@ def synthesize_book(
                     audio = wavs.flatten()
                 else:
                     audio = np.concatenate([np.asarray(w).flatten() for w in wavs])
-
-                pause_multiplier = 1
-                if chunk_idx - 1 < len(chapter_pause_multipliers):
-                    try:
-                        pause_multiplier = max(
-                            1, int(chapter_pause_multipliers[chunk_idx - 1])
-                        )
-                    except (TypeError, ValueError):
-                        pause_multiplier = 1
-                pad_ms_total = int(pad_ms) * pause_multiplier
                 if pad_ms_total > 0:
                     pad_samples = int(round(sample_rate * (pad_ms_total / 1000.0)))
                     if pad_samples > 0:
@@ -6187,6 +6301,7 @@ def synthesize_chunk(
             ruby_data,
             skip_bases=override_bases,
         )
+    raw_ellipsis_run = _ellipsis_only_run_length(chunk_text)
     try:
         pipeline = _prepare_tts_pipeline(
             chunk_text,
@@ -6207,6 +6322,13 @@ def synthesize_chunk(
     tts_text = pipeline.prepared
     seg_path = out_dir / "segments" / chapter_id / f"{chunk_index + 1:06d}.wav"
     seg_path.parent.mkdir(parents=True, exist_ok=True)
+    pad_ms = int(manifest.get("pad_ms") or 0)
+    pause_multiplier = 1
+    try:
+        pause_multiplier = max(1, int(pause_multipliers[chunk_index]))
+    except (TypeError, ValueError, IndexError):
+        pause_multiplier = 1
+    pad_ms_total = pad_ms * pause_multiplier
 
     if not tts_text:
         if seg_path.exists():
@@ -6218,6 +6340,23 @@ def synthesize_chunk(
             "chapter_id": chapter_id,
             "chunk_index": chunk_index,
             "duration_ms": 0,
+        }
+    ellipsis_run = raw_ellipsis_run or _ellipsis_only_run_length(tts_text)
+    if ellipsis_run > 0:
+        sample_rate = _resolve_output_sample_rate(model=model, manifest=manifest)
+        silence_ms = _ellipsis_pause_ms(ellipsis_run) + pad_ms_total
+        audio = _silence_audio(silence_ms, sample_rate)
+        _write_wav(seg_path, audio, sample_rate)
+        dms = int(round(audio.shape[0] * 1000.0 / sample_rate))
+        durations[chunk_index] = dms
+        if manifest.get("sample_rate") != sample_rate:
+            manifest["sample_rate"] = sample_rate
+        atomic_write_json(manifest_path, manifest)
+        return {
+            "status": "ok",
+            "chapter_id": chapter_id,
+            "chunk_index": chunk_index,
+            "duration_ms": dms,
         }
 
     if backend_name == "torch":
@@ -6248,13 +6387,6 @@ def synthesize_chunk(
     else:
         audio = np.concatenate([np.asarray(w).flatten() for w in wavs])
 
-    pad_ms = int(manifest.get("pad_ms") or 0)
-    pause_multiplier = 1
-    try:
-        pause_multiplier = max(1, int(pause_multipliers[chunk_index]))
-    except (TypeError, ValueError, IndexError):
-        pause_multiplier = 1
-    pad_ms_total = pad_ms * pause_multiplier
     if pad_ms_total > 0:
         pad_samples = int(round(sample_rate * (pad_ms_total / 1000.0)))
         if pad_samples > 0:

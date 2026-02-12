@@ -99,7 +99,7 @@ def test_chunking_splits_on_punct_only_line() -> None:
 
 
 def test_prepare_tts_text_collapses_long_ellipsis_runs() -> None:
-    assert tts_util.prepare_tts_text("…………") == "…"
+    assert tts_util.prepare_tts_text("…………") == "⋯"
     assert tts_util.prepare_tts_text("あ……い") == "あ……い"
 
 
@@ -152,7 +152,13 @@ def test_prepare_tts_pipeline_keeps_ellipsis_without_short_tail_full_stop() -> N
         kana_normalize=False,
         add_short_punct=True,
     )
-    assert pipeline.prepared == f"…{sep}"
+    assert pipeline.prepared == f"⋯{sep}"
+
+
+def test_ellipsis_only_run_length_ignores_quotes_and_separator() -> None:
+    sep = _default_first_token_separator()
+    assert tts_util._ellipsis_only_run_length(f"「{sep}……{sep}」") == 2
+    assert tts_util._ellipsis_only_run_length("……三ケ月前") == 0
 
 
 def test_compute_chunk_pause_multipliers_detects_title_and_section_breaks() -> None:
@@ -2085,6 +2091,88 @@ def test_synthesize_chunk_prefers_explicit_voice_over_manifest_entry(
     )
     assert result["status"] == "ok"
     assert captured["voice"] == "堀江由衣"
+
+
+def test_synthesize_chunk_ellipsis_only_writes_silence(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    out_dir = tmp_path / "book" / "tts"
+    out_dir.mkdir(parents=True)
+    manifest = {
+        "voice": "高橋一生",
+        "pad_ms": 350,
+        "chapters": [
+            {
+                "id": "c1",
+                "title": "Chapter 1",
+                "voice": "高橋一生",
+                "chunks": ["…………"],
+                "chunk_spans": [[0, 4]],
+                "pause_multipliers": [1],
+                "durations_ms": [None],
+            }
+        ],
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    class DummyModel:
+        sample_rate = 24000
+
+    calls: dict[str, object] = {"generate_calls": 0, "written": None}
+
+    def fake_generate_audio_mlx(*_args, **_kwargs):
+        calls["generate_calls"] = int(calls["generate_calls"]) + 1
+        return ([tts_util.np.zeros(1)], 24000)
+
+    def fake_write_wav(path: Path, audio, sample_rate: int) -> None:
+        calls["written"] = (path, int(audio.shape[0]), sample_rate)
+
+    monkeypatch.setattr(tts_util, "_select_backend", lambda _backend: "mlx")
+    monkeypatch.setattr(tts_util, "_resolve_model_name", lambda _name, _backend: "dummy")
+    monkeypatch.setattr(tts_util, "_load_mlx_model", lambda _name: DummyModel())
+    monkeypatch.setattr(tts_util, "_generate_audio_mlx", fake_generate_audio_mlx)
+    monkeypatch.setattr(tts_util, "_load_ruby_data", lambda _book_dir: {"chapters": {}})
+    monkeypatch.setattr(tts_util, "_load_reading_overrides", lambda _book_dir: ([], {}))
+    monkeypatch.setattr(
+        tts_util,
+        "_prepare_tts_pipeline",
+        lambda *_args, **_kwargs: tts_util.TtsPipeline(
+            ruby_text="…………",
+            after_overrides="…………",
+            after_numbers="…………",
+            after_kana="…………",
+            prepared="⋯",
+        ),
+    )
+    monkeypatch.setattr(tts_util, "_write_wav", fake_write_wav)
+    monkeypatch.setattr(
+        tts_util.voice_util,
+        "resolve_voice_config",
+        lambda **_kwargs: voice_util.VoiceConfig(
+            name="高橋一生",
+            ref_audio="dummy.wav",
+            ref_text="dummy",
+            language="Japanese",
+            x_vector_only_mode=False,
+        ),
+    )
+
+    result = tts_util.synthesize_chunk(
+        out_dir=out_dir,
+        chapter_id="c1",
+        chunk_index=0,
+        base_dir=tmp_path,
+    )
+    assert result["status"] == "ok"
+    assert int(calls["generate_calls"]) == 0
+    written = calls["written"]
+    assert written is not None
+    assert written[1] > 0
+    assert written[2] == 24000
+    assert result["duration_ms"] >= 1000
 
 
 def test_normalize_numbers_standalone_digits() -> None:
