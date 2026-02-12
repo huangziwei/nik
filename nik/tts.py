@@ -3863,7 +3863,6 @@ def _force_first_latin_phrase(
             break
 
     if converted_any and separator:
-        out.insert(1, separator)
         out.append(separator)
     out.append(normalized[idx:])
     return "".join(out), consumed
@@ -3983,7 +3982,6 @@ def _normalize_kana_with_tagger(
     run_action: List[str] = [""] * len(tokens)
     force_first_kanji_indices: set[int] = set()
     force_first_token_idx: Optional[int] = None
-    force_first_kanji_first_idx: Optional[int] = None
     force_first_kanji_last_idx: Optional[int] = None
     first_force_separator_inserted = False
     first_force_separator = ""
@@ -3993,7 +3991,6 @@ def _normalize_kana_with_tagger(
             force_first_token_to_kana=force_first_token_to_kana,
         )
         if force_first_kanji_indices:
-            force_first_kanji_first_idx = min(force_first_kanji_indices)
             force_first_kanji_last_idx = max(force_first_kanji_indices)
         first_force_separator = token_separator
     if kana_style == "partial" and tokens:
@@ -4099,7 +4096,6 @@ def _normalize_kana_with_tagger(
                         output = _hiragana_to_katakana(converted)
                     else:
                         output = _katakana_to_hiragana(converted)
-                    output = _prepend_transform_separator(output)
                     out.append(output)
                     _append_first_force_separator()
                     _append_kana_debug(
@@ -4112,7 +4108,7 @@ def _normalize_kana_with_tagger(
                     continue
                 fallback, source = _latin_prefix_to_kana_with_source(surface)
                 if fallback:
-                    out.append(_prepend_transform_separator(fallback))
+                    out.append(fallback)
                     _append_first_force_separator()
                     _append_kana_debug(
                         debug_sources,
@@ -4135,10 +4131,7 @@ def _normalize_kana_with_tagger(
             if force_first:
                 fallback, source = _latin_prefix_to_kana_with_source(surface)
                 if fallback:
-                    output = fallback
-                    if idx == force_first_kanji_first_idx:
-                        output = _prepend_transform_separator(output)
-                    out.append(output)
+                    out.append(fallback)
                     if idx == force_first_kanji_last_idx:
                         _append_first_force_separator()
                     _append_kana_debug(
@@ -4175,8 +4168,6 @@ def _normalize_kana_with_tagger(
             if force_first:
                 converted = _apply_surface_kana(reading_kata, surface)
                 output = _katakana_to_hiragana(converted)
-                if idx == force_first_kanji_first_idx:
-                    output = _prepend_transform_separator(output)
                 out.append(output)
                 if idx == force_first_kanji_last_idx:
                     _append_first_force_separator()
@@ -4451,6 +4442,17 @@ def prepare_tts_text(text: str, *, add_short_punct: bool = False) -> str:
     return text
 
 
+def _append_chunk_tail_separator(text: str) -> str:
+    if not text:
+        return text
+    sep = _first_token_separator()
+    if not sep:
+        return text
+    if text.endswith(sep):
+        return text
+    return f"{text}{sep}"
+
+
 def _prepare_tts_pipeline(
     chunk_text: str,
     *,
@@ -4505,6 +4507,7 @@ def _prepare_tts_pipeline(
             sys.stderr.write(f"Failed kana normalization: {exc}\n")
             after_kana = after_numbers
     prepared = prepare_tts_text(after_kana, add_short_punct=add_short_punct)
+    prepared = _append_chunk_tail_separator(prepared)
     return TtsPipeline(
         ruby_text=text,
         after_overrides=after_overrides,
