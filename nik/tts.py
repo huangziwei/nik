@@ -1813,6 +1813,8 @@ def _append_short_tail_punct(text: str) -> str:
     if idx < 0:
         return text
     last = text[idx]
+    if last == "・":
+        return text
     if last in _END_PUNCT or last in _MID_PUNCT:
         return text
     if last in _CLOSE_PUNCT:
@@ -4423,6 +4425,14 @@ def _normalize_wave_dashes_for_tts(text: str) -> str:
     return "".join(out)
 
 
+def _normalize_ellipsis_for_tts(text: str) -> str:
+    if not text:
+        return text
+    # Keep normal ellipsis, but collapse long runs that can trigger cutoff bugs.
+    text = re.sub(r"[…⋯]{3,}", "…", text)
+    return text.replace("⋯", "…")
+
+
 def prepare_tts_text(text: str, *, add_short_punct: bool = False) -> str:
     if not text:
         return ""
@@ -4434,6 +4444,7 @@ def prepare_tts_text(text: str, *, add_short_punct: bool = False) -> str:
     text = _strip_jp_quotes(text)
     text = _strip_double_quotes(text)
     text = _strip_single_quotes(text)
+    text = _normalize_ellipsis_for_tts(text)
     text = _normalize_wave_dashes_for_tts(text)
     text = re.sub(r"\s+", " ", text).strip()
     text = _japanese_space_to_pause(text, allow_full_stop=not has_dash_run)

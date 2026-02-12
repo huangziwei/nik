@@ -98,8 +98,9 @@ def test_chunking_splits_on_punct_only_line() -> None:
     assert chunks == ["「……」", "「空太？」"]
 
 
-def test_prepare_tts_text_preserves_unicode_ellipsis() -> None:
-    assert tts_util.prepare_tts_text("…………") == "…………"
+def test_prepare_tts_text_collapses_long_ellipsis_runs() -> None:
+    assert tts_util.prepare_tts_text("…………") == "…"
+    assert tts_util.prepare_tts_text("あ……い") == "あ……い"
 
 
 def test_prepare_tts_pipeline_appends_chunk_tail_separator() -> None:
@@ -142,6 +143,16 @@ def test_prepare_tts_pipeline_strips_leading_chunk_separator() -> None:
         add_short_punct=True,
     )
     assert pipeline.prepared == f"ばんがいへん{sep}。{sep}"
+
+
+def test_prepare_tts_pipeline_keeps_ellipsis_without_short_tail_full_stop() -> None:
+    sep = _default_first_token_separator()
+    pipeline = tts_util._prepare_tts_pipeline(
+        "…………",
+        kana_normalize=False,
+        add_short_punct=True,
+    )
+    assert pipeline.prepared == f"…{sep}"
 
 
 def test_compute_chunk_pause_multipliers_detects_title_and_section_breaks() -> None:
