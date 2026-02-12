@@ -2901,6 +2901,13 @@ def _normalize_numbers(text: str) -> str:
         num = match.group("num") or ""
         if not num:
             return match.group(0)
+        # Title-like chunks can be a single number line (e.g. chapter "10").
+        # Prefer cardinal reading when the matched number is the whole text.
+        start, end = match.span("num")
+        prefix = match.string[:start]
+        suffix = match.string[end:]
+        if not prefix.strip() and not suffix.strip():
+            return _to_kanji_number(num)
         return _digit_seq_to_kana(num)
 
     def _replace_fallback(match: re.Match) -> str:

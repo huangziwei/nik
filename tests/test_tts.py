@@ -2180,6 +2180,16 @@ def test_normalize_numbers_standalone_digits() -> None:
     assert tts_util._normalize_numbers(text) == "全ななさつ 合本版"
 
 
+def test_normalize_numbers_standalone_digit_line_prefers_cardinal() -> None:
+    assert tts_util._normalize_numbers("10") == "十"
+    assert tts_util._normalize_numbers(" 11 ") == " 十一 "
+    assert tts_util._normalize_numbers("12") == "十二"
+
+
+def test_normalize_numbers_standalone_digits_in_sentence_stay_digit_seq() -> None:
+    assert tts_util._normalize_numbers("番号 10") == "番号 いちゼロ"
+
+
 def test_normalize_numbers_date() -> None:
     text = "2024年7月1日"
     assert tts_util._normalize_numbers(text) == "二千二十四年しちがつついたち"
