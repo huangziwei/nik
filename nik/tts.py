@@ -2446,6 +2446,22 @@ def _int_to_roman(value: int) -> str:
     return "".join(out)
 
 
+def _nfkc_preserve_ellipsis(text: str) -> str:
+    if not text:
+        return text
+    sentinel_map = {
+        "…": "\0NIK_ELLIPSIS\0",
+        "⋯": "\0NIK_MIDLINE_ELLIPSIS\0",
+    }
+    staged = text
+    for ch, marker in sentinel_map.items():
+        staged = staged.replace(ch, marker)
+    normalized = unicodedata.normalize("NFKC", staged)
+    for ch, marker in sentinel_map.items():
+        normalized = normalized.replace(marker, ch)
+    return normalized
+
+
 def _roman_to_int(roman: str) -> Optional[int]:
     if not roman:
         return None
@@ -2496,7 +2512,7 @@ def _normalize_numbers(text: str) -> str:
         lambda m: _replace_roman_numeral(m, ascii_only=True),
         text,
     )
-    text = unicodedata.normalize("NFKC", text)
+    text = _nfkc_preserve_ellipsis(text)
     text = re.sub(r"(?<=\d)\s*~\s*(?=\d)", "から", text)
     text = re.sub(
         rf"(?<=[{_KANJI_NUMERAL_RANGE_CHARS}])\s*~\s*(?=[{_KANJI_NUMERAL_RANGE_CHARS}])",
@@ -4419,7 +4435,7 @@ def _normalize_wave_dashes_for_tts(text: str) -> str:
 def prepare_tts_text(text: str, *, add_short_punct: bool = False) -> str:
     if not text:
         return ""
-    text = unicodedata.normalize("NFKC", text)
+    text = _nfkc_preserve_ellipsis(text)
     text = _normalize_kyujitai(text)
     has_dash_run = bool(_DASH_RUN_RE.search(text))
     text = _DASH_RUN_RE.sub(" ", text)

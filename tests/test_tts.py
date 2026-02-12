@@ -98,6 +98,10 @@ def test_chunking_splits_on_punct_only_line() -> None:
     assert chunks == ["「……」", "「空太？」"]
 
 
+def test_prepare_tts_text_preserves_unicode_ellipsis() -> None:
+    assert tts_util.prepare_tts_text("…………") == "…………"
+
+
 def test_compute_chunk_pause_multipliers_detects_title_and_section_breaks() -> None:
     text = f"序章\n\n本文一。\n\n{SECTION_BREAK}\n\n本文二。"
     spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
@@ -2103,6 +2107,11 @@ def test_normalize_numbers_fallback_cardinal() -> None:
 def test_normalize_numbers_counter_wa() -> None:
     text = "１話 土曜日"
     assert tts_util._normalize_numbers(text) == "いちわ 土曜日"
+
+
+def test_normalize_numbers_preserves_unicode_ellipsis() -> None:
+    text = "……三ケ月前"
+    assert tts_util._normalize_numbers(text) == "……さんかげつ前"
 
 
 def test_normalize_numbers_counter_one_readings() -> None:
