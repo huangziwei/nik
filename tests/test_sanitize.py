@@ -60,6 +60,34 @@ def test_normalize_text_converts_star_section_break() -> None:
     assert "☆" not in cleaned
 
 
+def test_normalize_text_converts_fullwidth_asterisk_section_break() -> None:
+    raw = "一。\n＊\n二。"
+    cleaned = sanitize_util.normalize_text(raw)
+    assert SECTION_BREAK in cleaned
+    assert "＊" not in cleaned
+
+
+def test_normalize_text_converts_diamond_section_break() -> None:
+    raw = "一。\n◇\n二。"
+    cleaned = sanitize_util.normalize_text(raw)
+    assert SECTION_BREAK in cleaned
+    assert "◇" not in cleaned
+
+
+def test_normalize_text_does_not_convert_ellipsis_line_as_section_break() -> None:
+    raw = "一。\n\n……\n\n二。"
+    cleaned = sanitize_util.normalize_text(raw)
+    assert SECTION_BREAK not in cleaned
+    assert "……" in cleaned
+
+
+def test_normalize_text_does_not_convert_quoted_ellipsis_line() -> None:
+    raw = "一。\n\n「……」\n\n二。"
+    cleaned = sanitize_util.normalize_text(raw)
+    assert SECTION_BREAK not in cleaned
+    assert "「……」" in cleaned
+
+
 def test_normalize_text_preserves_raw_line_breaks() -> None:
     raw = "First.\nSecond.\n\nSection start.\nThird."
     cleaned = sanitize_util.normalize_text(raw)
