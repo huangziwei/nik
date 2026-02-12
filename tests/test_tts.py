@@ -170,6 +170,54 @@ def test_compute_chunk_pause_multipliers_does_not_promote_dialogue_bridge_betwee
         assert multipliers[idx] == 1
 
 
+def test_compute_chunk_pause_multipliers_does_not_promote_sentence_continuation_line() -> None:
+    text = (
+        "どれだけ自分を、歪めていたんだろう。\n"
+        "それはきっと悲しいことだ。なのに、\n"
+        "──僕にとっては、能力で歪んでしまった君が、相麻菫なんだよ。"
+    )
+    spans = tts_util.make_chunk_spans(text, max_chars=220, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == [
+        "どれだけ自分を、歪めていたんだろう。",
+        "それはきっと悲しいことだ。なのに、",
+        "──僕にとっては、能力で歪んでしまった君が、相麻菫なんだよ。",
+    ]
+    multipliers = tts_util.compute_chunk_pause_multipliers(text, spans)
+    assert multipliers == [1, 1, 1]
+
+
+def test_compute_chunk_pause_multipliers_does_not_promote_continuation_before_dash_line() -> None:
+    text = "それと、\n──応援してるから"
+    spans = tts_util.make_chunk_spans(text, max_chars=220, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["それと、", "──応援してるから"]
+    multipliers = tts_util.compute_chunk_pause_multipliers(text, spans)
+    assert multipliers == [1, 1]
+
+
+def test_compute_chunk_pause_multipliers_does_not_promote_continuation_before_plain_line() -> None:
+    text = "歌詞を見るととても日本語とは思えない。これが実はヘブライ語だと提唱したのは神学博士で、翻訳すれば、\n聖前に主を讃えよ"
+    spans = tts_util.make_chunk_spans(text, max_chars=220, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == [
+        "歌詞を見るととても日本語とは思えない。これが実はヘブライ語だと提唱したのは神学博士で、翻訳すれば、",
+        "聖前に主を讃えよ",
+    ]
+    multipliers = tts_util.compute_chunk_pause_multipliers(text, spans)
+    assert multipliers == [1, 1]
+
+
+def test_compute_chunk_pause_multipliers_keeps_section_break_after_continuation() -> None:
+    text = f"それと、\n\n{SECTION_BREAK}\n\n次。"
+    spans = tts_util.make_chunk_spans(text, max_chars=220, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["それと、", "次。"]
+    multipliers = tts_util.compute_chunk_pause_multipliers(text, spans)
+    assert multipliers[0] >= 3
+    assert multipliers[1] == 1
+
+
 def test_chunk_book_writes_manifest(tmp_path: Path) -> None:
     book_dir = tmp_path / "book"
     clean_dir = book_dir / "clean" / "chapters"

@@ -1503,6 +1503,14 @@ def _ends_with_sentence_punct(text: str) -> bool:
     return stripped[-1] in (_END_PUNCT | {"。", "！", "？"})
 
 
+def _ends_with_continuation_punct(text: str) -> bool:
+    trailing = "".join(_CLOSE_PUNCT) + "」』）】"
+    stripped = text.rstrip(trailing)
+    if not stripped:
+        return False
+    return stripped[-1] in (_MID_PUNCT | {"—", "―", "─", "━", "…", "⋯"})
+
+
 def _looks_like_heading_chunk(chunk: str) -> bool:
     stripped = " ".join(part.strip() for part in chunk.splitlines() if part.strip())
     if not stripped:
@@ -1515,6 +1523,8 @@ def _looks_like_heading_chunk(chunk: str) -> bool:
     if not tokens:
         return False
     if _ends_with_sentence_punct(stripped):
+        return False
+    if _ends_with_continuation_punct(stripped):
         return False
     if _looks_like_paragraph_chunk(stripped):
         return False
@@ -1531,6 +1541,8 @@ def _looks_like_contextual_heading(
         return True
     stripped = " ".join(part.strip() for part in chunk.splitlines() if part.strip())
     if not stripped or _ends_with_sentence_punct(stripped):
+        return False
+    if _ends_with_continuation_punct(stripped):
         return False
     if _looks_like_dialogue_chunk(stripped):
         return False
@@ -1576,6 +1588,18 @@ def _gap_has_symbolic_separator(gap: str) -> bool:
     return False
 
 
+def _is_continuation_linebreak_gap(prev_chunk: str, gap: str) -> bool:
+    if not gap or "\n" not in gap:
+        return False
+    if SECTION_BREAK in gap:
+        return False
+    if not _ends_with_continuation_punct(prev_chunk):
+        return False
+    if _gap_has_symbolic_separator(gap):
+        return False
+    return True
+
+
 def compute_chunk_pause_multipliers(
     text: str, spans: Sequence[Tuple[int, int]]
 ) -> List[int]:
@@ -1609,6 +1633,9 @@ def compute_chunk_pause_multipliers(
             continue
         gap = text[end:next_start]
         pause = _pause_multiplier_from_gap(gap)
+        if _is_continuation_linebreak_gap(chunk_texts[idx], gap):
+            multipliers[idx] = 1
+            continue
         if "\n" in gap or SECTION_BREAK in gap:
             if _gap_has_symbolic_separator(gap):
                 pause = max(pause, _SECTION_BREAK_PAUSE_MULTIPLIER)
