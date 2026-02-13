@@ -1386,6 +1386,339 @@ def test_normalize_kana_first_token_partial_separator_after_sokuon() -> None:
     assert out == f"まって{_default_first_token_separator()}くれ。"
 
 
+def test_normalize_kana_first_token_partial_separator_after_particle_ha() -> None:
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            pos1: str | None = None,
+            pos2: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+            self.pos2 = pos2
+
+    class DummyToken:
+        def __init__(
+            self,
+            surface: str,
+            kana: str | None,
+            *,
+            pos1: str | None = None,
+            pos2: str | None = None,
+        ) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana, pos1=pos1, pos2=pos2)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("青砥", "アオト"),
+                DummyToken("は", "ハ", pos1="助詞", pos2="係助詞"),
+                DummyToken("胸", "ムネ"),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "青砥は胸",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_token_to_kana=True,
+    )
+    assert out == f"あおとは{_default_first_token_separator()}胸"
+
+
+def test_normalize_kana_first_token_partial_separator_not_after_non_particle_ha() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None, pos1: str | None = None) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+
+    class DummyToken:
+        def __init__(
+            self, surface: str, kana: str | None, *, pos1: str | None = None
+        ) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana, pos1=pos1)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("青砥", "アオト"),
+                DummyToken("はじめる", "ハジメル", pos1="動詞"),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "青砥はじめる",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_token_to_kana=True,
+    )
+    assert out == f"あおと{_default_first_token_separator()}はじめる"
+
+
+def test_normalize_kana_first_token_partial_separator_not_after_katakana_ha() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None, pos1: str | None = None) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+
+    class DummyToken:
+        def __init__(
+            self, surface: str, kana: str | None, *, pos1: str | None = None
+        ) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana, pos1=pos1)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("青砥", "アオト"),
+                DummyToken("ハ", "ハ", pos1="助詞"),
+                DummyToken("胸", "ムネ"),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "青砥ハ胸",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_token_to_kana=True,
+    )
+    assert out == f"あおと{_default_first_token_separator()}ハ胸"
+
+
+def test_normalize_kana_separator_before_particle_ha_in_overrides_path() -> None:
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            pos1: str | None = None,
+            pos2: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+            self.pos2 = pos2
+
+    class DummyToken:
+        def __init__(
+            self,
+            surface: str,
+            kana: str | None,
+            *,
+            pos1: str | None = None,
+            pos2: str | None = None,
+        ) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana, pos1=pos1, pos2=pos2)
+
+    sep = _default_first_token_separator()
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken(sep, None),
+                DummyToken("あ", "ア"),
+                DummyToken("お", "オ"),
+                DummyToken("と", "ト"),
+                DummyToken(sep, None),
+                DummyToken("は", "ハ", pos1="助詞", pos2="係助詞"),
+                DummyToken("胸", "ムネ"),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        f"{sep}あおと{sep}は胸",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_token_to_kana=True,
+    )
+    assert out == f"あおとは{sep}胸"
+
+
+def test_normalize_kana_separator_before_non_particle_ha_in_overrides_path() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None, pos1: str | None = None) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+
+    class DummyToken:
+        def __init__(
+            self, surface: str, kana: str | None, *, pos1: str | None = None
+        ) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana, pos1=pos1)
+
+    sep = _default_first_token_separator()
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken(sep, None),
+                DummyToken("あ", "ア"),
+                DummyToken("お", "オ"),
+                DummyToken("と", "ト"),
+                DummyToken(sep, None),
+                DummyToken("はじめる", "ハジメル", pos1="動詞"),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        f"{sep}あおと{sep}はじめる",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_token_to_kana=True,
+    )
+    assert out == f"あおと{sep}はじめる"
+
+
+def test_normalize_kana_separator_before_katakana_ha_in_overrides_path() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None, pos1: str | None = None) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+
+    class DummyToken:
+        def __init__(
+            self, surface: str, kana: str | None, *, pos1: str | None = None
+        ) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana, pos1=pos1)
+
+    sep = _default_first_token_separator()
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken(sep, None),
+                DummyToken("あ", "ア"),
+                DummyToken("お", "オ"),
+                DummyToken("と", "ト"),
+                DummyToken(sep, None),
+                DummyToken("ハ", "ハ", pos1="助詞"),
+                DummyToken("胸", "ムネ"),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        f"{sep}あおと{sep}ハ胸",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_token_to_kana=True,
+    )
+    assert out == f"あおと{sep}ハ胸"
+
+
+@pytest.mark.parametrize(
+    ("particle_surface", "particle_reading", "tail_surface", "tail_reading"),
+    [
+        ("へ", "ヘ", "道", "ミチ"),
+        ("を", "ヲ", "見る", "ミル"),
+    ],
+)
+def test_normalize_kana_separator_before_pronunciation_particles_in_overrides_path(
+    particle_surface: str,
+    particle_reading: str,
+    tail_surface: str,
+    tail_reading: str,
+) -> None:
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            pos1: str | None = None,
+            pos2: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+            self.pos2 = pos2
+
+    class DummyToken:
+        def __init__(
+            self,
+            surface: str,
+            kana: str | None,
+            *,
+            pos1: str | None = None,
+            pos2: str | None = None,
+        ) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana, pos1=pos1, pos2=pos2)
+
+    sep = _default_first_token_separator()
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken(sep, None),
+                DummyToken("あ", "ア"),
+                DummyToken("お", "オ"),
+                DummyToken("と", "ト"),
+                DummyToken(sep, None),
+                DummyToken(particle_surface, particle_reading, pos1="助詞", pos2="格助詞"),
+                DummyToken(tail_surface, tail_reading),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        f"{sep}あおと{sep}{particle_surface}{tail_surface}",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_token_to_kana=True,
+    )
+    assert out == f"あおと{particle_surface}{sep}{tail_surface}"
+
+
+def test_normalize_kana_drops_separator_after_punctuation_with_marker() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None, pos1: str | None = None) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+
+    class DummyToken:
+        def __init__(
+            self, surface: str, kana: str | None, *, pos1: str | None = None
+        ) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana, pos1=pos1)
+
+    sep = _default_first_token_separator()
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("昼過ぎ", "ヒルスギ"),
+                DummyToken("だっ", "ダッ"),
+                DummyToken("た", "タ"),
+                DummyToken("。", "。"),
+                DummyToken(sep, None),
+                DummyToken("あ", "ア"),
+                DummyToken("お", "オ"),
+                DummyToken("と", "ト"),
+                DummyToken(sep, None),
+                DummyToken("は", "ハ", pos1="助詞"),
+                DummyToken("腹", "ハラ"),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        f"昼過ぎだった。{sep}あおと{sep}は腹",
+        DummyTagger(),
+        kana_style="partial",
+        zh_lexicon=set(),
+        force_first_token_to_kana=True,
+    )
+    assert out == f"ひるすぎ{sep}だった。あおとは{sep}腹"
+
+
 def test_normalize_kana_first_token_partial_kanji_run() -> None:
     class DummyFeature:
         def __init__(self, kana: str | None) -> None:

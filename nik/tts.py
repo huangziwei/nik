@@ -4289,10 +4289,121 @@ def _normalize_kana_with_tagger(
                 source="unidic",
                 reading=reading_kata,
             )
+    def _is_pronunciation_particle(token: Any) -> bool:
+        surface = unicodedata.normalize("NFKC", str(getattr(token, "surface", "") or ""))
+        if surface not in {"は", "へ", "を"}:
+            return False
+        attrs = _extract_token_attrs(token)
+        pos1 = attrs.get("pos1") or ""
+        if pos1 == "助詞":
+            return True
+        return any(
+            pos.endswith("助詞")
+            for pos in (
+                attrs.get("pos2") or "",
+                attrs.get("pos3") or "",
+                attrs.get("pos4") or "",
+            )
+            if pos
+        )
+
+    def _is_surface_punctuation(surface: str) -> bool:
+        if not surface:
+            return False
+        if surface == SECTION_BREAK:
+            return True
+        return all(unicodedata.category(ch).startswith("P") for ch in surface)
+
+    def _token_output_indices() -> Dict[int, int]:
+        token_to_out_idx: Dict[int, int] = {}
+        out_idx = 0
+        for token_idx, token in enumerate(tokens):
+            surface = str(getattr(token, "surface", "") or "")
+            if not surface:
+                continue
+            while (
+                out_idx < len(out)
+                and out[out_idx] == first_force_separator_marker
+            ):
+                out_idx += 1
+            if out_idx >= len(out):
+                break
+            token_to_out_idx[token_idx] = out_idx
+            out_idx += 1
+        return token_to_out_idx
+
+    def _prev_token_idx(start_idx: int) -> Optional[int]:
+        for idx in range(start_idx - 1, -1, -1):
+            surface = str(getattr(tokens[idx], "surface", "") or "")
+            if surface:
+                return idx
+        return None
+
+    def _next_token_idx(start_idx: int) -> Optional[int]:
+        for idx in range(start_idx + 1, len(tokens)):
+            surface = str(getattr(tokens[idx], "surface", "") or "")
+            if surface:
+                return idx
+        return None
+
+    def _rebalance_existing_separator_tokens() -> None:
+        if not token_separator:
+            return
+        token_to_out_idx = _token_output_indices()
+        for token_idx, token in enumerate(tokens):
+            surface = unicodedata.normalize(
+                "NFKC", str(getattr(token, "surface", "") or "")
+            )
+            if surface != token_separator:
+                continue
+            separator_out_idx = token_to_out_idx.get(token_idx)
+            if separator_out_idx is None:
+                continue
+
+            next_idx = _next_token_idx(token_idx)
+            if next_idx is not None and _is_pronunciation_particle(tokens[next_idx]):
+                next_out_idx = token_to_out_idx.get(next_idx)
+                if next_out_idx is not None and out[separator_out_idx] == token_separator:
+                    out[separator_out_idx] = ""
+                    out[next_out_idx] = out[next_out_idx] + token_separator
+                continue
+
+            prev_idx = _prev_token_idx(token_idx)
+            if prev_idx is None:
+                if out[separator_out_idx] == token_separator:
+                    out[separator_out_idx] = ""
+                continue
+            prev_surface = unicodedata.normalize(
+                "NFKC", str(getattr(tokens[prev_idx], "surface", "") or "")
+            )
+            if prev_surface == token_separator or _is_surface_punctuation(prev_surface):
+                if out[separator_out_idx] == token_separator:
+                    out[separator_out_idx] = ""
+
+    _rebalance_existing_separator_tokens()
+
     if first_force_separator_marker not in out:
         return _collapse_repeated_token_separators("".join(out))
 
     marker_idx = out.index(first_force_separator_marker)
+    next_token_idx: Optional[int] = None
+    if force_first_kanji_last_idx is not None:
+        next_token_idx = force_first_kanji_last_idx + 1
+    elif force_first_token_idx is not None:
+        next_token_idx = force_first_token_idx + 1
+    if (
+        next_token_idx is not None
+        and 0 <= next_token_idx < len(tokens)
+        and _is_pronunciation_particle(tokens[next_token_idx])
+    ):
+        next_chunk_idx = marker_idx + 1
+        while next_chunk_idx < len(out) and not out[next_chunk_idx]:
+            next_chunk_idx += 1
+        if next_chunk_idx < len(out):
+            out[next_chunk_idx] = out[next_chunk_idx] + first_force_separator
+            out[marker_idx] = ""
+            return _collapse_repeated_token_separators("".join(out))
+
     prev_chunk = out[marker_idx - 1] if marker_idx > 0 else ""
     if prev_chunk.endswith(("っ", "ッ")):
         moved = False
