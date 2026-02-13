@@ -1210,7 +1210,16 @@ def _is_protectable_quote_span(text: str, start: int, end: int, max_chars: int) 
         return False
     prev_ch = text[start - 1] if start > 0 else ""
     next_ch = text[end] if end < len(text) else ""
+
     inline_before = (prev_ch.isalnum() or _is_japanese_char(prev_ch)) and not prev_ch.isspace()
+    if not inline_before and prev_ch in {"、", "，", ",", ":", "：", ";", "；"}:
+        idx = start - 2
+        while idx >= 0 and text[idx].isspace():
+            idx -= 1
+        if idx >= 0:
+            prev_prev = text[idx]
+            inline_before = (prev_prev.isalnum() or _is_japanese_char(prev_prev)) and not prev_prev.isspace()
+
     inline_after = (next_ch.isalnum() or _is_japanese_char(next_ch)) and not next_ch.isspace()
     has_sentence_punct = any(ch in "。！？!?…⋯" for ch in inner)
     if inline_before and inline_after and not has_sentence_punct:
@@ -1272,6 +1281,13 @@ def _is_hard_chunk_boundary(
     return False
 
 
+def _is_same_paragraph_gap(text: str, left_end: int, right_start: int) -> bool:
+    gap = text[left_end:right_start]
+    if "\n" in gap or SECTION_BREAK in gap:
+        return False
+    return True
+
+
 def _build_chunk_units(
     text: str,
     sentence_spans: Sequence[Tuple[int, int]],
@@ -1304,9 +1320,13 @@ def _build_chunk_units(
         adjacent_quote = False
         if not is_quote:
             if idx > 0 and grouped[idx - 1][2] is not None:
-                adjacent_quote = True
+                prev_end = int(grouped[idx - 1][1])
+                if _is_same_paragraph_gap(text, prev_end, int(start)):
+                    adjacent_quote = True
             if idx + 1 < len(grouped) and grouped[idx + 1][2] is not None:
-                adjacent_quote = True
+                next_start = int(grouped[idx + 1][0])
+                if _is_same_paragraph_gap(text, int(end), next_start):
+                    adjacent_quote = True
         units.append((int(start), int(end), is_quote, adjacent_quote))
     return units
 

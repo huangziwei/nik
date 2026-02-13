@@ -79,6 +79,27 @@ def test_chunking_does_not_protect_inline_emphasis_quote() -> None:
     assert chunks == [text]
 
 
+def test_chunking_does_not_protect_inline_emphasis_quote_after_comma() -> None:
+    text = "硬いものをよく嚙かんで柔らかくするように、「須藤　花」で記憶を探る。"
+    spans = tts_util.make_chunk_spans(text, max_chars=220, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == [text]
+
+
+def test_chunking_keeps_dialogue_quote_after_comma_with_attribution() -> None:
+    text = "彼は、「はい」と言った。"
+    spans = tts_util.make_chunk_spans(text, max_chars=220, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["彼は、", "「はい」", "と言った。"]
+
+
+def test_chunking_does_not_isolate_quote_adjacent_chunk_across_paragraph_boundary() -> None:
+    text = "「夢みたいなことをね。ちょっと」\n\n病院だったんだ。昼過ぎだったんだ。"
+    spans = tts_util.make_chunk_spans(text, max_chars=220, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["「夢みたいなことをね。ちょっと」", "病院だったんだ。昼過ぎだったんだ。"]
+
+
 def test_chunking_splits_long_quote_when_over_max_chars() -> None:
     text = "「あいうえお。かきくけこ。さしすせそ。」"
     spans = tts_util.make_chunk_spans(text, max_chars=10, chunk_mode="japanese")
