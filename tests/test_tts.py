@@ -556,6 +556,30 @@ def test_split_reading_overrides_single_kanji_mode() -> None:
     assert "mode" not in entry_map["天国"]
 
 
+def test_split_reading_overrides_global_single_kanji_mode() -> None:
+    data = {
+        "global": {
+            "replacements": [
+                {"base": "天", "reading": "てん"},
+                {"base": "天国", "reading": "てんごく"},
+            ]
+        }
+    }
+    global_entries, _chapters = tts_util._split_reading_overrides_data(data)
+    entry_map = {item.get("base"): item for item in global_entries}
+    assert entry_map["天"].get("mode") == "isolated"
+    assert "mode" not in entry_map["天国"]
+
+
+def test_parse_reading_overrides_text_single_kanji_defaults_isolated() -> None:
+    entries = tts_util._parse_reading_overrides_text("蟬＝セミ\n")
+    assert entries == [{"base": "蟬", "reading": "セミ", "mode": "isolated"}]
+    assert (
+        tts_util.apply_reading_overrides("蟬の声と蟬たち", entries)
+        == "セミの声と蟬たち"
+    )
+
+
 def test_apply_reading_overrides_regex() -> None:
     text = "御存知でした。御迷惑でした。"
     overrides = [{"base": "re:御(存知|迷惑)", "reading": r"ご\1"}]
@@ -3236,6 +3260,54 @@ def test_merge_reading_overrides_keeps_non_propagated_chapter_override() -> None
         chapter_propagated_readings={"事件": {"ヤマ"}},
     )
     assert tts_util.apply_reading_overrides("事件", merged) == "じへん"
+
+
+def test_ruby_propagated_reading_map_includes_chapter_spans() -> None:
+    ruby_data = {
+        "global": [{"base": "事件", "reading": "ヤマ"}],
+        "chapters": {
+            "0003-chapter": {
+                "clean_spans": [{"base": "蟬", "reading": "せみ"}],
+                "raw_spans": [{"base": "須藤", "reading": "すどう"}],
+            }
+        },
+    }
+
+    chapter_map = tts_util._ruby_propagated_reading_map(
+        ruby_data,
+        chapter_id="0003-chapter",
+    )
+    assert chapter_map["事件"] == {"ヤマ"}
+    assert chapter_map["蟬"] == {"せみ"}
+    assert chapter_map["須藤"] == {"すどう"}
+
+    other_map = tts_util._ruby_propagated_reading_map(
+        ruby_data,
+        chapter_id="0004-chapter",
+    )
+    assert other_map == {"事件": {"ヤマ"}}
+
+
+def test_merge_reading_overrides_prefers_global_over_single_kanji_ruby_chapter_entry() -> None:
+    global_overrides = [{"base": "蟬", "reading": "セミ"}]
+    chapter_overrides = [{"base": "蟬", "reading": "せみ"}]
+    ruby_data = {
+        "chapters": {
+            "0003-chapter": {
+                "clean_spans": [{"base": "蟬", "reading": "せみ"}],
+            }
+        }
+    }
+    propagated = tts_util._ruby_propagated_reading_map(
+        ruby_data,
+        chapter_id="0003-chapter",
+    )
+    merged = tts_util._merge_reading_overrides(
+        global_overrides,
+        chapter_overrides,
+        chapter_propagated_readings=propagated,
+    )
+    assert tts_util.apply_reading_overrides("蟬の声", merged) == "セミの声"
 
 
 def test_load_reading_overrides_includes_template(

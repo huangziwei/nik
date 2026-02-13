@@ -1098,7 +1098,10 @@ def _kana(args: argparse.Namespace) -> int:
     if book_dir and book_dir.exists():
         global_overrides, chapter_overrides = tts_util._load_reading_overrides(book_dir)
         ruby_data = tts_util._load_ruby_data(book_dir)
-        ruby_propagated_readings = tts_util._ruby_propagated_reading_map(ruby_data)
+        ruby_propagated_readings = tts_util._ruby_propagated_reading_map(
+            ruby_data,
+            chapter_id=chapter_id,
+        )
         if ruby_data and chapter_id and chunk_index is not None:
             entry = manifest_entry
             if entry is None:

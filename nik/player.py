@@ -1536,7 +1536,10 @@ def create_app(root_dir: Path) -> FastAPI:
         global_overrides, chapter_overrides = tts_util._load_reading_overrides(book_dir)
         chapter_entries = chapter_overrides.get(chapter_id, [])
         ruby_data = tts_util._load_ruby_data(book_dir)
-        ruby_propagated_readings = tts_util._ruby_propagated_reading_map(ruby_data)
+        ruby_propagated_readings = tts_util._ruby_propagated_reading_map(
+            ruby_data,
+            chapter_id=chapter_id,
+        )
         merged_overrides = tts_util._merge_reading_overrides(
             global_overrides,
             chapter_entries,

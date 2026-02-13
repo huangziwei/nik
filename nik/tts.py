@@ -5258,6 +5258,8 @@ def _parse_reading_overrides_text(text: str) -> List[dict[str, str]]:
             continue
         entry = _normalize_reading_override_entry({"base": base, "reading": reading})
         if entry:
+            if len(str(entry.get("base") or "")) == 1 and "mode" not in entry:
+                entry["mode"] = "isolated"
             replacements.append(entry)
     return replacements
 
@@ -5276,11 +5278,20 @@ def _split_reading_overrides_data(
             key in data for key in ("global", "default", "*", "chapters")
         )
         if "global" in data:
-            global_entries = _parse_reading_entries(data.get("global"))
+            global_entries = _parse_reading_entries(
+                data.get("global"),
+                single_kanji_mode="isolated",
+            )
         if "default" in data and not global_entries:
-            global_entries = _parse_reading_entries(data.get("default"))
+            global_entries = _parse_reading_entries(
+                data.get("default"),
+                single_kanji_mode="isolated",
+            )
         if "*" in data and not global_entries:
-            global_entries = _parse_reading_entries(data.get("*"))
+            global_entries = _parse_reading_entries(
+                data.get("*"),
+                single_kanji_mode="isolated",
+            )
         if "chapters" in data:
             chapters_data = data.get("chapters") or {}
         elif has_known_keys:
@@ -5348,20 +5359,44 @@ def _ruby_global_overrides(ruby_data: dict) -> List[dict[str, str]]:
     return overrides
 
 
-def _ruby_propagated_reading_map(ruby_data: dict) -> Dict[str, set[str]]:
+def _ruby_propagated_reading_map(
+    ruby_data: dict,
+    chapter_id: Optional[str] = None,
+) -> Dict[str, set[str]]:
     mapping: Dict[str, set[str]] = {}
-    items = ruby_data.get("global") if isinstance(ruby_data, dict) else None
-    if not isinstance(items, list):
+
+    def add_items(items: object) -> None:
+        if not isinstance(items, list):
+            return
+        for item in items:
+            entry = _normalize_reading_override_entry(item)
+            if not entry:
+                continue
+            base = str(entry.get("base") or "").strip()
+            reading = str(entry.get("reading") or "").strip()
+            if not base or not reading:
+                continue
+            mapping.setdefault(base, set()).add(reading)
+
+    if not isinstance(ruby_data, dict):
         return mapping
-    for item in items:
-        entry = _normalize_reading_override_entry(item)
-        if not entry:
-            continue
-        base = str(entry.get("base") or "").strip()
-        reading = str(entry.get("reading") or "").strip()
-        if not base or not reading:
-            continue
-        mapping.setdefault(base, set()).add(reading)
+    add_items(ruby_data.get("global"))
+
+    chapters = ruby_data.get("chapters")
+    if not isinstance(chapters, dict):
+        return mapping
+
+    chapter_entries: list[dict] = []
+    if chapter_id is not None:
+        selected = chapters.get(chapter_id)
+        if isinstance(selected, dict):
+            chapter_entries.append(selected)
+    else:
+        chapter_entries = [entry for entry in chapters.values() if isinstance(entry, dict)]
+
+    for chapter_entry in chapter_entries:
+        add_items(chapter_entry.get("clean_spans"))
+        add_items(chapter_entry.get("raw_spans"))
     return mapping
 
 
@@ -6068,7 +6103,7 @@ def synthesize_book(
     model_name = _resolve_model_name(model_name, backend_name)
     global_overrides, reading_overrides = _load_reading_overrides(book_dir)
     ruby_data = _load_ruby_data(book_dir)
-    ruby_propagated_readings = _ruby_propagated_reading_map(ruby_data)
+    ruby_propagated_readings_by_chapter: Dict[str, Dict[str, set[str]]] = {}
     chapter_ruby_spans: Dict[str, List[dict]] = {}
     if ruby_data:
         for chapter in chapters:
@@ -6257,6 +6292,10 @@ def synthesize_book(
             language = voice_languages.get(voice_id)
             voice_config = voice_configs.get(voice_id)
             chapter_overrides = reading_overrides.get(chapter_id, [])
+            ruby_propagated_readings = ruby_propagated_readings_by_chapter.setdefault(
+                chapter_id,
+                _ruby_propagated_reading_map(ruby_data, chapter_id=chapter_id),
+            )
             merged_overrides = _merge_reading_overrides(
                 global_overrides,
                 chapter_overrides,
@@ -6664,7 +6703,10 @@ def synthesize_chunk(
         span_list = entry.get("chunk_spans")
         if isinstance(span_list, list) and len(span_list) > chunk_index:
             chunk_span = span_list[chunk_index]
-    ruby_propagated_readings = _ruby_propagated_reading_map(ruby_data)
+    ruby_propagated_readings = _ruby_propagated_reading_map(
+        ruby_data,
+        chapter_id=chapter_id,
+    )
     global_overrides, reading_overrides = _load_reading_overrides(override_dir)
     chapter_overrides = reading_overrides.get(chapter_id, [])
     merged_overrides = _merge_reading_overrides(
