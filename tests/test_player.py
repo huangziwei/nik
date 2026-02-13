@@ -461,6 +461,43 @@ def test_synth_chunk_allowed_while_tts_running(
     assert captured["voice"] == "regen-voice"
 
 
+def test_sanitize_run_uses_cli_subprocess(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root, root_dir = _make_repo(tmp_path)
+    book_dir = _make_book(root_dir)
+    captured: dict[str, object] = {}
+
+    def fake_run(
+        cmd: list[str], cwd: str, stdout, stderr: int
+    ) -> SimpleNamespace:
+        captured["cmd"] = cmd
+        captured["cwd"] = cwd
+        captured["stderr"] = stderr
+        stdout.write("ok\n")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(player_util.subprocess, "run", fake_run)
+
+    app = player_util.create_app(root_dir)
+    client = TestClient(app)
+    response = client.post("/api/sanitize/run", json={"book_id": "book"})
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "tts_cleared": True}
+    assert captured["cmd"] == [
+        "uv",
+        "run",
+        "nik",
+        "sanitize",
+        "--book",
+        str(book_dir),
+        "--overwrite",
+    ]
+    assert captured["cwd"] == str(repo_root)
+    assert captured["stderr"] == player_util.subprocess.STDOUT
+
+
 def test_clear_tts_forces_rechunk_with_manifest_settings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

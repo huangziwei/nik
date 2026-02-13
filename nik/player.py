@@ -2270,16 +2270,29 @@ def create_app(root_dir: Path) -> FastAPI:
         merge_job = merge_jobs.get(payload.book_id)
         if merge_job and merge_job.process.poll() is None:
             raise HTTPException(status_code=409, detail="Stop merge before sanitizing.")
-        try:
-            rules_path = _select_rules_path(book_dir)
-            sanitize.sanitize_book(
-                book_dir=book_dir,
-                rules_path=rules_path,
-                overwrite=True,
+        tts_cleared = (book_dir / "tts").exists()
+        log_path = book_dir / "sanitize.log"
+        cmd = [
+            "uv",
+            "run",
+            "nik",
+            "sanitize",
+            "--book",
+            str(book_dir),
+            "--overwrite",
+        ]
+        with log_path.open("w", encoding="utf-8") as log_handle:
+            proc = subprocess.run(
+                cmd,
+                cwd=str(repo_root),
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
             )
-            tts_cleared = sanitize.refresh_chunks(book_dir=book_dir)
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if proc.returncode != 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Sanitize failed. Check {log_path}.",
+            )
         return _no_store({"status": "ok", "tts_cleared": tts_cleared})
 
     @app.post("/api/sanitize/clean")

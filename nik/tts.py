@@ -1208,6 +1208,17 @@ def _is_protectable_quote_span(text: str, start: int, end: int, max_chars: int) 
     inner = segment[1:-1].strip() if len(segment) > 2 else ""
     if not inner:
         return False
+    prev_ch = text[start - 1] if start > 0 else ""
+    next_ch = text[end] if end < len(text) else ""
+    inline_before = (prev_ch.isalnum() or _is_japanese_char(prev_ch)) and not prev_ch.isspace()
+    inline_after = (next_ch.isalnum() or _is_japanese_char(next_ch)) and not next_ch.isspace()
+    has_sentence_punct = any(ch in "。！？!?…⋯" for ch in inner)
+    if inline_before and inline_after and not has_sentence_punct:
+        # Inline short quotes are often emphasis/term markers, not dialogue.
+        # Keep protection only for explicit speech-attribution patterns.
+        next_tail = text[end : min(len(text), end + 4)].lstrip()
+        if not (next_tail.startswith("と") or next_tail.startswith("って")):
+            return False
     return True
 
 
@@ -1607,6 +1618,30 @@ def _is_continuation_linebreak_gap(prev_chunk: str, gap: str) -> bool:
     return True
 
 
+def _is_standalone_paragraph_chunk(
+    text: str, spans: Sequence[Tuple[int, int]], idx: int
+) -> bool:
+    if idx < 0 or idx >= len(spans):
+        return False
+
+    start = int(spans[idx][0])
+    end = int(spans[idx][1])
+
+    prev_boundary = True
+    if idx > 0:
+        prev_end = int(spans[idx - 1][1])
+        prev_gap = text[prev_end:start]
+        prev_boundary = "\n" in prev_gap or SECTION_BREAK in prev_gap
+
+    next_boundary = True
+    if idx + 1 < len(spans):
+        next_start = int(spans[idx + 1][0])
+        next_gap = text[end:next_start]
+        next_boundary = "\n" in next_gap or SECTION_BREAK in next_gap
+
+    return prev_boundary and next_boundary
+
+
 def compute_chunk_pause_multipliers(
     text: str, spans: Sequence[Tuple[int, int]]
 ) -> List[int]:
@@ -1615,8 +1650,14 @@ def compute_chunk_pause_multipliers(
     multipliers = [1] * len(spans)
     chunk_texts = [text[int(start) : int(end)] for start, end in spans]
     chunk_word_counts = [_heading_word_count(chunk) for chunk in chunk_texts]
+    standalone_paragraph = [
+        _is_standalone_paragraph_chunk(text, spans, idx)
+        for idx in range(len(spans))
+    ]
     heading_like = [False] * len(spans)
     for idx, chunk in enumerate(chunk_texts):
+        if not standalone_paragraph[idx]:
+            continue
         prev_words = chunk_word_counts[idx - 1] if idx > 0 else 0
         next_words = chunk_word_counts[idx + 1] if idx + 1 < len(chunk_texts) else 0
         heading_like[idx] = _looks_like_contextual_heading(

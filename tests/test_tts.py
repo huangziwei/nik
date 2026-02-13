@@ -65,6 +65,20 @@ def test_chunking_keeps_balanced_quote_as_own_chunk() -> None:
     assert chunks == ["彼は", "「いいえ。ありがとうございます」", "と言った。"]
 
 
+def test_chunking_keeps_inline_dialogue_quote_with_attribution_marker() -> None:
+    text = "彼は「はい」と言った。"
+    spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["彼は", "「はい」", "と言った。"]
+
+
+def test_chunking_does_not_protect_inline_emphasis_quote() -> None:
+    text = "医師の口にした「念のため」にさまざまな解釈をくわえた。"
+    spans = tts_util.make_chunk_spans(text, max_chars=220, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == [text]
+
+
 def test_chunking_splits_long_quote_when_over_max_chars() -> None:
     text = "「あいうえお。かきくけこ。さしすせそ。」"
     spans = tts_util.make_chunk_spans(text, max_chars=10, chunk_mode="japanese")
@@ -231,6 +245,23 @@ def test_compute_chunk_pause_multipliers_does_not_promote_dialogue_bridge_betwee
     ):
         idx = next(i for i, chunk in enumerate(chunks) if chunk == target)
         assert multipliers[idx] == 1
+
+
+def test_compute_chunk_pause_multipliers_only_promotes_standalone_paragraph_chunks() -> None:
+    text = (
+        "前の段落。\n\n"
+        "医師の口にした「念のため」にさまざまな解釈をくわえ、悲観的な想像をふくらませた。\n\n"
+        "次の段落。"
+    )
+    spans = tts_util.make_chunk_spans(text, max_chars=220, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == [
+        "前の段落。",
+        "医師の口にした「念のため」にさまざまな解釈をくわえ、悲観的な想像をふくらませた。",
+        "次の段落。",
+    ]
+    multipliers = tts_util.compute_chunk_pause_multipliers(text, spans)
+    assert multipliers == [1, 1, 1]
 
 
 def test_compute_chunk_pause_multipliers_does_not_promote_sentence_continuation_line() -> None:
