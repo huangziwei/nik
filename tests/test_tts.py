@@ -524,6 +524,18 @@ def test_apply_reading_overrides_isolated_kanji_no_okurigana() -> None:
     assert tts_util.apply_reading_overrides(text, overrides) == text
 
 
+def test_apply_reading_overrides_isolated_kanji_allows_particle_boundary() -> None:
+    text = "蟬の声と蟬は。"
+    overrides = [{"base": "蟬", "reading": "せみ", "mode": "isolated"}]
+    assert tts_util.apply_reading_overrides(text, overrides) == "せみの声とせみは。"
+
+
+def test_apply_reading_overrides_isolated_kanji_still_blocks_non_particle_kana() -> None:
+    text = "蟬たち"
+    overrides = [{"base": "蟬", "reading": "せみ", "mode": "isolated"}]
+    assert tts_util.apply_reading_overrides(text, overrides) == text
+
+
 def test_split_reading_overrides_single_kanji_mode() -> None:
     data = {
         "chapters": {

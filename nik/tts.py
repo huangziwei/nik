@@ -129,6 +129,44 @@ _OPEN_QUOTE_TO_CLOSES: dict[str, set[str]] = {
 }
 _DASH_RUN_RE = re.compile(r"[‐‑‒–—―─━]{2,}")
 _KANJI_SAFE_MARKS = {"々", "〆", "ヶ", "ヵ", "ゝ", "ゞ"}
+_ISOLATED_SINGLE_KANJI_PARTICLES = {
+    "は",
+    "へ",
+    "を",
+    "に",
+    "で",
+    "と",
+    "が",
+    "の",
+    "も",
+    "や",
+    "か",
+    "ね",
+    "よ",
+    "ぞ",
+    "ぜ",
+    "さ",
+    "な",
+    "わ",
+    "ハ",
+    "ヘ",
+    "ヲ",
+    "ニ",
+    "デ",
+    "ト",
+    "ガ",
+    "ノ",
+    "モ",
+    "ヤ",
+    "カ",
+    "ネ",
+    "ヨ",
+    "ゾ",
+    "ゼ",
+    "サ",
+    "ナ",
+    "ワ",
+}
 _RUBY_SUTEGANA_LARGE_CHARS = "あいうえおつやゆよわかけアイウエオツヤユヨワカケ"
 _RUBY_SUTEGANA_SMALL_CHARS = "ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶ"
 _RUBY_SUTEGANA_LARGE = set(_RUBY_SUTEGANA_LARGE_CHARS)
@@ -5460,7 +5498,7 @@ def _reading_override_spans(
                     continue
                 prev = text[idx - 1] if idx > 0 else ""
                 next_ch = text[idx + 1] if idx + 1 < length else ""
-                if _is_japanese_char(prev) or _is_japanese_char(next_ch):
+                if not _should_replace_isolated_single_kanji(prev, next_ch):
                     continue
                 add_span(idx, idx + 1, base, reading)
             continue
@@ -5507,6 +5545,28 @@ def _reading_override_spans(
     return spans
 
 
+def _is_isolated_single_kanji_boundary_char(ch: str) -> bool:
+    if not ch:
+        return True
+    if ch.isspace():
+        return True
+    if unicodedata.category(ch).startswith("P"):
+        return True
+    if ch in _ISOLATED_SINGLE_KANJI_PARTICLES:
+        return True
+    return False
+
+
+def _should_replace_isolated_single_kanji(prev: str, next_ch: str) -> bool:
+    prev_blocks = _is_japanese_char(prev) and not _is_isolated_single_kanji_boundary_char(
+        prev
+    )
+    next_blocks = _is_japanese_char(
+        next_ch
+    ) and not _is_isolated_single_kanji_boundary_char(next_ch)
+    return not (prev_blocks or next_blocks)
+
+
 def _replace_isolated_kanji(text: str, base: str, reading: str) -> str:
     if not text or not base or not reading:
         return text
@@ -5521,7 +5581,7 @@ def _replace_isolated_kanji(text: str, base: str, reading: str) -> str:
             continue
         prev = text[idx - 1] if idx > 0 else ""
         next_ch = text[idx + 1] if idx + 1 < length else ""
-        if _is_japanese_char(prev) or _is_japanese_char(next_ch):
+        if not _should_replace_isolated_single_kanji(prev, next_ch):
             out.append(cur)
         else:
             out.append(reading)
