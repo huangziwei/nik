@@ -2241,6 +2241,7 @@ def _katakanize_reading_entries(
     separator: Optional[str] = None,
     prefer_hiragana: bool = False,
     preserve_explicit_katakana: bool = False,
+    preserve_original_script: bool = False,
 ) -> List[dict]:
     out: List[dict] = []
     sep = (
@@ -2255,18 +2256,20 @@ def _katakanize_reading_entries(
         reading = str(updated.get("reading") or "")
         if reading:
             normalized = unicodedata.normalize("NFKC", reading)
-            if prefer_hiragana and not (
+            if preserve_original_script:
+                rendered = normalized
+            elif prefer_hiragana and not (
                 preserve_explicit_katakana and _is_explicit_katakana_reading(normalized)
             ):
-                reading_kata = _katakana_to_hiragana(normalized)
+                rendered = _katakana_to_hiragana(normalized)
             else:
-                reading_kata = _to_katakana_reading(normalized)
+                rendered = _to_katakana_reading(normalized)
             if sep:
                 if prepend_separator:
-                    reading_kata = f"{sep}{reading_kata}"
+                    rendered = f"{sep}{rendered}"
                 if append_separator:
-                    reading_kata = f"{reading_kata}{sep}"
-            updated["reading"] = reading_kata
+                    rendered = f"{rendered}{sep}"
+            updated["reading"] = rendered
         out.append(updated)
     return out
 
@@ -5322,8 +5325,7 @@ def _apply_reading_overrides_for_tts(
             append_separator=True,
             prepend_separator=True,
             separator=_first_token_separator(),
-            prefer_hiragana=True,
-            preserve_explicit_katakana=True,
+            preserve_original_script=True,
         ),
     )
 

@@ -563,6 +563,13 @@ def test_apply_reading_overrides_for_tts_formats_readings() -> None:
     )
 
 
+def test_apply_reading_overrides_for_tts_preserves_mixed_script_readings() -> None:
+    text = "母は"
+    overrides = [{"base": "母は", "reading": "ハハは"}]
+    sep = _default_first_token_separator()
+    assert tts_util._apply_reading_overrides_for_tts(text, overrides) == f"{sep}ハハは{sep}"
+
+
 def test_apply_ruby_spans() -> None:
     text = "前漢字後"
     spans = [{"start": 1, "end": 3, "base": "漢字", "reading": "かんじ"}]
