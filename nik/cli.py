@@ -1094,9 +1094,11 @@ def _kana(args: argparse.Namespace) -> int:
     ruby_data = {}
     chapter_ruby_spans: list[dict] = []
     chunk_span = None
+    ruby_propagated_readings: dict[str, set[str]] = {}
     if book_dir and book_dir.exists():
         global_overrides, chapter_overrides = tts_util._load_reading_overrides(book_dir)
         ruby_data = tts_util._load_ruby_data(book_dir)
+        ruby_propagated_readings = tts_util._ruby_propagated_reading_map(ruby_data)
         if ruby_data and chapter_id and chunk_index is not None:
             entry = manifest_entry
             if entry is None:
@@ -1130,7 +1132,9 @@ def _kana(args: argparse.Namespace) -> int:
             chapter_entries = chapter_overrides.get(chapter_id, [])
             chapter_count = len(chapter_entries)
             merged_overrides = tts_util._merge_reading_overrides(
-                global_overrides, chapter_entries
+                global_overrides,
+                chapter_entries,
+                chapter_propagated_readings=ruby_propagated_readings,
             )
         else:
             merged_overrides = global_overrides

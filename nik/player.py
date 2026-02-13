@@ -1533,12 +1533,25 @@ def create_app(root_dir: Path) -> FastAPI:
         clean_text = tts_util._normalize_text(read_clean_text(clean_path))
         ruby_spans: List[dict] = []
         ruby_prop_spans: List[dict] = []
+        global_overrides, chapter_overrides = tts_util._load_reading_overrides(book_dir)
+        chapter_entries = chapter_overrides.get(chapter_id, [])
         ruby_data = tts_util._load_ruby_data(book_dir)
+        ruby_propagated_readings = tts_util._ruby_propagated_reading_map(ruby_data)
+        merged_overrides = tts_util._merge_reading_overrides(
+            global_overrides,
+            chapter_entries,
+            chapter_propagated_readings=ruby_propagated_readings,
+        )
+        override_spans = _tag_ruby_spans(
+            tts_util._reading_override_spans(clean_text, merged_overrides),
+            "propagated",
+        )
         if ruby_data:
             spans = tts_util._select_ruby_spans(chapter_id, clean_text, ruby_data)
             if spans:
                 spans = tts_util._maybe_normalize_ruby_entries(spans)
                 ruby_spans = _tag_ruby_spans(spans, "inline")
+            override_spans = _filter_overlapping_spans(override_spans, ruby_spans)
             ruby_global = tts_util._ruby_global_overrides(ruby_data)
             if ruby_global:
                 ruby_global = tts_util._maybe_normalize_ruby_entries(ruby_global)
@@ -1549,6 +1562,18 @@ def create_app(root_dir: Path) -> FastAPI:
                 ruby_prop_spans = _filter_overlapping_spans(
                     ruby_prop_spans, ruby_spans
                 )
+                ruby_prop_spans = _filter_overlapping_spans(
+                    ruby_prop_spans, override_spans
+                )
+        else:
+            override_spans = _filter_overlapping_spans(override_spans, ruby_spans)
+        ruby_prop_spans = sorted(
+            override_spans + ruby_prop_spans,
+            key=lambda span: (
+                int(span.get("start", 0)),
+                int(span.get("end", 0)),
+            ),
+        )
         return _no_store(
             {
                 "book_id": book_id,

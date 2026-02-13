@@ -5348,9 +5348,28 @@ def _ruby_global_overrides(ruby_data: dict) -> List[dict[str, str]]:
     return overrides
 
 
+def _ruby_propagated_reading_map(ruby_data: dict) -> Dict[str, set[str]]:
+    mapping: Dict[str, set[str]] = {}
+    items = ruby_data.get("global") if isinstance(ruby_data, dict) else None
+    if not isinstance(items, list):
+        return mapping
+    for item in items:
+        entry = _normalize_reading_override_entry(item)
+        if not entry:
+            continue
+        base = str(entry.get("base") or "").strip()
+        reading = str(entry.get("reading") or "").strip()
+        if not base or not reading:
+            continue
+        mapping.setdefault(base, set()).add(reading)
+    return mapping
+
+
 def _merge_reading_overrides(
     global_overrides: Sequence[dict[str, str]],
     chapter_overrides: Sequence[dict[str, str]],
+    *,
+    chapter_propagated_readings: Optional[Dict[str, set[str]]] = None,
 ) -> List[dict[str, str]]:
     if not global_overrides and not chapter_overrides:
         return []
@@ -5363,7 +5382,7 @@ def _merge_reading_overrides(
         base = str(entry.get("base") or "").strip()
         return f"lit:{base}" if base else ""
 
-    def add_items(items: Sequence[dict[str, str]]) -> None:
+    def add_items(items: Sequence[dict[str, str]], *, source: str) -> None:
         for item in items:
             entry = _normalize_reading_override_entry(item)
             if not entry:
@@ -5371,10 +5390,25 @@ def _merge_reading_overrides(
             key = key_for(entry)
             if not key:
                 continue
+            if (
+                source == "chapter"
+                and chapter_propagated_readings
+                and key in merged
+            ):
+                base = str(entry.get("base") or "").strip()
+                reading = str(entry.get("reading") or "").strip()
+                if (
+                    base
+                    and reading
+                    and reading in chapter_propagated_readings.get(base, set())
+                ):
+                    # Chapter entries derived from propagated ruby should not
+                    # clobber explicit global/book overrides for the same base.
+                    continue
             merged[key] = entry
 
-    add_items(global_overrides)
-    add_items(chapter_overrides)
+    add_items(global_overrides, source="global")
+    add_items(chapter_overrides, source="chapter")
     return list(merged.values())
 
 
@@ -6034,6 +6068,7 @@ def synthesize_book(
     model_name = _resolve_model_name(model_name, backend_name)
     global_overrides, reading_overrides = _load_reading_overrides(book_dir)
     ruby_data = _load_ruby_data(book_dir)
+    ruby_propagated_readings = _ruby_propagated_reading_map(ruby_data)
     chapter_ruby_spans: Dict[str, List[dict]] = {}
     if ruby_data:
         for chapter in chapters:
@@ -6223,7 +6258,9 @@ def synthesize_book(
             voice_config = voice_configs.get(voice_id)
             chapter_overrides = reading_overrides.get(chapter_id, [])
             merged_overrides = _merge_reading_overrides(
-                global_overrides, chapter_overrides
+                global_overrides,
+                chapter_overrides,
+                chapter_propagated_readings=ruby_propagated_readings,
             )
             override_bases = {
                 str(item.get("base") or "").strip()
@@ -6627,9 +6664,14 @@ def synthesize_chunk(
         span_list = entry.get("chunk_spans")
         if isinstance(span_list, list) and len(span_list) > chunk_index:
             chunk_span = span_list[chunk_index]
+    ruby_propagated_readings = _ruby_propagated_reading_map(ruby_data)
     global_overrides, reading_overrides = _load_reading_overrides(override_dir)
     chapter_overrides = reading_overrides.get(chapter_id, [])
-    merged_overrides = _merge_reading_overrides(global_overrides, chapter_overrides)
+    merged_overrides = _merge_reading_overrides(
+        global_overrides,
+        chapter_overrides,
+        chapter_propagated_readings=ruby_propagated_readings,
+    )
     override_bases = {
         str(item.get("base") or "").strip()
         for item in merged_overrides

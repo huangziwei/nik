@@ -1,5 +1,6 @@
 import json
 import shutil
+from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -542,3 +543,68 @@ def test_clear_tts_forces_rechunk_with_manifest_settings(
     assert captured["max_chars"] == 321
     assert captured["pad_ms"] == 444
     assert captured["chunk_mode"] == "japanese"
+
+
+def test_chapter_text_prefers_overrides_over_propagated_ruby(tmp_path: Path) -> None:
+    _, root_dir = _make_repo(tmp_path)
+    book_dir = _make_book(root_dir)
+    chapter_text = "事件が事件だ。"
+    chapter_rel = "clean/c1.txt"
+    (book_dir / chapter_rel).write_text(chapter_text, encoding="utf-8")
+    (book_dir / "tts" / "manifest.json").write_text(
+        json.dumps(
+            {
+                "voice": "manifest-voice",
+                "chapters": [{"id": "c1", "path": chapter_rel, "chunks": ["chunk"]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    chapter_hash = sha256(chapter_text.encode("utf-8")).hexdigest()
+    (book_dir / "reading-overrides.json").write_text(
+        json.dumps(
+            {
+                "global": [{"base": "事件", "reading": "じけん"}],
+                "chapters": {"c1": {"replacements": [{"base": "事件", "reading": "ヤマ"}]}},
+                "ruby": {
+                    "global": [{"base": "事件", "reading": "ヤマ"}],
+                    "chapters": {
+                        "c1": {
+                            "clean_sha256": chapter_hash,
+                            "clean_spans": [
+                                {"start": 0, "end": 2, "base": "事件", "reading": "ヤマ"}
+                            ],
+                        }
+                    },
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    app = player_util.create_app(root_dir)
+    client = TestClient(app)
+    response = client.get("/api/books/book/chapter-text", params={"chapter_id": "c1"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["clean_text"] == chapter_text
+    assert payload["ruby_spans"] == [
+        {
+            "start": 0,
+            "end": 2,
+            "base": "事件",
+            "reading": "ヤマ",
+            "kind": "inline",
+        }
+    ]
+    assert payload["ruby_prop_spans"] == [
+        {
+            "start": 3,
+            "end": 5,
+            "base": "事件",
+            "reading": "じけん",
+            "kind": "propagated",
+        }
+    ]

@@ -3216,6 +3216,28 @@ def test_merge_reading_overrides_prefers_chapter() -> None:
     assert tts_util.apply_reading_overrides("山田太一", merged) == "やまだたいいち"
 
 
+def test_merge_reading_overrides_prefers_global_over_propagated_chapter_entry() -> None:
+    global_overrides = [{"base": "事件", "reading": "じけん"}]
+    chapter_overrides = [{"base": "事件", "reading": "ヤマ"}]
+    merged = tts_util._merge_reading_overrides(
+        global_overrides,
+        chapter_overrides,
+        chapter_propagated_readings={"事件": {"ヤマ"}},
+    )
+    assert tts_util.apply_reading_overrides("事件", merged) == "じけん"
+
+
+def test_merge_reading_overrides_keeps_non_propagated_chapter_override() -> None:
+    global_overrides = [{"base": "事件", "reading": "じけん"}]
+    chapter_overrides = [{"base": "事件", "reading": "じへん"}]
+    merged = tts_util._merge_reading_overrides(
+        global_overrides,
+        chapter_overrides,
+        chapter_propagated_readings={"事件": {"ヤマ"}},
+    )
+    assert tts_util.apply_reading_overrides("事件", merged) == "じへん"
+
+
 def test_load_reading_overrides_includes_template(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
