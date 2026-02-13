@@ -178,6 +178,36 @@ _ASCII_ROMAN_NUMERAL_CHARS = "IVXLCDM"
 _ASCII_ROMAN_MAX_VALUE = 50
 _KANJI_NUMERAL_RANGE_CHARS = "〇零一二三四五六七八九十百千万億兆京"
 _FORCE_FIRST_TOKEN_NOISE_RE = re.compile(r"^[cC][0-9A-Za-z]{2,12}$")
+_NAME_HONORIFIC_SUFFIX_SURFACES = {
+    "さん",
+    "サン",
+    "様",
+    "さま",
+    "サマ",
+    "君",
+    "くん",
+    "クン",
+    "ちゃん",
+    "チャン",
+    "ちゃま",
+    "チャマ",
+    "たん",
+    "タン",
+    "殿",
+    "どの",
+    "ドノ",
+    "氏",
+    "先生",
+    "センセイ",
+    "先輩",
+    "センパイ",
+    "師匠",
+    "シショウ",
+    "閣下",
+    "カッカ",
+    "陛下",
+    "ヘイカ",
+}
 
 _LATIN_LETTER_KANA = {
     "A": "エー",
@@ -4382,6 +4412,23 @@ def _normalize_kana_with_tagger(
             if pos
         )
 
+    def _is_honorific_suffix(token: Any) -> bool:
+        surface = unicodedata.normalize(
+            "NFKC", str(getattr(token, "surface", "") or "")
+        )
+        if surface not in _NAME_HONORIFIC_SUFFIX_SURFACES:
+            return False
+        attrs = _extract_token_attrs(token)
+        pos1 = attrs.get("pos1") or ""
+        if not pos1:
+            return True
+        if pos1 in {"接尾辞", "名詞"}:
+            return True
+        return any(
+            (attrs.get(key) or "").endswith("接尾辞")
+            for key in ("pos2", "pos3", "pos4")
+        )
+
     def _is_surface_punctuation(surface: str) -> bool:
         if not surface:
             return False
@@ -4418,6 +4465,21 @@ def _normalize_kana_with_tagger(
                 return idx
         return None
 
+    def _separator_relocation_target(start_idx: Optional[int]) -> Optional[int]:
+        if start_idx is None or start_idx < 0 or start_idx >= len(tokens):
+            return None
+        if _is_honorific_suffix(tokens[start_idx]):
+            after_suffix_idx = _next_token_idx(start_idx)
+            if (
+                after_suffix_idx is not None
+                and _is_pronunciation_particle(tokens[after_suffix_idx])
+            ):
+                return after_suffix_idx
+            return start_idx
+        if _is_pronunciation_particle(tokens[start_idx]):
+            return start_idx
+        return None
+
     def _rebalance_existing_separator_tokens() -> None:
         if not token_separator:
             return
@@ -4432,15 +4494,15 @@ def _normalize_kana_with_tagger(
             if separator_out_idx is None:
                 continue
 
-            next_idx = _next_token_idx(token_idx)
-            if next_idx is not None and _is_pronunciation_particle(tokens[next_idx]):
-                next_out_idx = token_to_out_idx.get(next_idx)
+            target_idx = _separator_relocation_target(_next_token_idx(token_idx))
+            if target_idx is not None:
+                target_out_idx = token_to_out_idx.get(target_idx)
                 if (
-                    next_out_idx is not None
+                    target_out_idx is not None
                     and out[separator_out_idx] == token_separator
                 ):
                     out[separator_out_idx] = ""
-                    out[next_out_idx] = out[next_out_idx] + token_separator
+                    out[target_out_idx] = out[target_out_idx] + token_separator
                 continue
 
             prev_idx = _prev_token_idx(token_idx)
@@ -4466,16 +4528,12 @@ def _normalize_kana_with_tagger(
         next_token_idx = force_first_kanji_last_idx + 1
     elif force_first_token_idx is not None:
         next_token_idx = force_first_token_idx + 1
-    if (
-        next_token_idx is not None
-        and 0 <= next_token_idx < len(tokens)
-        and _is_pronunciation_particle(tokens[next_token_idx])
-    ):
-        next_chunk_idx = marker_idx + 1
-        while next_chunk_idx < len(out) and not out[next_chunk_idx]:
-            next_chunk_idx += 1
-        if next_chunk_idx < len(out):
-            out[next_chunk_idx] = out[next_chunk_idx] + first_force_separator
+    target_token_idx = _separator_relocation_target(next_token_idx)
+    if target_token_idx is not None:
+        token_to_out_idx = _token_output_indices()
+        target_chunk_idx = token_to_out_idx.get(target_token_idx)
+        if target_chunk_idx is not None:
+            out[target_chunk_idx] = out[target_chunk_idx] + first_force_separator
             out[marker_idx] = ""
             return _collapse_repeated_token_separators("".join(out))
 
@@ -4524,6 +4582,20 @@ def _normalize_kana_text(
             separator=first_token_separator,
         )
     if not _has_kanji(text):
+        sep = _first_token_separator()
+        # Even kana-only text can carry pre-inserted separators from ruby/override
+        # replacements; run the tagger rebalancer so suffix/particle placement stays
+        # consistent with the main kana-normalization path.
+        if kana_style == "partial" and sep and sep in text:
+            tagger = _get_kana_tagger()
+            return _normalize_kana_with_tagger(
+                text,
+                tagger,
+                kana_style=kana_style,
+                force_first_token_to_kana=False,
+                partial_mid_kanji=False,
+                debug_sources=debug_sources,
+            )
         return text
     tagger = _get_kana_tagger()
     zh_lexicon: Optional[set[str]] = None
