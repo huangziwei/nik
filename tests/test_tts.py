@@ -3342,6 +3342,10 @@ def test_select_backend_falls_back_to_torch(monkeypatch) -> None:
         tts_util._select_backend("auto")
 
 
+def test_default_model_for_mlx_is_8bit() -> None:
+    assert tts_util._default_model_for_backend("mlx").endswith("-8bit")
+
+
 def test_normalize_lang_code() -> None:
     assert tts_util._normalize_lang_code("Japanese") == "ja"
     assert tts_util._normalize_lang_code("ja") == "ja"
