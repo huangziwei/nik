@@ -401,6 +401,66 @@ def test_synth_chunk_passes_voice_map_path(tmp_path: Path, monkeypatch: pytest.M
     assert captured["voice_map_path"] == book_dir / "voice-map.json"
 
 
+def test_synth_chunk_allowed_while_tts_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, root_dir = _make_repo(tmp_path)
+    _make_book(root_dir)
+    captured: dict[str, object] = {}
+
+    class DummyProcess:
+        returncode = None
+
+        def poll(self) -> None:
+            return None
+
+        def terminate(self) -> None:
+            self.returncode = 0
+
+        def wait(self, timeout: float | None = None) -> int | None:
+            _ = timeout
+            return self.returncode
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    def fake_synthesize_chunk(**kwargs):
+        captured.update(kwargs)
+        return {"chapter_id": "c1", "chunk_index": 0}
+
+    monkeypatch.setattr(player_util.tts_util, "synthesize_chunk", fake_synthesize_chunk)
+    monkeypatch.setattr(
+        player_util.voice_util,
+        "resolve_voice_config",
+        lambda **_kwargs: SimpleNamespace(),
+    )
+    monkeypatch.setattr(player_util.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(player_util.subprocess, "Popen", lambda *_args, **_kwargs: DummyProcess())
+
+    app = player_util.create_app(root_dir)
+    client = TestClient(app)
+
+    start = client.post(
+        "/api/synth/start",
+        json={"book_id": "book", "voice": "running-voice"},
+    )
+    assert start.status_code == 200
+
+    response = client.post(
+        "/api/synth/chunk",
+        json={
+            "book_id": "book",
+            "chapter_id": "c1",
+            "chunk_index": 0,
+            "voice": "regen-voice",
+            "use_voice_map": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["voice"] == "regen-voice"
+
+
 def test_clear_tts_forces_rechunk_with_manifest_settings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

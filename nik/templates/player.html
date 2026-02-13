@@ -2860,7 +2860,7 @@
           regenChunkLoadBook: "本を読み込んでからチャンクを再生成してください。",
           regenChunkNoChunks: "利用可能なチャンクがありません。",
           regenChunkSelect: "再生成するチャンクを選択してください。",
-          regenChunkStopSynth: "再生成の前に TTS/結合を停止してください。",
+          regenChunkStopSynth: "再生成の前に結合を停止してください。",
           regenChunkConfirm: "{label} の音声を再生成しますか？",
           regenChunkNotFound: "チャンクが見つかりません。",
           regenChunkRegenerating: "{label} を再生成中...",
@@ -3184,7 +3184,7 @@
           regenChunkLoadBook: "Load a book to regenerate chunks.",
           regenChunkNoChunks: "No chunks available.",
           regenChunkSelect: "Select a chunk to regenerate.",
-          regenChunkStopSynth: "Stop TTS/merge before regenerating.",
+          regenChunkStopSynth: "Stop merge before regenerating.",
           regenChunkConfirm: "Regenerate audio for {label}?",
           regenChunkNotFound: "Chunk not found.",
           regenChunkRegenerating: "Regenerating {label}...",
@@ -6468,7 +6468,6 @@
         const disabled =
           !state.book ||
           !state.queue.length ||
-          state.synthRunning ||
           state.mergeRunning ||
           state.chunkRegenRunning;
         regenChunkBtn.disabled = disabled;
@@ -6480,7 +6479,7 @@
           regenChunkBtn.title = t("regenChunkNoChunks");
         } else if (!hasSelection) {
           regenChunkBtn.title = t("regenChunkSelect");
-        } else if (state.synthRunning || state.mergeRunning) {
+        } else if (state.mergeRunning) {
           regenChunkBtn.title = t("regenChunkStopSynth");
         } else {
           const label = describeIndex(state.selectedQueueIndex);
@@ -6492,7 +6491,7 @@
         if (!state.book || state.chunkRegenRunning) {
           return;
         }
-        if (state.synthRunning || state.mergeRunning) {
+        if (state.mergeRunning) {
           setStatus(t("regenChunkStopSynth"));
           return;
         }

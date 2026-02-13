@@ -2677,9 +2677,6 @@ def create_app(root_dir: Path) -> FastAPI:
     @app.post("/api/synth/chunk")
     def synth_chunk(payload: ChunkSynthRequest) -> JSONResponse:
         book_dir = _resolve_book_dir(root_dir, payload.book_id)
-        synth_job = jobs.get(payload.book_id)
-        if synth_job and synth_job.process.poll() is None:
-            raise HTTPException(status_code=409, detail="TTS is running.")
         merge_job = merge_jobs.get(payload.book_id)
         if merge_job and merge_job.process.poll() is None:
             raise HTTPException(status_code=409, detail="Merge is running.")
