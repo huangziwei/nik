@@ -147,7 +147,7 @@ except ValueError:
     _JP_COMMON_ZIPF = 4.0
 
 DEFAULT_TORCH_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
-DEFAULT_MLX_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"
+DEFAULT_MLX_MODEL = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-bf16"
 MIN_MLX_AUDIO_VERSION = "0.3.1"
 FORCED_LANGUAGE = "Japanese"
 READING_TEMPLATE_FILENAME = "global-reading-overrides.md"
@@ -1197,9 +1197,7 @@ def _collect_quote_pair_spans(text: str) -> List[Tuple[int, int]]:
     return spans
 
 
-def _is_protectable_quote_span(
-    text: str, start: int, end: int, max_chars: int
-) -> bool:
+def _is_protectable_quote_span(text: str, start: int, end: int, max_chars: int) -> bool:
     if end <= start:
         return False
     if max_chars > 0 and end - start > max_chars:
@@ -1362,7 +1360,9 @@ def make_chunk_spans(
     sentence_spans: List[Tuple[int, int]] = []
     for sent_start, sent_end in split_sentence_spans(text):
         if max_chars > 0 and sent_end - sent_start > max_chars:
-            sentence_spans.extend(_split_long_span(text, sent_start, sent_end, max_chars))
+            sentence_spans.extend(
+                _split_long_span(text, sent_start, sent_end, max_chars)
+            )
         else:
             sentence_spans.append((sent_start, sent_end))
     units = _build_chunk_units(text, sentence_spans, max_chars)
@@ -4207,10 +4207,14 @@ def _normalize_kana_with_tagger(
                 )
                 continue
             if action == "convert":
-                output = _katakana_to_hiragana(_apply_surface_kana(reading_kata, surface))
+                output = _katakana_to_hiragana(
+                    _apply_surface_kana(reading_kata, surface)
+                )
                 if token_separator:
                     is_start = idx == 0 or run_action[idx - 1] != "convert"
-                    is_end = idx + 1 >= len(run_action) or run_action[idx + 1] != "convert"
+                    is_end = (
+                        idx + 1 >= len(run_action) or run_action[idx + 1] != "convert"
+                    )
                     if is_start:
                         output = _prepend_transform_separator(output)
                     if is_end:
@@ -4225,7 +4229,9 @@ def _normalize_kana_with_tagger(
                 )
                 continue
             if _should_convert_honorific_prefix(surface, reading_kata, attrs):
-                output = _katakana_to_hiragana(_apply_surface_kana(reading_kata, surface))
+                output = _katakana_to_hiragana(
+                    _apply_surface_kana(reading_kata, surface)
+                )
                 output = _wrap_transform_separator(output)
                 out.append(output)
                 _append_kana_debug(
@@ -4239,7 +4245,9 @@ def _normalize_kana_with_tagger(
             if partial_mid_kanji and _should_partial_convert(
                 surface, attrs, zh_lexicon or set()
             ):
-                output = _katakana_to_hiragana(_apply_surface_kana(reading_kata, surface))
+                output = _katakana_to_hiragana(
+                    _apply_surface_kana(reading_kata, surface)
+                )
                 output = _wrap_transform_separator(output)
                 out.append(output)
                 _append_kana_debug(
@@ -4289,8 +4297,11 @@ def _normalize_kana_with_tagger(
                 source="unidic",
                 reading=reading_kata,
             )
+
     def _is_pronunciation_particle(token: Any) -> bool:
-        surface = unicodedata.normalize("NFKC", str(getattr(token, "surface", "") or ""))
+        surface = unicodedata.normalize(
+            "NFKC", str(getattr(token, "surface", "") or "")
+        )
         if surface not in {"は", "へ", "を"}:
             return False
         attrs = _extract_token_attrs(token)
@@ -4321,10 +4332,7 @@ def _normalize_kana_with_tagger(
             surface = str(getattr(token, "surface", "") or "")
             if not surface:
                 continue
-            while (
-                out_idx < len(out)
-                and out[out_idx] == first_force_separator_marker
-            ):
+            while out_idx < len(out) and out[out_idx] == first_force_separator_marker:
                 out_idx += 1
             if out_idx >= len(out):
                 break
@@ -4363,7 +4371,10 @@ def _normalize_kana_with_tagger(
             next_idx = _next_token_idx(token_idx)
             if next_idx is not None and _is_pronunciation_particle(tokens[next_idx]):
                 next_out_idx = token_to_out_idx.get(next_idx)
-                if next_out_idx is not None and out[separator_out_idx] == token_separator:
+                if (
+                    next_out_idx is not None
+                    and out[separator_out_idx] == token_separator
+                ):
                     out[separator_out_idx] = ""
                     out[next_out_idx] = out[next_out_idx] + token_separator
                 continue
@@ -5406,6 +5417,22 @@ def _replace_kanji_boundary(text: str, base: str, reading: str) -> str:
 def apply_ruby_spans(text: str, spans: Sequence[dict]) -> str:
     if not spans:
         return text
+    token_separator = _first_token_separator()
+    particle_like_hiragana = {"は", "へ", "を", "に", "で", "と", "が", "の", "も", "や", "か"}
+
+    def _adjust_reading_for_kana_continuation(
+        reading: str, next_ch: str
+    ) -> str:
+        if not reading or not token_separator:
+            return reading
+        if not reading.endswith(token_separator):
+            return reading
+        if not next_ch or not _is_kana_char(next_ch):
+            return reading
+        if next_ch in particle_like_hiragana:
+            return reading
+        return reading[: -len(token_separator)]
+
     out = text
     ordered = sorted(
         (span for span in spans if isinstance(span, dict)),
@@ -5428,6 +5455,8 @@ def apply_ruby_spans(text: str, spans: Sequence[dict]) -> str:
             continue
         if base and out[start:end] != base:
             continue
+        next_ch = out[end] if end < len(out) else ""
+        reading = _adjust_reading_for_kana_continuation(reading, next_ch)
         out = out[:start] + reading + out[end:]
     return out
 

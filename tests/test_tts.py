@@ -620,6 +620,20 @@ def test_apply_ruby_evidence_to_chunk_keeps_explicit_katakana_ruby() -> None:
     assert out == f"前{sep}モリノ{sep}後"
 
 
+def test_apply_ruby_evidence_to_chunk_drops_separator_before_okurigana() -> None:
+    chunk_text = "喰おう。"
+    chunk_span = (0, len(chunk_text))
+    chapter_spans = [{"start": 0, "end": 1, "base": "喰", "reading": "く"}]
+    out = tts_util._apply_ruby_evidence_to_chunk(
+        chunk_text,
+        chunk_span,
+        chapter_spans,
+        {},
+    )
+    sep = _default_first_token_separator()
+    assert out == f"{sep}くおう。"
+
+
 def test_normalize_kana_with_stub_tagger() -> None:
     class DummyFeature:
         def __init__(self, kana: str | None) -> None:
