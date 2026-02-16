@@ -162,6 +162,21 @@ def test_synth_parser_supports_backend() -> None:
     assert args.backend == "mlx"
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["synth", "--book", "out", "--voice", "voice.json"],
+        ["sample", "--book", "out", "--voice", "voice.json"],
+        ["kana", "inline text"],
+    ],
+)
+def test_kana_defaults_are_hiragana_with_mid_sentence_enabled(argv: list[str]) -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(argv)
+    assert args.kana_style == "hiragana"
+    assert args.partial_mid_kanji is True
+
+
 def _entry(
     delta_ms: float,
     output_latency_ms: float | None = None,

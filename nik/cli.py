@@ -1402,14 +1402,14 @@ def build_parser() -> argparse.ArgumentParser:
     synth.add_argument(
         "--kana-style",
         choices=("partial", "hiragana", "katakana", "mixed", "off"),
-        default="partial",
-        help="Kana style when normalizing (default: partial; use off to keep kanji)",
+        default="hiragana",
+        help="Kana style when normalizing (default: hiragana; use off to keep kanji)",
     )
     synth.add_argument(
         "--partial-mid-kanji",
         action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Allow mid-sentence kanji->kana conversion in partial mode (default: disabled)",
+        default=True,
+        help="Allow mid-sentence kanji->kana conversion in partial mode (default: enabled)",
     )
     synth.add_argument(
         "--first-token-separator",
@@ -1494,14 +1494,14 @@ def build_parser() -> argparse.ArgumentParser:
     sample.add_argument(
         "--kana-style",
         choices=("partial", "hiragana", "katakana", "mixed", "off"),
-        default="partial",
-        help="Kana style when normalizing (default: partial; use off to keep kanji)",
+        default="hiragana",
+        help="Kana style when normalizing (default: hiragana; use off to keep kanji)",
     )
     sample.add_argument(
         "--partial-mid-kanji",
         action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Allow mid-sentence kanji->kana conversion in partial mode (default: disabled)",
+        default=True,
+        help="Allow mid-sentence kanji->kana conversion in partial mode (default: enabled)",
     )
     sample.add_argument(
         "--first-token-separator",
@@ -1555,14 +1555,14 @@ def build_parser() -> argparse.ArgumentParser:
     kana.add_argument(
         "--kana-style",
         choices=("partial", "hiragana", "katakana", "mixed", "off"),
-        default="partial",
-        help="Kana style when normalizing (default: partial; use off to keep kanji)",
+        default="hiragana",
+        help="Kana style when normalizing (default: hiragana; use off to keep kanji)",
     )
     kana.add_argument(
         "--partial-mid-kanji",
         action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Allow mid-sentence kanji->kana conversion in partial mode (default: disabled)",
+        default=True,
+        help="Allow mid-sentence kanji->kana conversion in partial mode (default: enabled)",
     )
     kana.add_argument(
         "--first-token-separator",

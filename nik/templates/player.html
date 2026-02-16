@@ -2365,7 +2365,7 @@
         },
         voicePreference: null,
         selectedVoice: null,
-        kanaStyle: "partial",
+        kanaStyle: "hiragana",
         advancedMode: false,
         voiceMap: { default: null, chapters: {} },
         voiceOptions: [],
@@ -3252,34 +3252,8 @@
         return "jp";
       }
 
-      function normalizeKanaStyle(value) {
-        const cleaned = String(value || "").trim().toLowerCase();
-        if (cleaned === "partial" || cleaned === "part" || cleaned === "p") {
-          return "partial";
-        }
-        if (
-          cleaned === "mixed" ||
-          cleaned === "mix" ||
-          cleaned === "m" ||
-          cleaned === "all" ||
-          cleaned === "full"
-        ) {
-          return "mixed";
-        }
-        if (
-          cleaned === "off" ||
-          cleaned === "none" ||
-          cleaned === "disable" ||
-          cleaned === "hiragana" ||
-          cleaned === "hira" ||
-          cleaned === "h" ||
-          cleaned === "katakana" ||
-          cleaned === "kata" ||
-          cleaned === "k"
-        ) {
-          return "partial";
-        }
-        return "partial";
+      function normalizeKanaStyle(_value) {
+        return "hiragana";
       }
 
       function setKanaStyle(value, persist = true) {
@@ -5664,7 +5638,7 @@
 
       function loadSettings() {
         state.voicePreference = localStorage.getItem("nik.voice");
-        setKanaStyle("partial", false);
+        setKanaStyle("hiragana", false);
         state.advancedMode = false;
         state.libraryShelf = normalizeShelf(
           localStorage.getItem("nik.libraryShelf")

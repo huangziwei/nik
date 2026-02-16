@@ -890,7 +890,7 @@ def test_normalize_kana_with_stub_tagger() -> None:
             ]
 
     out = tts_util._normalize_kana_with_tagger("漢字と東京未知X", DummyTagger())
-    assert out == "カンジとトウキョウ未知X"
+    assert out == "かんじととうきょう未知X"
 
 
 def test_normalize_kana_with_stub_tagger_hiragana() -> None:
@@ -947,6 +947,11 @@ def test_normalize_kana_with_stub_tagger_katakana() -> None:
     assert out == "カンジとトウキョウ未知X"
 
 
+def test_normalize_kana_style_defaults_to_hiragana() -> None:
+    assert tts_util._normalize_kana_style(None) == "hiragana"
+    assert tts_util._normalize_kana_style("unexpected") == "hiragana"
+
+
 def test_normalize_kana_with_stub_tagger_mixed_okurigana() -> None:
     class DummyFeature:
         def __init__(self, kana: str | None) -> None:
@@ -989,7 +994,7 @@ def test_normalize_kana_preserves_spaces(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr(tts_util, "_get_kana_tagger", lambda: DummyTagger())
     out = tts_util._normalize_kana_text("漢字 と 東京")
-    assert out == "カンジ と トウキョウ"
+    assert out == "かんじ と とうきょう"
 
 
 def test_normalize_kana_preserves_spaces_hiragana(monkeypatch: pytest.MonkeyPatch) -> None:

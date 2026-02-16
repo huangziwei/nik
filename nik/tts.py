@@ -2159,7 +2159,7 @@ def _has_japanese(text: str) -> bool:
 
 
 def _normalize_kana_style(value: Optional[str]) -> str:
-    normalized = (value or "mixed").strip().lower()
+    normalized = (value or "hiragana").strip().lower()
     if normalized in {"off", "none", "disable", "disabled", "no"}:
         return "off"
     if normalized in {"partial", "part", "p"}:
@@ -2170,7 +2170,7 @@ def _normalize_kana_style(value: Optional[str]) -> str:
         return "hiragana"
     if normalized in {"katakana", "kata", "k"}:
         return "katakana"
-    return "mixed"
+    return "hiragana"
 
 
 def _first_token_separator() -> str:
@@ -4224,7 +4224,7 @@ def _normalize_kana_with_tagger(
     text: str,
     tagger: Any,
     *,
-    kana_style: str = "mixed",
+    kana_style: str = "hiragana",
     zh_lexicon: Optional[set[str]] = None,
     force_first_token_to_kana: bool = False,
     partial_mid_kanji: bool = False,
@@ -4714,7 +4714,7 @@ def _normalize_kana_with_tagger(
 def _normalize_kana_text(
     text: str,
     *,
-    kana_style: str = "mixed",
+    kana_style: str = "hiragana",
     force_first_token_to_kana: bool = False,
     partial_mid_kanji: bool = False,
     debug_sources: Optional[List[str]] = None,
@@ -4971,8 +4971,8 @@ def _prepare_tts_pipeline(
     allow_full_ruby: bool = False,
     kana_normalize: bool = True,
     allow_kana_failure: bool = False,
-    kana_style: str = "mixed",
-    partial_mid_kanji: bool = False,
+    kana_style: str = "hiragana",
+    partial_mid_kanji: bool = True,
     add_short_punct: bool = True,
     debug_sources: Optional[List[str]] = None,
 ) -> TtsPipeline:
@@ -6293,8 +6293,8 @@ def synthesize_book(
     only_chapter_ids: Optional[set[str]] = None,
     backend: Optional[str] = None,
     kana_normalize: bool = True,
-    kana_style: str = "mixed",
-    partial_mid_kanji: bool = False,
+    kana_style: str = "hiragana",
+    partial_mid_kanji: bool = True,
 ) -> int:
     chapters = load_book_chapters(book_dir)
     backend_name = _select_backend(backend)
@@ -6679,8 +6679,8 @@ def synthesize_book_sample(
     attn_implementation: Optional[str] = None,
     backend: Optional[str] = None,
     kana_normalize: bool = True,
-    kana_style: str = "mixed",
-    partial_mid_kanji: bool = False,
+    kana_style: str = "hiragana",
+    partial_mid_kanji: bool = True,
 ) -> int:
     chapters = load_book_chapters(book_dir)
     if not chapters:
@@ -6852,7 +6852,7 @@ def synthesize_chunk(
     if kana_style is None:
         kana_style = manifest.get("kana_style")
     if partial_mid_kanji is None:
-        partial_mid_kanji = bool(manifest.get("partial_mid_kanji", False))
+        partial_mid_kanji = bool(manifest.get("partial_mid_kanji", True))
     kana_style = _normalize_kana_style(kana_style)
     if kana_style == "off":
         kana_normalize = False
