@@ -178,6 +178,7 @@ _HIRAGANA_PRONUNCIATION_PARTICLE_MAP = {
     "へ": "え",
     "を": "お",
 }
+_ISOLATED_SINGLE_KANJI_COPULA_BOUNDARY_CHARS = {"だ", "で", "ダ", "デ"}
 _RUBY_SUTEGANA_LARGE_CHARS = "あいうえおつやゆよわかけアイウエオツヤユヨワカケ"
 _RUBY_SUTEGANA_SMALL_CHARS = "ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶ"
 _RUBY_SUTEGANA_LARGE = set(_RUBY_SUTEGANA_LARGE_CHARS)
@@ -4360,6 +4361,38 @@ def _normalize_kana_with_tagger(
             value = value.replace(doubled, token_separator)
         return value
 
+    def _rebalance_sokuon_separators(value: str) -> str:
+        if not token_separator or not value:
+            return value
+        sep_len = len(token_separator)
+        idx = 0
+        while True:
+            pos = value.find(token_separator, idx)
+            if pos < 0:
+                break
+            next_pos = pos + sep_len
+            if pos <= 0 or next_pos >= len(value):
+                idx = next_pos
+                continue
+            prev_ch = value[pos - 1]
+            next_ch = value[next_pos]
+            if prev_ch not in {"っ", "ッ"} or not _is_kana_char(next_ch):
+                idx = next_pos
+                continue
+            value = (
+                value[:pos]
+                + next_ch
+                + token_separator
+                + value[next_pos + len(next_ch) :]
+            )
+            idx = pos + 1 + sep_len
+        return value
+
+    def _finalize_separators(value: str) -> str:
+        value = _collapse_repeated_token_separators(value)
+        value = _rebalance_sokuon_separators(value)
+        return _collapse_repeated_token_separators(value)
+
     def _adjust_weekday_reading(idx: int, reading_kata: str) -> str:
         if not reading_kata:
             return reading_kata
@@ -4571,6 +4604,7 @@ def _normalize_kana_with_tagger(
         elif kana_style == "hiragana":
             output = _katakana_to_hiragana(reading_kata)
             output = _render_pronunciation_particle_hiragana(token, output)
+            output = _append_transform_separator(output)
             out.append(output)
             _append_kana_debug(
                 debug_sources,
@@ -4701,7 +4735,7 @@ def _normalize_kana_with_tagger(
     _rebalance_existing_separator_tokens()
 
     if first_force_separator_marker not in out:
-        return _collapse_repeated_token_separators("".join(out))
+        return _finalize_separators("".join(out))
 
     marker_idx = out.index(first_force_separator_marker)
     next_token_idx: Optional[int] = None
@@ -4716,7 +4750,7 @@ def _normalize_kana_with_tagger(
         if target_chunk_idx is not None:
             out[target_chunk_idx] = out[target_chunk_idx] + first_force_separator
             out[marker_idx] = ""
-            return _collapse_repeated_token_separators("".join(out))
+            return _finalize_separators("".join(out))
 
     prev_chunk = out[marker_idx - 1] if marker_idx > 0 else ""
     if prev_chunk.endswith(("っ", "ッ")):
@@ -4737,10 +4771,10 @@ def _normalize_kana_with_tagger(
             moved = True
             break
         if moved:
-            return _collapse_repeated_token_separators("".join(out))
+            return _finalize_separators("".join(out))
 
     out[marker_idx] = first_force_separator
-    return _collapse_repeated_token_separators("".join(out))
+    return _finalize_separators("".join(out))
 
 
 def _normalize_kana_text(
@@ -5843,6 +5877,12 @@ def _is_isolated_single_kanji_boundary_char(ch: str) -> bool:
 
 
 def _should_replace_isolated_single_kanji(prev: str, next_ch: str) -> bool:
+    # Single-kanji names often appear before copula forms (e.g., 帝だ/帝です)
+    # even when the previous character is hiragana from a prior token.
+    if next_ch in _ISOLATED_SINGLE_KANJI_COPULA_BOUNDARY_CHARS and not _is_kanji_char(
+        prev
+    ):
+        return True
     prev_blocks = _is_japanese_char(prev) and not _is_isolated_single_kanji_boundary_char(
         prev
     )

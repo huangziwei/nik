@@ -675,6 +675,21 @@ def test_apply_reading_overrides_isolated_kanji_still_blocks_non_particle_kana()
     assert tts_util.apply_reading_overrides(text, overrides) == text
 
 
+def test_apply_reading_overrides_isolated_kanji_allows_copula_boundary() -> None:
+    text = "ちょっと期待してしまった帝だが、すぐに失言を悔やむ。"
+    overrides = [{"base": "帝", "reading": "みかど", "mode": "isolated"}]
+    assert (
+        tts_util.apply_reading_overrides(text, overrides)
+        == "ちょっと期待してしまったみかどだが、すぐに失言を悔やむ。"
+    )
+
+
+def test_apply_reading_overrides_isolated_kanji_copula_keeps_compound() -> None:
+    text = "天帝だ"
+    overrides = [{"base": "帝", "reading": "みかど", "mode": "isolated"}]
+    assert tts_util.apply_reading_overrides(text, overrides) == text
+
+
 def test_split_reading_overrides_single_kanji_mode() -> None:
     data = {
         "chapters": {
@@ -890,7 +905,8 @@ def test_normalize_kana_with_stub_tagger() -> None:
             ]
 
     out = tts_util._normalize_kana_with_tagger("漢字と東京未知X", DummyTagger())
-    assert out == "かんじととうきょう未知X"
+    sep = _default_first_token_separator()
+    assert out == f"かんじ{sep}ととうきょう{sep}未知X"
 
 
 def test_normalize_kana_with_stub_tagger_hiragana() -> None:
@@ -917,7 +933,8 @@ def test_normalize_kana_with_stub_tagger_hiragana() -> None:
     out = tts_util._normalize_kana_with_tagger(
         "漢字と東京未知X", DummyTagger(), kana_style="hiragana"
     )
-    assert out == "かんじととうきょう未知X"
+    sep = _default_first_token_separator()
+    assert out == f"かんじ{sep}ととうきょう{sep}未知X"
 
 
 def test_normalize_kana_with_stub_tagger_katakana() -> None:
@@ -994,7 +1011,8 @@ def test_normalize_kana_preserves_spaces(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr(tts_util, "_get_kana_tagger", lambda: DummyTagger())
     out = tts_util._normalize_kana_text("漢字 と 東京")
-    assert out == "かんじ と とうきょう"
+    sep = _default_first_token_separator()
+    assert out == f"かんじ{sep} と とうきょう{sep}"
 
 
 def test_normalize_kana_preserves_spaces_hiragana(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1018,7 +1036,8 @@ def test_normalize_kana_preserves_spaces_hiragana(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr(tts_util, "_get_kana_tagger", lambda: DummyTagger())
     out = tts_util._normalize_kana_text("漢字 と 東京", kana_style="hiragana")
-    assert out == "かんじ と とうきょう"
+    sep = _default_first_token_separator()
+    assert out == f"かんじ{sep} と とうきょう{sep}"
 
 
 def test_normalize_kana_with_stub_tagger_partial() -> None:
@@ -2196,7 +2215,35 @@ def test_normalize_kana_hiragana_particle_pronunciation_with_separator(
         kana_style="hiragana",
         force_first_token_to_kana=True,
     )
-    assert out == f"あおと{sep}{expected_particle}{sep}{tail_output}"
+    assert out == f"あおと{sep}{expected_particle}{sep}{tail_output}{sep}"
+
+
+def test_normalize_kana_hiragana_separator_after_sokuon_moves_forward() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("知っ", "シッ"),
+                DummyToken("て", "テ"),
+                DummyToken("います", "イマス"),
+            ]
+
+    sep = _default_first_token_separator()
+    out = tts_util._normalize_kana_with_tagger(
+        "知っています",
+        DummyTagger(),
+        kana_style="hiragana",
+    )
+    assert out == f"しって{sep}います"
 
 
 def test_normalize_kana_drops_separator_after_punctuation_with_marker() -> None:
