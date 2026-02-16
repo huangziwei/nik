@@ -237,6 +237,87 @@ def _write_inline_contents_toc_epub(epub_path: Path) -> None:
     epub.write_epub(str(epub_path), book)
 
 
+def _write_toc_split_fragment_epub(epub_path: Path) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("toc-split-fragment-book")
+    book.set_title("TOC Split Fragment Book")
+    book.set_language("ja")
+
+    chapter_1_start = epub.EpubHtml(
+        title="第一章",
+        file_name="chapter-1-start.xhtml",
+        lang="ja",
+    )
+    chapter_1_start.content = "<html><body><p>第一章</p><p>冒頭です。</p></body></html>"
+
+    chapter_1_cont = epub.EpubHtml(
+        title="chapter-1-cont.xhtml",
+        file_name="chapter-1-cont.xhtml",
+        lang="ja",
+    )
+    chapter_1_cont.content = (
+        "<html><body><p>ここから続きです。</p>"
+        + "".join("<p>本文です。</p>" for _ in range(140))
+        + "</body></html>"
+    )
+
+    chapter_2_start = epub.EpubHtml(
+        title="第二章",
+        file_name="chapter-2-start.xhtml",
+        lang="ja",
+    )
+    chapter_2_start.content = "<html><body><p>第二章</p><p>次章です。</p></body></html>"
+
+    for item in (chapter_1_start, chapter_1_cont, chapter_2_start):
+        book.add_item(item)
+    book.toc = (chapter_1_start, chapter_2_start)
+    book.spine = ["nav", chapter_1_start, chapter_1_cont, chapter_2_start]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
+def _write_toc_missing_section_starts_epub(epub_path: Path) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("toc-missing-section-starts-book")
+    book.set_title("TOC Missing Section Starts Book")
+    book.set_language("ja")
+
+    chapter_1_start = epub.EpubHtml(
+        title="第一章",
+        file_name="chapter-1-start.xhtml",
+        lang="ja",
+    )
+    chapter_1_start.content = "<html><body><p>第一章</p><p>冒頭です。</p></body></html>"
+
+    chapter_1_section = epub.EpubHtml(
+        title="chapter-1-section.xhtml",
+        file_name="chapter-1-section.xhtml",
+        lang="ja",
+    )
+    chapter_1_section.content = (
+        "<html><body><p>１話 途中見出し</p>"
+        + "".join("<p>節本文です。</p>" for _ in range(120))
+        + "</body></html>"
+    )
+
+    chapter_2_start = epub.EpubHtml(
+        title="第二章",
+        file_name="chapter-2-start.xhtml",
+        lang="ja",
+    )
+    chapter_2_start.content = "<html><body><p>第二章</p><p>次章です。</p></body></html>"
+
+    for item in (chapter_1_start, chapter_1_section, chapter_2_start):
+        book.add_item(item)
+    # TOC omits chapter_1_section on purpose.
+    book.toc = (chapter_1_start, chapter_2_start)
+    book.spine = ["nav", chapter_1_start, chapter_1_section, chapter_2_start]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
 def test_extract_chapters_from_sample_epub(tmp_path: Path) -> None:
     epub_path = tmp_path / "sample.epub"
     _write_sample_epub(epub_path)
@@ -349,6 +430,30 @@ def test_extract_chapters_uses_inline_contents_links_for_chapter_titles(
     assert "第二章 つづき" in titles
     target = next(ch for ch in chapters if ch.title == "第一章 はじまり")
     assert target.text.startswith("第一章 はじまり\n\n１")
+
+
+def test_extract_chapters_merges_toc_split_fragments_from_spine(tmp_path: Path) -> None:
+    epub_path = tmp_path / "toc-split-fragment.epub"
+    _write_toc_split_fragment_epub(epub_path)
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=True)
+    assert len(chapters) == 2
+    assert chapters[0].title == "第一章"
+    assert "ここから続きです。" in chapters[0].text
+    assert chapters[1].title == "第二章"
+
+
+def test_extract_chapters_keeps_non_toc_structural_section_starts(tmp_path: Path) -> None:
+    epub_path = tmp_path / "toc-missing-section-starts.epub"
+    _write_toc_missing_section_starts_epub(epub_path)
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=True)
+    titles = [chapter.title for chapter in chapters]
+    assert "１話 途中見出し" in titles
+    chapter_1 = next(ch for ch in chapters if ch.title == "第一章")
+    section = next(ch for ch in chapters if ch.title == "１話 途中見出し")
+    assert "節本文です。" not in chapter_1.text
+    assert "節本文です。" in section.text
 
 
 def test_extract_ruby_pairs_and_strip_rt() -> None:

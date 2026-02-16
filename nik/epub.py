@@ -708,6 +708,7 @@ _NON_CONTENT_TOC_TITLES = {
 }
 _NON_CONTENT_TOC_TITLES_CASEFOLD = {value.casefold() for value in _NON_CONTENT_TOC_TITLES}
 _INLINE_TOC_MIN_LINKS = 3
+_TOC_SPINE_COVERAGE_MIN_RATIO = 0.9
 
 
 def _title_from_text(text: str, max_len: int = _TITLE_MAX_LEN) -> str:
@@ -760,6 +761,13 @@ _SHORT_HEADING_LABEL_RE = re.compile(
     r"|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+(?:[.)．、])?"
     r"|[IVXLCDM]+(?:[.)．、])?"
     r")$"
+)
+_STRUCTURAL_TITLE_PREFIX_RE = re.compile(
+    r"^(?:"
+    r"第?[0-9０-９一二三四五六七八九十百千〇零]+(?:[章話部節巻回篇編])"
+    r"|[0-9０-９一二三四五六七八九十百千〇零]+(?:[章話部節巻回篇編]|[.)．、])"
+    r"|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩIVXLCDM]+(?:[章話部節巻回篇編]|[.)．、])"
+    r")"
 )
 _CSS_SELECTOR_RULE_RE = re.compile(r"([^{}]+)\{")
 _CSS_CLASS_OR_ID_RE = re.compile(r"([.#])([A-Za-z_][A-Za-z0-9_-]*)")
@@ -852,6 +860,18 @@ def _looks_like_short_structural_heading(value: str) -> bool:
     if len(compact) > 20:
         return False
     return bool(_SHORT_HEADING_LABEL_RE.fullmatch(compact))
+
+
+def _looks_like_structural_title(value: str) -> bool:
+    cleaned = _normalize_heading_text(value)
+    if not cleaned:
+        return False
+    if _looks_like_short_structural_heading(cleaned):
+        return True
+    compact = re.sub(r"[\s\u3000]+", "", cleaned)
+    if not compact or len(compact) > 80:
+        return False
+    return bool(_STRUCTURAL_TITLE_PREFIX_RE.match(compact))
 
 
 def _is_standalone_heading_node(node: object, text: str) -> bool:
@@ -1276,6 +1296,82 @@ def _merge_title_only_chapter_with_next(chapter: Chapter, next_chapter: Chapter)
     )
 
 
+def _merge_chapter_with_continuation(chapter: Chapter, continuation: Chapter) -> Chapter:
+    left_text = chapter.text
+    right_text = continuation.text
+    if left_text and right_text:
+        glue = "\n\n"
+    else:
+        glue = ""
+    merged_text = f"{left_text}{glue}{right_text}"
+    merged_ruby_spans = [dict(span) for span in chapter.ruby_spans]
+    if right_text:
+        merged_ruby_spans.extend(
+            _shift_ruby_spans(continuation.ruby_spans, len(left_text) + len(glue))
+        )
+    merged_headings, merged_categories = _merge_headings_with_categories(
+        list(chapter.headings),
+        dict(chapter.heading_categories),
+        continuation.headings,
+        continuation.heading_categories,
+    )
+    return Chapter(
+        title=chapter.title,
+        href=chapter.href,
+        source=chapter.source,
+        text=merged_text,
+        ruby_pairs=[*chapter.ruby_pairs, *continuation.ruby_pairs],
+        ruby_spans=merged_ruby_spans,
+        headings=merged_headings,
+        heading_categories=merged_categories,
+    )
+
+
+def _chapter_start_hrefs_from_title_overrides(title_overrides: dict[str, str]) -> set[str]:
+    starts: set[str] = set()
+    for href, title in title_overrides.items():
+        cleaned = str(title or "").strip()
+        if not cleaned:
+            continue
+        if _looks_like_filename(cleaned, href):
+            continue
+        starts.add(href)
+    return starts
+
+
+def _is_spine_continuation_fragment(chapter: Chapter) -> bool:
+    if _looks_like_filename(chapter.title, chapter.source):
+        return True
+    if chapter.headings:
+        return False
+    if not _chapter_title_looks_inferred_from_body(chapter):
+        return False
+    if _looks_like_structural_title(chapter.title):
+        return False
+    return True
+
+
+def _merge_spine_chapters_by_start_hrefs(
+    chapters: List[Chapter], start_hrefs: set[str]
+) -> List[Chapter]:
+    if not chapters or not start_hrefs:
+        return chapters
+    merged: List[Chapter] = []
+    current = chapters[0]
+    for chapter in chapters[1:]:
+        if chapter.source in start_hrefs:
+            merged.append(current)
+            current = chapter
+            continue
+        if _is_spine_continuation_fragment(chapter):
+            current = _merge_chapter_with_continuation(current, chapter)
+            continue
+        merged.append(current)
+        current = chapter
+    merged.append(current)
+    return merged
+
+
 def _merge_title_only_chapters(chapters: List[Chapter]) -> List[Chapter]:
     merged: List[Chapter] = []
     idx = 0
@@ -1630,6 +1726,7 @@ def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> List[Chapt
     entries = build_toc_entries(book) if prefer_toc else []
     spine_title_overrides: dict[str, str] = {}
     spine_prepend_title_hrefs: set[str] = set()
+    spine_start_hrefs: set[str] = set()
     if entries and prefer_toc:
         spine_title_overrides, spine_prepend_title_hrefs = (
             _build_spine_title_overrides_from_toc(
@@ -1638,6 +1735,25 @@ def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> List[Chapt
                 footnote_index=footnote_index,
             )
         )
+        spine_start_hrefs = _chapter_start_hrefs_from_title_overrides(spine_title_overrides)
+
+    def build_spine_chapters() -> List[Chapter]:
+        title_overrides = spine_title_overrides if spine_title_overrides else None
+        prepend_hrefs = spine_prepend_title_hrefs if spine_prepend_title_hrefs else None
+        chapters_out = _chapters_from_entries(
+            book,
+            build_spine_entries(book),
+            footnote_index,
+            title_overrides=title_overrides,
+            heading_class_markers=heading_class_markers,
+            heading_id_markers=heading_id_markers,
+            prepend_title_hrefs=prepend_hrefs,
+        )
+        if spine_start_hrefs:
+            chapters_out = _merge_spine_chapters_by_start_hrefs(
+                chapters_out, spine_start_hrefs
+            )
+        return chapters_out
     chapters = (
         _chapters_from_toc_entries(
             book,
@@ -1658,30 +1774,14 @@ def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> List[Chapt
             heading_id_markers=heading_id_markers,
         )
     if chapters and prefer_toc:
-        spine_chapters = _chapters_from_entries(
-            book,
-            build_spine_entries(book),
-            footnote_index,
-            title_overrides=spine_title_overrides,
-            heading_class_markers=heading_class_markers,
-            heading_id_markers=heading_id_markers,
-            prepend_title_hrefs=spine_prepend_title_hrefs,
-        )
+        spine_chapters = build_spine_chapters()
         if spine_chapters:
             toc_chars = sum(len(ch.text) for ch in chapters if ch.text)
             spine_chars = sum(len(ch.text) for ch in spine_chapters if ch.text)
             if spine_chars > 0:
                 ratio = toc_chars / spine_chars
-                if ratio < 0.2 and len(spine_chapters) > len(chapters):
+                if ratio < _TOC_SPINE_COVERAGE_MIN_RATIO:
                     chapters = spine_chapters
     if not chapters:
-        chapters = _chapters_from_entries(
-            book,
-            build_spine_entries(book),
-            footnote_index,
-            title_overrides=spine_title_overrides if spine_title_overrides else None,
-            heading_class_markers=heading_class_markers,
-            heading_id_markers=heading_id_markers,
-            prepend_title_hrefs=spine_prepend_title_hrefs or None,
-        )
+        chapters = build_spine_chapters()
     return chapters
