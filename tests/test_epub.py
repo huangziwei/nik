@@ -116,6 +116,43 @@ def _write_filename_title_fallback_epub(epub_path: Path) -> None:
     epub.write_epub(str(epub_path), book)
 
 
+def _write_split_title_page_epub(
+    epub_path: Path, next_title: str, first_line: str = "「おじさん、ちょっとおじさん」"
+) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("split-title-page-book")
+    book.set_title("Split Title Page Sample")
+    book.set_language("ja")
+
+    title_page = epub.EpubHtml(
+        title="title.xhtml",
+        file_name="title.xhtml",
+        lang="ja",
+    )
+    title_page.content = "<html><body><p>森の奥</p></body></html>"
+
+    body_page = epub.EpubHtml(
+        title=next_title,
+        file_name="body.xhtml",
+        lang="ja",
+    )
+    body_lines = [
+        first_line,
+        "だれかが呼びかけ、肩をゆさぶっている。",
+    ]
+    body_lines.extend("本文です。" for _ in range(220))
+    body_html = "".join(f"<p>{line}</p>" for line in body_lines)
+    body_page.content = f"<html><body>{body_html}</body></html>"
+
+    book.add_item(title_page)
+    book.add_item(body_page)
+    book.toc = (title_page, body_page)
+    book.spine = ["nav", title_page, body_page]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
 def test_extract_chapters_from_sample_epub(tmp_path: Path) -> None:
     epub_path = tmp_path / "sample.epub"
     _write_sample_epub(epub_path)
@@ -171,6 +208,29 @@ def test_extract_chapters_uses_body_text_title_when_toc_title_is_filename(
     title = chapters[0].title
     assert "これは先頭の本文です。" in title
     assert not title.startswith("Chapter ")
+
+
+def test_extract_chapters_merges_title_only_page_into_following_body(tmp_path: Path) -> None:
+    epub_path = tmp_path / "split-title-page.epub"
+    _write_split_title_page_epub(epub_path, next_title="body.xhtml")
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=False)
+    assert len(chapters) == 1
+    assert chapters[0].title == "森の奥"
+    assert chapters[0].text.startswith("「おじさん、ちょっとおじさん」")
+    assert "本文です。" in chapters[0].text
+
+
+def test_extract_chapters_keeps_title_only_page_when_next_starts_with_structural_heading(
+    tmp_path: Path,
+) -> None:
+    epub_path = tmp_path / "split-title-page-structural.epub"
+    _write_split_title_page_epub(epub_path, next_title="body.xhtml", first_line="１")
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=False)
+    assert len(chapters) == 2
+    assert chapters[0].title == "森の奥"
+    assert chapters[1].title == "１"
 
 
 def test_extract_ruby_pairs_and_strip_rt() -> None:

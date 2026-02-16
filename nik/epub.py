@@ -694,6 +694,8 @@ def slugify(text: str) -> str:
 
 
 _TITLE_MAX_LEN = 40
+_TITLE_ONLY_CHAPTER_MAX_LEN = 80
+_TITLE_ONLY_MERGE_MIN_NEXT_TEXT_LEN = 400
 
 
 def _title_from_text(text: str, max_len: int = _TITLE_MAX_LEN) -> str:
@@ -1126,6 +1128,98 @@ def _looks_like_filename(title: str, href: str) -> bool:
     return False
 
 
+def _chapter_nonempty_lines(text: str) -> List[str]:
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def _chapter_first_nonempty_line(text: str) -> str:
+    lines = _chapter_nonempty_lines(text)
+    if not lines:
+        return ""
+    return lines[0]
+
+
+def _is_title_only_chapter(chapter: Chapter) -> bool:
+    lines = _chapter_nonempty_lines(chapter.text)
+    if len(lines) != 1:
+        return False
+    only_line = lines[0]
+    if len(only_line) > _TITLE_ONLY_CHAPTER_MAX_LEN:
+        return False
+    return _normalize_heading_text(chapter.title) == _normalize_heading_text(only_line)
+
+
+def _chapter_title_looks_inferred_from_body(chapter: Chapter) -> bool:
+    inferred = _title_from_text(chapter.text)
+    if not inferred:
+        return False
+    return _normalize_heading_text(chapter.title) == _normalize_heading_text(inferred)
+
+
+def _should_merge_title_only_chapter_with_next(
+    chapter: Chapter, next_chapter: Chapter
+) -> bool:
+    if not _is_title_only_chapter(chapter):
+        return False
+    if len(next_chapter.text) < _TITLE_ONLY_MERGE_MIN_NEXT_TEXT_LEN:
+        return False
+    if not _chapter_title_looks_inferred_from_body(next_chapter):
+        return False
+    next_first = _chapter_first_nonempty_line(next_chapter.text)
+    if not next_first:
+        return False
+    if _normalize_heading_text(chapter.title) == _normalize_heading_text(next_first):
+        return False
+    if _looks_like_short_structural_heading(next_first):
+        return False
+    return True
+
+
+def _merge_title_only_chapter_with_next(chapter: Chapter, next_chapter: Chapter) -> Chapter:
+    chapter_headings = list(chapter.headings)
+    chapter_heading_categories = dict(chapter.heading_categories)
+    title_key = _normalize_heading_key(chapter.title)
+    if title_key:
+        if title_key not in {_normalize_heading_key(value) for value in chapter_headings}:
+            chapter_headings.insert(0, chapter.title)
+        chapter_heading_categories[title_key] = _merge_heading_category(
+            chapter_heading_categories.get(title_key, _HEADING_CATEGORY_SECTION),
+            _HEADING_CATEGORY_TITLE,
+        )
+    merged_headings, merged_categories = _merge_headings_with_categories(
+        chapter_headings,
+        chapter_heading_categories,
+        next_chapter.headings,
+        next_chapter.heading_categories,
+    )
+    return Chapter(
+        title=chapter.title,
+        href=next_chapter.href,
+        source=next_chapter.source,
+        text=next_chapter.text,
+        ruby_pairs=next_chapter.ruby_pairs,
+        ruby_spans=next_chapter.ruby_spans,
+        headings=merged_headings,
+        heading_categories=merged_categories,
+    )
+
+
+def _merge_title_only_chapters(chapters: List[Chapter]) -> List[Chapter]:
+    merged: List[Chapter] = []
+    idx = 0
+    while idx < len(chapters):
+        chapter = chapters[idx]
+        if idx + 1 < len(chapters):
+            next_chapter = chapters[idx + 1]
+            if _should_merge_title_only_chapter_with_next(chapter, next_chapter):
+                merged.append(_merge_title_only_chapter_with_next(chapter, next_chapter))
+                idx += 2
+                continue
+        merged.append(chapter)
+        idx += 1
+    return merged
+
+
 def _chapters_from_entries(
     book: epub.EpubBook,
     entries: Iterable[TocEntry],
@@ -1207,7 +1301,7 @@ def _chapters_from_entries(
             )
         )
 
-    return chapters
+    return _merge_title_only_chapters(chapters)
 
 
 def _chapters_from_toc_entries(
@@ -1344,7 +1438,7 @@ def _chapters_from_toc_entries(
             )
         )
 
-    return chapters
+    return _merge_title_only_chapters(chapters)
 
 
 def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> List[Chapter]:
