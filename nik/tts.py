@@ -4353,6 +4353,26 @@ def _normalize_kana_with_tagger(
             return value
         return f"{token_separator}{value}{token_separator}"
 
+    def _should_prepend_hiragana_transform_separator(token_idx: int) -> bool:
+        if token_idx <= 0 or not token_separator:
+            return False
+        prev_idx = token_idx - 1
+        prev_surface = ""
+        while prev_idx >= 0:
+            prev_surface = unicodedata.normalize(
+                "NFKC", str(getattr(tokens[prev_idx], "surface", "") or "")
+            )
+            if prev_surface:
+                break
+            prev_idx -= 1
+        if not prev_surface:
+            return False
+        if prev_surface == token_separator or prev_surface == SECTION_BREAK:
+            return False
+        if all(unicodedata.category(ch).startswith("P") for ch in prev_surface):
+            return False
+        return True
+
     def _collapse_repeated_token_separators(value: str) -> str:
         if not token_separator or not value:
             return value
@@ -4449,6 +4469,8 @@ def _normalize_kana_with_tagger(
             if kana_style == "hiragana":
                 particle_output = _render_pronunciation_particle_hiragana(token, surface)
                 if particle_output != surface:
+                    if _should_prepend_hiragana_transform_separator(idx):
+                        particle_output = _prepend_transform_separator(particle_output)
                     out.append(particle_output)
                     _append_kana_debug(
                         debug_sources,
@@ -4605,6 +4627,8 @@ def _normalize_kana_with_tagger(
             output = _katakana_to_hiragana(reading_kata)
             output = _render_pronunciation_particle_hiragana(token, output)
             output = _append_transform_separator(output)
+            if _should_prepend_hiragana_transform_separator(idx):
+                output = _prepend_transform_separator(output)
             out.append(output)
             _append_kana_debug(
                 debug_sources,

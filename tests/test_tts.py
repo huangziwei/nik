@@ -906,7 +906,7 @@ def test_normalize_kana_with_stub_tagger() -> None:
 
     out = tts_util._normalize_kana_with_tagger("漢字と東京未知X", DummyTagger())
     sep = _default_first_token_separator()
-    assert out == f"かんじ{sep}ととうきょう{sep}未知X"
+    assert out == f"かんじ{sep}と{sep}とうきょう{sep}未知X"
 
 
 def test_normalize_kana_with_stub_tagger_hiragana() -> None:
@@ -934,7 +934,7 @@ def test_normalize_kana_with_stub_tagger_hiragana() -> None:
         "漢字と東京未知X", DummyTagger(), kana_style="hiragana"
     )
     sep = _default_first_token_separator()
-    assert out == f"かんじ{sep}ととうきょう{sep}未知X"
+    assert out == f"かんじ{sep}と{sep}とうきょう{sep}未知X"
 
 
 def test_normalize_kana_with_stub_tagger_katakana() -> None:
@@ -2218,6 +2218,48 @@ def test_normalize_kana_hiragana_particle_pronunciation_with_separator(
     assert out == f"あおと{sep}{expected_particle}{sep}{tail_output}{sep}"
 
 
+def test_normalize_kana_hiragana_particle_pronunciation_adds_mid_sentence_prepend() -> None:
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            pos1: str | None = None,
+            pos2: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+            self.pos2 = pos2
+
+    class DummyToken:
+        def __init__(
+            self,
+            surface: str,
+            kana: str | None,
+            *,
+            pos1: str | None = None,
+            pos2: str | None = None,
+        ) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana, pos1=pos1, pos2=pos2)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("という", "トイウ"),
+                DummyToken("は", "ハ", pos1="助詞", pos2="係助詞"),
+                DummyToken("胸", "ムネ"),
+            ]
+
+    sep = _default_first_token_separator()
+    out = tts_util._normalize_kana_with_tagger(
+        "というは胸",
+        DummyTagger(),
+        kana_style="hiragana",
+    )
+    assert out == f"という{sep}わ{sep}むね{sep}"
+
+
 def test_normalize_kana_hiragana_separator_after_sokuon_moves_forward() -> None:
     class DummyFeature:
         def __init__(self, kana: str | None) -> None:
@@ -2244,6 +2286,63 @@ def test_normalize_kana_hiragana_separator_after_sokuon_moves_forward() -> None:
         kana_style="hiragana",
     )
     assert out == f"しって{sep}います"
+
+
+def test_normalize_kana_hiragana_mid_sentence_transforms_use_prepend_separator() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("という", "トイウ"),
+                DummyToken("顔", "カオ"),
+                DummyToken("で", "デ"),
+            ]
+
+    sep = _default_first_token_separator()
+    out = tts_util._normalize_kana_with_tagger(
+        "という顔で",
+        DummyTagger(),
+        kana_style="hiragana",
+    )
+    assert out == f"という{sep}かお{sep}で"
+
+
+def test_normalize_kana_hiragana_mid_sentence_prepend_skips_punctuation() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("顔", "カオ"),
+                DummyToken("で", "デ"),
+                DummyToken("、", None),
+                DummyToken("頭", "アタマ"),
+            ]
+
+    sep = _default_first_token_separator()
+    out = tts_util._normalize_kana_with_tagger(
+        "顔で、頭",
+        DummyTagger(),
+        kana_style="hiragana",
+    )
+    assert out == f"かお{sep}で、あたま{sep}"
 
 
 def test_normalize_kana_drops_separator_after_punctuation_with_marker() -> None:
