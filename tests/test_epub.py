@@ -94,6 +94,28 @@ def _write_structural_heading_epub(epub_path: Path) -> None:
     epub.write_epub(str(epub_path), book)
 
 
+def _write_filename_title_fallback_epub(epub_path: Path) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("filename-fallback-book")
+    book.set_title("Filename Fallback Sample")
+    book.set_language("ja")
+
+    chapter = epub.EpubHtml(
+        title="chapter-001.xhtml",
+        file_name="chapter-001.xhtml",
+        lang="ja",
+    )
+    chapter.content = (
+        "<html><body><p>これは先頭の本文です。次の文です。</p></body></html>"
+    )
+    book.add_item(chapter)
+    book.toc = (chapter,)
+    book.spine = ["nav", chapter]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
 def test_extract_chapters_from_sample_epub(tmp_path: Path) -> None:
     epub_path = tmp_path / "sample.epub"
     _write_sample_epub(epub_path)
@@ -136,6 +158,19 @@ def test_extract_chapters_detects_structural_numeric_heading_classes(
     assert heading_categories.get("１") == "section"
     assert heading_categories.get("４") == "section"
     assert any(category == "title" for category in heading_categories.values())
+
+
+def test_extract_chapters_uses_body_text_title_when_toc_title_is_filename(
+    tmp_path: Path,
+) -> None:
+    epub_path = tmp_path / "filename-title-fallback.epub"
+    _write_filename_title_fallback_epub(epub_path)
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=True)
+    assert chapters
+    title = chapters[0].title
+    assert "これは先頭の本文です。" in title
+    assert not title.startswith("Chapter ")
 
 
 def test_extract_ruby_pairs_and_strip_rt() -> None:

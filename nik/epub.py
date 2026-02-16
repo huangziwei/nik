@@ -1181,6 +1181,10 @@ def _chapters_from_entries(
             if heading and not _looks_like_filename(heading, base_href):
                 title = heading
         if _looks_like_filename(title, base_href):
+            text_title = _title_from_text(text)
+            if text_title and not _looks_like_filename(text_title, base_href):
+                title = text_title
+        if _looks_like_filename(title, base_href):
             title = f"{fallback_prefix} {idx}"
         resolved_heading_categories = _heading_categories_for_values(
             headings, heading_categories
@@ -1226,7 +1230,7 @@ def _chapters_from_toc_entries(
         if key:
             split_series_counts[key] = split_series_counts.get(key, 0) + 1
 
-    for entry in entries:
+    for idx, entry in enumerate(entries, start=1):
         base_href = normalize_href(entry.href)
         if not base_href or base_href in seen:
             continue
@@ -1305,6 +1309,20 @@ def _chapters_from_toc_entries(
             continue
 
         title = entry.title or _item_title(item_for_title) or Path(base_href).stem
+        if _looks_like_filename(title, base_href):
+            heading = _extract_heading_title(
+                item_for_title.get_content(),
+                heading_class_markers=heading_class_markers,
+                heading_id_markers=heading_id_markers,
+            )
+            if heading and not _looks_like_filename(heading, base_href):
+                title = heading
+        if _looks_like_filename(title, base_href):
+            text_title = _title_from_text(text)
+            if text_title and not _looks_like_filename(text_title, base_href):
+                title = text_title
+        if _looks_like_filename(title, base_href):
+            title = f"Chapter {idx}"
         resolved_heading_categories = _heading_categories_for_values(
             headings, heading_categories
         )
