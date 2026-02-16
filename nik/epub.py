@@ -3,6 +3,9 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from posixpath import dirname as posix_dirname
+from posixpath import join as posix_join
+from posixpath import normpath as posix_normpath
 from pathlib import Path
 from typing import Iterable, List, Optional
 from urllib.parse import unquote
@@ -704,6 +707,7 @@ _NON_CONTENT_TOC_TITLES = {
     "奥付",
 }
 _NON_CONTENT_TOC_TITLES_CASEFOLD = {value.casefold() for value in _NON_CONTENT_TOC_TITLES}
+_INLINE_TOC_MIN_LINKS = 3
 
 
 def _title_from_text(text: str, max_len: int = _TITLE_MAX_LEN) -> str:
@@ -1143,6 +1147,23 @@ def _is_non_content_toc_title(title: str) -> bool:
     return cleaned in _NON_CONTENT_TOC_TITLES_CASEFOLD
 
 
+def _resolve_relative_href(base_href: str, target_href: str) -> str:
+    target = normalize_href(target_href)
+    if not target:
+        return ""
+    if "://" in target:
+        return ""
+    if target.startswith("/"):
+        return target.lstrip("/")
+    base = normalize_href(base_href)
+    if not base:
+        return target
+    base_dir = posix_dirname(base)
+    if not base_dir:
+        return target
+    return posix_normpath(posix_join(base_dir, target))
+
+
 def _chapter_nonempty_lines(text: str) -> List[str]:
     return [line.strip() for line in text.splitlines() if line.strip()]
 
@@ -1292,9 +1313,45 @@ def _build_spine_title_overrides_from_toc(
     if not spine_items:
         return overrides, set()
     spine_index = {href: idx for idx, (href, _item) in enumerate(spine_items)}
+    spine_hrefs = set(spine_index)
     toc_hrefs = set(overrides.keys())
     inherited_hrefs: set[str] = set()
     text_cache: dict[str, str] = {}
+
+    # Some omnibus EPUBs place chapter labels in body-level CONTENTS pages
+    # instead of the package TOC. Harvest those link texts as additional title
+    # candidates before running title-page -> body inheritance.
+    for source_href, source_item in spine_items:
+        content = source_item.get_content()
+        if not content:
+            continue
+        soup = _parse_html_soup(content)
+        root = soup.body if soup.body else soup
+        links = root.find_all("a")
+        if len(links) < _INLINE_TOC_MIN_LINKS:
+            continue
+        link_entries: List[tuple[str, str]] = []
+        for link in links:
+            href_attr = str(link.get("href", "") or "").strip()
+            if not href_attr:
+                continue
+            resolved = _resolve_relative_href(source_href, href_attr)
+            if not resolved or resolved not in spine_hrefs:
+                continue
+            label = _normalize_heading_text(link.get_text(separator=" ", strip=True))
+            if not label or len(label) > 120:
+                continue
+            link_entries.append((resolved, label))
+        if len(link_entries) < _INLINE_TOC_MIN_LINKS:
+            continue
+        for resolved, label in link_entries:
+            existing = str(overrides.get(resolved, "")).strip()
+            if existing and not (
+                _looks_like_filename(existing, resolved)
+                or _is_non_content_toc_title(existing)
+            ):
+                continue
+            overrides[resolved] = label
 
     def item_text(href: str, item: object) -> str:
         if href in text_cache:

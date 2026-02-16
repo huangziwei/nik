@@ -185,6 +185,58 @@ def _write_toc_title_page_then_body_epub(epub_path: Path, toc_title: str) -> Non
     epub.write_epub(str(epub_path), book)
 
 
+def _write_inline_contents_toc_epub(epub_path: Path) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("inline-contents-book")
+    book.set_title("Inline Contents Book")
+    book.set_language("ja")
+
+    volume = epub.EpubHtml(
+        title="第1巻",
+        file_name="volume.xhtml",
+        lang="ja",
+    )
+    volume.content = "<html><body><img src='missing.jpg' alt=''/></body></html>"
+
+    contents = epub.EpubHtml(
+        title="contents.xhtml",
+        file_name="contents.xhtml",
+        lang="ja",
+    )
+    contents.content = """
+    <html><body>
+      <h1>CONTENTS</h1>
+      <p><a href="title-1.xhtml">第一章 はじまり</a></p>
+      <p><a href="title-2.xhtml">第二章 つづき</a></p>
+      <p><a href="afterword.xhtml">あとがき</a></p>
+    </body></html>
+    """
+
+    title_1 = epub.EpubHtml(title="t1", file_name="title-1.xhtml", lang="ja")
+    title_1.content = "<html><body><img src='missing.jpg' alt=''/></body></html>"
+
+    body_1 = epub.EpubHtml(title="body-1.xhtml", file_name="body-1.xhtml", lang="ja")
+    body_1.content = "<html><body><p>１</p><p>本文です。</p></body></html>"
+
+    title_2 = epub.EpubHtml(title="t2", file_name="title-2.xhtml", lang="ja")
+    title_2.content = "<html><body><img src='missing.jpg' alt=''/></body></html>"
+
+    body_2 = epub.EpubHtml(title="body-2.xhtml", file_name="body-2.xhtml", lang="ja")
+    body_2.content = "<html><body><p>１</p><p>本文です。</p></body></html>"
+
+    afterword = epub.EpubHtml(title="あとがき", file_name="afterword.xhtml", lang="ja")
+    afterword.content = "<html><body><p>あとがき</p><p>本文です。</p></body></html>"
+
+    for item in (volume, contents, title_1, body_1, title_2, body_2, afterword):
+        book.add_item(item)
+
+    book.toc = (volume,)
+    book.spine = ["nav", volume, contents, title_1, body_1, title_2, body_2, afterword]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
 def test_extract_chapters_from_sample_epub(tmp_path: Path) -> None:
     epub_path = tmp_path / "sample.epub"
     _write_sample_epub(epub_path)
@@ -283,6 +335,20 @@ def test_extract_chapters_does_not_inherit_non_content_toc_title(tmp_path: Path)
     assert len(chapters) == 1
     assert chapters[0].title == "１"
     assert chapters[0].text.startswith("１")
+
+
+def test_extract_chapters_uses_inline_contents_links_for_chapter_titles(
+    tmp_path: Path,
+) -> None:
+    epub_path = tmp_path / "inline-contents.epub"
+    _write_inline_contents_toc_epub(epub_path)
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=True)
+    titles = [chapter.title for chapter in chapters]
+    assert "第一章 はじまり" in titles
+    assert "第二章 つづき" in titles
+    target = next(ch for ch in chapters if ch.title == "第一章 はじまり")
+    assert target.text.startswith("第一章 はじまり\n\n１")
 
 
 def test_extract_ruby_pairs_and_strip_rt() -> None:
