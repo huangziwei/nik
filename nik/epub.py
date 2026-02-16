@@ -769,6 +769,25 @@ _STRUCTURAL_TITLE_PREFIX_RE = re.compile(
     r"|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩIVXLCDM]+(?:[章話部節巻回篇編]|[.)．、])"
     r")"
 )
+_STRUCTURAL_HEADING_TERMS_CASEFOLD = {
+    "prologue",
+    "epilogue",
+    "postscript",
+    "interlude",
+    "preface",
+    "afterword",
+    "まえがき",
+    "前書き",
+    "序章",
+    "プロローグ",
+    "幕間",
+    "間章",
+    "間奏",
+    "エピローグ",
+    "終章",
+    "あとがき",
+    "後書き",
+}
 _CSS_SELECTOR_RULE_RE = re.compile(r"([^{}]+)\{")
 _CSS_CLASS_OR_ID_RE = re.compile(r"([.#])([A-Za-z_][A-Za-z0-9_-]*)")
 _BLOCK_TEXT_TAGS = {
@@ -852,14 +871,30 @@ def _normalized_node_text(node: object) -> str:
     return _normalize_heading_text(text)
 
 
+def _compact_heading_text(value: str) -> str:
+    return re.sub(r"[\s\u3000]+", "", value)
+
+
 def _looks_like_short_structural_heading(value: str) -> bool:
     cleaned = _normalize_heading_text(value)
     if not cleaned or len(cleaned) > 40:
         return False
-    compact = re.sub(r"[\s\u3000]+", "", cleaned)
+    compact = _compact_heading_text(cleaned)
     if len(compact) > 20:
         return False
     return bool(_SHORT_HEADING_LABEL_RE.fullmatch(compact))
+
+
+def _looks_like_structural_heading_term(value: str) -> bool:
+    cleaned = _normalize_heading_text(value)
+    if not cleaned:
+        return False
+    if cleaned.casefold() in _STRUCTURAL_HEADING_TERMS_CASEFOLD:
+        return True
+    compact = _compact_heading_text(cleaned)
+    if compact.casefold() in _STRUCTURAL_HEADING_TERMS_CASEFOLD:
+        return True
+    return False
 
 
 def _looks_like_structural_title(value: str) -> bool:
@@ -868,10 +903,24 @@ def _looks_like_structural_title(value: str) -> bool:
         return False
     if _looks_like_short_structural_heading(cleaned):
         return True
-    compact = re.sub(r"[\s\u3000]+", "", cleaned)
+    if _looks_like_structural_heading_term(cleaned):
+        return True
+    compact = _compact_heading_text(cleaned)
     if not compact or len(compact) > 80:
         return False
     return bool(_STRUCTURAL_TITLE_PREFIX_RE.match(compact))
+
+
+def _looks_like_body_text_block(value: str) -> bool:
+    cleaned = _normalize_heading_text(value)
+    if not cleaned:
+        return False
+    compact = _compact_heading_text(cleaned)
+    if len(compact) >= 20:
+        return True
+    if len(compact) >= 8 and any(mark in cleaned for mark in ("。", "．", "!", "?", "！", "？")):
+        return True
+    return False
 
 
 def _is_standalone_heading_node(node: object, text: str) -> bool:
@@ -1038,6 +1087,39 @@ def _extract_html_heading_entries(
         for marker_category in marker_categories:
             category = _merge_heading_category(category, marker_category)
         add_node_text(node, category)
+
+    block_nodes: List[tuple[object, str]] = []
+    for node in root.find_all(True):
+        name = str(getattr(node, "name", "") or "").lower()
+        if name not in _BLOCK_TEXT_TAGS:
+            continue
+        text = _normalized_node_text(node)
+        if not text:
+            continue
+        block_nodes.append((node, text))
+
+    for idx, (node, text) in enumerate(block_nodes):
+        if len(text) > 80:
+            continue
+        if not _looks_like_structural_title(text):
+            continue
+        if not _is_standalone_heading_node(node, text):
+            continue
+        has_following_body = False
+        upper = min(len(block_nodes), idx + 5)
+        for look_ahead in range(idx + 1, upper):
+            next_text = block_nodes[look_ahead][1]
+            if (
+                len(next_text) <= 80
+                and _looks_like_structural_title(next_text)
+            ):
+                continue
+            if _looks_like_body_text_block(next_text):
+                has_following_body = True
+            break
+        if not has_following_body:
+            continue
+        add_node_text(node, _HEADING_CATEGORY_SECTION)
     return out
 
 

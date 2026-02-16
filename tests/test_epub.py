@@ -342,6 +342,25 @@ def test_extract_html_headings_supports_heading_tags_and_class_markers() -> None
     assert "- Intro -" in headings
 
 
+def test_extract_html_headings_detects_plain_structural_blocks() -> None:
+    html = """
+    <html>
+      <body>
+        <p class="calibre2">プロローグ</p>
+        <p class="calibre2">これは本文です。しっかり長い段落になっています。</p>
+        <p class="calibre2">１</p>
+        <p class="calibre2">次の本文です。ここも長い段落です。</p>
+        <p class="calibre2">２</p>
+        <p class="calibre2">さらに本文が続きます。段落です。</p>
+      </body>
+    </html>
+    """.encode("utf-8")
+    headings = epub_util._extract_html_headings(html)
+    assert "プロローグ" in headings
+    assert "１" in headings
+    assert "２" in headings
+
+
 def test_extract_chapters_detects_structural_numeric_heading_classes(
     tmp_path: Path,
 ) -> None:
