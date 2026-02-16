@@ -173,6 +173,11 @@ _ISOLATED_SINGLE_KANJI_PARTICLES = {
     "ナ",
     "ワ",
 }
+_HIRAGANA_PRONUNCIATION_PARTICLE_MAP = {
+    "は": "わ",
+    "へ": "え",
+    "を": "お",
+}
 _RUBY_SUTEGANA_LARGE_CHARS = "あいうえおつやゆよわかけアイウエオツヤユヨワカケ"
 _RUBY_SUTEGANA_SMALL_CHARS = "ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶ"
 _RUBY_SUTEGANA_LARGE = set(_RUBY_SUTEGANA_LARGE_CHARS)
@@ -3794,6 +3799,38 @@ def _should_convert_honorific_prefix(
     return True
 
 
+def _is_pronunciation_particle_token(token: Any) -> bool:
+    surface = unicodedata.normalize("NFKC", str(getattr(token, "surface", "") or ""))
+    if surface not in _HIRAGANA_PRONUNCIATION_PARTICLE_MAP:
+        return False
+    attrs = _extract_token_attrs(token)
+    pos1 = attrs.get("pos1") or ""
+    if pos1 == "助詞":
+        return True
+    return any(
+        pos.endswith("助詞")
+        for pos in (
+            attrs.get("pos2") or "",
+            attrs.get("pos3") or "",
+            attrs.get("pos4") or "",
+        )
+        if pos
+    )
+
+
+def _render_pronunciation_particle_hiragana(token: Any, output: str) -> str:
+    if not output:
+        return output
+    if not _is_pronunciation_particle_token(token):
+        return output
+    surface = unicodedata.normalize("NFKC", str(getattr(token, "surface", "") or ""))
+    replacement = _HIRAGANA_PRONUNCIATION_PARTICLE_MAP.get(surface)
+    if not replacement:
+        return output
+    separator = _first_token_separator()
+    return replacement + separator if separator else replacement
+
+
 def _is_leading_skip_token(surface: str) -> bool:
     if not surface:
         return True
@@ -4376,6 +4413,17 @@ def _normalize_kana_with_tagger(
                         source=source or "latin-map",
                     )
                     continue
+            if kana_style == "hiragana":
+                particle_output = _render_pronunciation_particle_hiragana(token, surface)
+                if particle_output != surface:
+                    out.append(particle_output)
+                    _append_kana_debug(
+                        debug_sources,
+                        surface_original,
+                        particle_output,
+                        source="particle-pron",
+                    )
+                    continue
             out.append(surface)
             _append_kana_debug(
                 debug_sources,
@@ -4522,6 +4570,7 @@ def _normalize_kana_with_tagger(
             )
         elif kana_style == "hiragana":
             output = _katakana_to_hiragana(reading_kata)
+            output = _render_pronunciation_particle_hiragana(token, output)
             out.append(output)
             _append_kana_debug(
                 debug_sources,
@@ -4540,26 +4589,6 @@ def _normalize_kana_with_tagger(
                 source="unidic",
                 reading=reading_kata,
             )
-
-    def _is_pronunciation_particle(token: Any) -> bool:
-        surface = unicodedata.normalize(
-            "NFKC", str(getattr(token, "surface", "") or "")
-        )
-        if surface not in {"は", "へ", "を"}:
-            return False
-        attrs = _extract_token_attrs(token)
-        pos1 = attrs.get("pos1") or ""
-        if pos1 == "助詞":
-            return True
-        return any(
-            pos.endswith("助詞")
-            for pos in (
-                attrs.get("pos2") or "",
-                attrs.get("pos3") or "",
-                attrs.get("pos4") or "",
-            )
-            if pos
-        )
 
     def _is_honorific_suffix(token: Any) -> bool:
         surface = unicodedata.normalize(
@@ -4620,12 +4649,15 @@ def _normalize_kana_with_tagger(
         if _is_honorific_suffix(tokens[start_idx]):
             after_suffix_idx = _next_token_idx(start_idx)
             if (
-                after_suffix_idx is not None
-                and _is_pronunciation_particle(tokens[after_suffix_idx])
+                kana_style == "partial"
+                and after_suffix_idx is not None
+                and _is_pronunciation_particle_token(tokens[after_suffix_idx])
             ):
                 return after_suffix_idx
             return start_idx
-        if _is_pronunciation_particle(tokens[start_idx]):
+        if kana_style == "partial" and _is_pronunciation_particle_token(
+            tokens[start_idx]
+        ):
             return start_idx
         return None
 

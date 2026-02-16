@@ -2136,6 +2136,69 @@ def test_normalize_kana_separator_before_pronunciation_particles_in_overrides_pa
     assert out == f"あおと{particle_surface}{sep}{tail_surface}"
 
 
+@pytest.mark.parametrize(
+    ("particle_surface", "particle_reading", "expected_particle", "tail_surface", "tail_reading", "tail_output"),
+    [
+        ("は", "ハ", "わ", "胸", "ムネ", "むね"),
+        ("へ", "ヘ", "え", "道", "ミチ", "みち"),
+        ("を", "ヲ", "お", "見る", "ミル", "みる"),
+    ],
+)
+def test_normalize_kana_hiragana_particle_pronunciation_with_separator(
+    particle_surface: str,
+    particle_reading: str,
+    expected_particle: str,
+    tail_surface: str,
+    tail_reading: str,
+    tail_output: str,
+) -> None:
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            pos1: str | None = None,
+            pos2: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+            self.pos2 = pos2
+
+    class DummyToken:
+        def __init__(
+            self,
+            surface: str,
+            kana: str | None,
+            *,
+            pos1: str | None = None,
+            pos2: str | None = None,
+        ) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana, pos1=pos1, pos2=pos2)
+
+    sep = _default_first_token_separator()
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken(sep, None),
+                DummyToken("あ", "ア"),
+                DummyToken("お", "オ"),
+                DummyToken("と", "ト"),
+                DummyToken(sep, None),
+                DummyToken(particle_surface, particle_reading, pos1="助詞", pos2="格助詞"),
+                DummyToken(tail_surface, tail_reading),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        f"{sep}あおと{sep}{particle_surface}{tail_surface}",
+        DummyTagger(),
+        kana_style="hiragana",
+        force_first_token_to_kana=True,
+    )
+    assert out == f"あおと{sep}{expected_particle}{sep}{tail_output}"
+
+
 def test_normalize_kana_drops_separator_after_punctuation_with_marker() -> None:
     class DummyFeature:
         def __init__(self, kana: str | None, pos1: str | None = None) -> None:
