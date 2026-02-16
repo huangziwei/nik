@@ -27,6 +27,7 @@ class Chapter:
     text: str
     ruby_pairs: List[tuple[str, str]] = field(default_factory=list)
     ruby_spans: List[dict] = field(default_factory=list)
+    headings: List[str] = field(default_factory=list)
 
 
 def read_epub(path: Path) -> epub.EpubBook:
@@ -706,18 +707,78 @@ def _title_from_text(text: str, max_len: int = _TITLE_MAX_LEN) -> str:
 
 
 def _extract_heading_title(html: bytes | str) -> str:
-    try:
-        soup = BeautifulSoup(html, "lxml")
-    except Exception:
-        soup = BeautifulSoup(html, "html.parser")
-    for tag in ("h1", "h2", "h3", "h4", "title"):
-        node = soup.find(tag)
-        if not node:
-            continue
-        text = node.get_text(separator=" ", strip=True)
+    headings = _extract_html_headings(html)
+    if headings:
+        return headings[0]
+
+    soup = _parse_html_soup(html)
+    title_node = soup.find("title")
+    if title_node:
+        text = title_node.get_text(separator=" ", strip=True)
         if text:
             return text
     return ""
+
+
+_HEADING_TAGS = ("h1", "h2", "h3", "h4", "h5", "h6")
+_HEADING_CLASS_HINTS = (
+    "title",
+    "subtitle",
+    "chapter",
+    "section",
+    "headline",
+    "heading",
+    "midashi",
+)
+
+
+def _looks_like_heading_marker(value: str) -> bool:
+    cleaned = str(value or "").strip().lower()
+    if not cleaned:
+        return False
+    if any(token in cleaned for token in _HEADING_CLASS_HINTS):
+        return True
+    return bool(re.search(r"(^|[-_])(ttl|hd)([-_0-9]|$)", cleaned))
+
+
+def _extract_html_headings(html: bytes | str) -> List[str]:
+    soup = _parse_html_soup(html)
+    for tag in soup.find_all(["rt", "rp", "script", "style"]):
+        tag.decompose()
+    root = soup.body if soup.body else soup
+    out: List[str] = []
+    seen: set[str] = set()
+
+    def add_node_text(node: object) -> None:
+        text = node.get_text(separator=" ", strip=True)
+        if not text:
+            return
+        cleaned = re.sub(r"\s+", " ", text).strip()
+        if not cleaned or len(cleaned) > 120:
+            return
+        key = cleaned.casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(cleaned)
+
+    for tag in _HEADING_TAGS:
+        for node in root.find_all(tag):
+            add_node_text(node)
+
+    for node in root.find_all(True):
+        name = str(getattr(node, "name", "") or "").lower()
+        if name in _HEADING_TAGS:
+            continue
+        classes = getattr(node, "get", lambda *_args, **_kwargs: [])("class", [])
+        if isinstance(classes, str):
+            classes = [classes]
+        id_value = str(getattr(node, "get", lambda *_args, **_kwargs: "")("id", "") or "")
+        has_marker = any(_looks_like_heading_marker(cls) for cls in classes)
+        if not has_marker and not _looks_like_heading_marker(id_value):
+            continue
+        add_node_text(node)
+    return out
 
 
 def _looks_like_filename(title: str, href: str) -> bool:
@@ -772,6 +833,7 @@ def _chapters_from_entries(
         ruby_pairs = [
             (span.get("base", ""), span.get("reading", "")) for span in ruby_spans
         ]
+        headings = _extract_html_headings(content)
 
         title = ""
         if title_overrides and base_href in title_overrides:
@@ -783,10 +845,6 @@ def _chapters_from_entries(
             if heading and not _looks_like_filename(heading, base_href):
                 title = heading
         if _looks_like_filename(title, base_href):
-            text_title = _title_from_text(text)
-            if text_title and not _looks_like_filename(text_title, base_href):
-                title = text_title
-        if _looks_like_filename(title, base_href):
             title = f"{fallback_prefix} {idx}"
         chapters.append(
             Chapter(
@@ -796,6 +854,7 @@ def _chapters_from_entries(
                 text=text,
                 ruby_pairs=ruby_pairs,
                 ruby_spans=ruby_spans,
+                headings=headings,
             )
         )
 
@@ -826,6 +885,7 @@ def _chapters_from_toc_entries(
             continue
         seen.add(base_href)
         ruby_spans: List[dict] = []
+        headings: List[str] = []
 
         start_idx = spine_index.get(base_href)
         merged_items: List[object] = []
@@ -853,6 +913,15 @@ def _chapters_from_toc_entries(
             text, ruby_pairs, ruby_spans = _join_item_text_and_ruby(
                 merged_items, footnote_index=footnote_index
             )
+            heading_seen: set[str] = set()
+            for merged in merged_items:
+                merged_content = merged.get_content()
+                for heading in _extract_html_headings(merged_content):
+                    key = heading.casefold()
+                    if key in heading_seen:
+                        continue
+                    heading_seen.add(key)
+                    headings.append(heading)
             item_for_title = merged_items[0]
         else:
             item_for_title = None
@@ -870,6 +939,7 @@ def _chapters_from_toc_entries(
                 footnote_index=footnote_index,
                 source_href=_item_name(item_for_title),
             )
+            headings = _extract_html_headings(content)
             ruby_pairs = [
                 (span.get("base", ""), span.get("reading", ""))
                 for span in ruby_spans
@@ -887,6 +957,7 @@ def _chapters_from_toc_entries(
                 text=text,
                 ruby_pairs=ruby_pairs,
                 ruby_spans=ruby_spans,
+                headings=headings,
             )
         )
 

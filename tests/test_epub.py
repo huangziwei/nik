@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from ebooklib import epub
+import pytest
 
 from nik import epub as epub_util
 from nik.text import SECTION_BREAK
@@ -52,6 +53,33 @@ def test_extract_chapters_from_sample_epub(tmp_path: Path) -> None:
     chapters = epub_util.extract_chapters(book, prefer_toc=True)
     assert len(chapters) > 3
     assert not any(ch.title.endswith(".xhtml") for ch in chapters)
+    assert any("序章" in ch.headings for ch in chapters)
+
+
+def test_extract_html_headings_supports_heading_tags_and_class_markers() -> None:
+    html = """
+    <html>
+      <body>
+        <h2>Part I</h2>
+        <p><span class="subtitle">- Intro -</span></p>
+      </body>
+    </html>
+    """.encode("utf-8")
+    headings = epub_util._extract_html_headings(html)
+    assert "Part I" in headings
+    assert "- Intro -" in headings
+
+
+def test_extract_chapters_real_epub_keeps_heading_markers() -> None:
+    epub_path = Path("tests/data/バビロン１ ―女― (講談社タイガ).epub")
+    if not epub_path.exists():
+        pytest.skip(f"Missing test EPUB: {epub_path}")
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=True)
+    headings = [heading for chapter in chapters for heading in chapter.headings]
+    assert headings
+    assert any("Ⅰ" in heading or "Ⅱ" in heading for heading in headings)
+    assert any("女" in heading for heading in headings)
 
 
 def test_extract_ruby_pairs_and_strip_rt() -> None:

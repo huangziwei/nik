@@ -829,6 +829,7 @@ class ChapterInput:
     title: str
     text: str
     path: Optional[str] = None
+    headings: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1730,34 +1731,79 @@ def _is_standalone_paragraph_chunk(
     return prev_boundary and next_boundary
 
 
+def _normalize_heading_line_key(text: str) -> str:
+    normalized = (
+        str(text or "")
+        .replace("\u02bc", "'")
+        .replace("\u2018", "'")
+        .replace("\u2019", "'")
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
+        .replace("\u201e", '"')
+        .replace("\u201f", '"')
+        .replace("\u00ab", '"')
+        .replace("\u00bb", '"')
+    )
+    normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized.casefold()
+
+
+def _build_heading_line_keys(heading_lines: Optional[Sequence[str]]) -> set[str]:
+    keys: set[str] = set()
+    if not heading_lines:
+        return keys
+    for line in heading_lines:
+        key = _normalize_heading_line_key(str(line))
+        if key:
+            keys.add(key)
+    return keys
+
+
+def _normalize_heading_lines(values: object) -> List[str]:
+    if not isinstance(values, list):
+        return []
+    out: List[str] = []
+    seen: set[str] = set()
+    for value in values:
+        heading = str(value).strip()
+        if not heading:
+            continue
+        key = _normalize_heading_line_key(heading)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(heading)
+    return out
+
+
+def _is_explicit_heading_chunk(chunk: str, heading_line_keys: set[str]) -> bool:
+    if not heading_line_keys:
+        return False
+    lines = [line for line in chunk.splitlines() if line.strip()]
+    if not lines:
+        return False
+    for line in lines:
+        key = _normalize_heading_line_key(line)
+        if not key or key not in heading_line_keys:
+            return False
+    return True
+
+
 def compute_chunk_pause_multipliers(
-    text: str, spans: Sequence[Tuple[int, int]]
+    text: str,
+    spans: Sequence[Tuple[int, int]],
+    heading_lines: Optional[Sequence[str]] = None,
 ) -> List[int]:
     if not spans:
         return []
     multipliers = [1] * len(spans)
     chunk_texts = [text[int(start) : int(end)] for start, end in spans]
-    chunk_word_counts = [_heading_word_count(chunk) for chunk in chunk_texts]
-    standalone_paragraph = [
-        _is_standalone_paragraph_chunk(text, spans, idx)
-        for idx in range(len(spans))
+    heading_line_keys = _build_heading_line_keys(heading_lines)
+    heading_like = [
+        _is_explicit_heading_chunk(chunk, heading_line_keys)
+        for chunk in chunk_texts
     ]
-    heading_like = [False] * len(spans)
-    for idx, chunk in enumerate(chunk_texts):
-        if not standalone_paragraph[idx]:
-            continue
-        prev_words = chunk_word_counts[idx - 1] if idx > 0 else 0
-        next_words = chunk_word_counts[idx + 1] if idx + 1 < len(chunk_texts) else 0
-        heading_like[idx] = _looks_like_contextual_heading(
-            chunk, prev_words, next_words
-        )
-    for idx, is_heading in enumerate(heading_like):
-        if not is_heading:
-            continue
-        prev_chunk = chunk_texts[idx - 1] if idx > 0 else ""
-        next_chunk = chunk_texts[idx + 1] if idx + 1 < len(chunk_texts) else ""
-        if _looks_like_dialogue_bridge_chunk(chunk_texts[idx], prev_chunk, next_chunk):
-            heading_like[idx] = False
     first_body_idx = next(
         (idx for idx, is_heading in enumerate(heading_like) if not is_heading),
         len(heading_like),
@@ -5081,6 +5127,30 @@ def load_book_chapters(book_dir: Path) -> List[ChapterInput]:
     if not isinstance(entries, list) or not entries:
         raise ValueError("toc.json contains no chapters.")
 
+    headings_by_source_index: Dict[int, List[str]] = {}
+    headings_by_filename: Dict[str, List[str]] = {}
+    raw_toc_path = book_dir / "toc.json"
+    if raw_toc_path.exists():
+        raw_toc = json.loads(raw_toc_path.read_text(encoding="utf-8"))
+        raw_entries = raw_toc.get("chapters", [])
+        if isinstance(raw_entries, list):
+            for raw_entry in raw_entries:
+                if not isinstance(raw_entry, dict):
+                    continue
+                normalized_headings = _normalize_heading_lines(raw_entry.get("headings"))
+                if not normalized_headings:
+                    continue
+                try:
+                    source_index = int(raw_entry.get("index"))
+                except (TypeError, ValueError):
+                    source_index = -1
+                if source_index > 0 and source_index not in headings_by_source_index:
+                    headings_by_source_index[source_index] = normalized_headings
+                raw_rel = str(raw_entry.get("path") or "")
+                raw_name = Path(raw_rel).name
+                if raw_name and raw_name not in headings_by_filename:
+                    headings_by_filename[raw_name] = normalized_headings
+
     chapters: List[ChapterInput] = []
     for fallback_idx, entry in enumerate(entries, start=1):
         rel = entry.get("path")
@@ -5097,6 +5167,16 @@ def load_book_chapters(book_dir: Path) -> List[ChapterInput]:
         index = int(entry.get("index") or fallback_idx)
         title = str(entry.get("title") or f"Chapter {index}")
         chapter_id = chapter_id_from_path(index, title, rel)
+        heading_items = _normalize_heading_lines(entry.get("headings"))
+        if not heading_items:
+            try:
+                source_index = int(entry.get("source_index"))
+            except (TypeError, ValueError):
+                source_index = -1
+            if source_index > 0:
+                heading_items = headings_by_source_index.get(source_index, [])
+            if not heading_items:
+                heading_items = headings_by_filename.get(Path(rel).name, [])
 
         chapters.append(
             ChapterInput(
@@ -5105,6 +5185,7 @@ def load_book_chapters(book_dir: Path) -> List[ChapterInput]:
                 title=title,
                 text=_normalize_text(text),
                 path=rel,
+                headings=tuple(heading_items),
             )
         )
 
@@ -5805,10 +5886,15 @@ def _prepare_manifest(
                 raise ValueError("manifest.json missing chunks. Run with --rechunk.")
             chunk_spans = _coerce_span_pairs(ch_manifest.get("chunk_spans") or [])
             computed_pause = (
-                compute_chunk_pause_multipliers(chapter.text, chunk_spans)
+                compute_chunk_pause_multipliers(
+                    chapter.text,
+                    chunk_spans,
+                    heading_lines=chapter.headings,
+                )
                 if len(chunk_spans) == len(chunks)
                 else [1] * len(chunks)
             )
+            ch_manifest["headings"] = list(chapter.headings)
             legacy_pause = _legacy_pause_multipliers(
                 ch_manifest.get("chunk_section_breaks"),
                 len(chunks),
@@ -5834,7 +5920,11 @@ def _prepare_manifest(
     manifest_chapters: List[dict] = []
     for ch in chapters:
         spans = make_chunk_spans(ch.text, max_chars=max_chars, chunk_mode="japanese")
-        pause_multipliers = compute_chunk_pause_multipliers(ch.text, spans)
+        pause_multipliers = compute_chunk_pause_multipliers(
+            ch.text,
+            spans,
+            heading_lines=ch.headings,
+        )
         section_breaks = [
             idx for idx, chv in enumerate(ch.text) if chv == SECTION_BREAK
         ]
@@ -5865,6 +5955,7 @@ def _prepare_manifest(
                 "text_sha256": sha256_str(ch.text),
                 "chunks": chunks,
                 "chunk_spans": [[start, end] for start, end in spans],
+                "headings": list(ch.headings),
                 "chunk_section_breaks": chunk_section_breaks,
                 "pause_multipliers": pause_multipliers,
                 "durations_ms": [None] * len(chunks),
@@ -6614,8 +6705,13 @@ def synthesize_chunk(
             clean_path = (out_dir.parent / rel_path).resolve()
             if clean_path.exists():
                 chapter_text = _normalize_text(read_clean_text(clean_path))
+                heading_lines = entry.get("headings")
+                if not isinstance(heading_lines, list):
+                    heading_lines = []
                 computed_pause = compute_chunk_pause_multipliers(
-                    chapter_text, span_pairs
+                    chapter_text,
+                    span_pairs,
+                    heading_lines=heading_lines,
                 )
     legacy_pause = _legacy_pause_multipliers(
         chunk_section_breaks,

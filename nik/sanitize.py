@@ -61,7 +61,6 @@ _ROMAN_NUMERAL_RE = re.compile(r"^[IVXLCDM]+$")
 _DIALOGUE_START_RE = re.compile(r"^[ \t\u3000]*[「『（(【［[｢“‘〈《]")
 _SMALL_CAPS_MIN_WORDS = 2
 _SMALL_CAPS_MAX_WORDS = 6
-_ALL_CAPS_HEADING_MAX_WORDS = 8
 _SMALL_CAPS_ACRONYMS = {
     "abc",
     "bbc",
@@ -458,12 +457,24 @@ def _normalize_all_caps_sentence_word(
     return lower
 
 
-def _should_titlecase_all_caps_line(
-    line: str, matches: List[re.Match]
-) -> bool:
-    if re.search(r"[.!?]", line):
-        return False
-    return len(matches) <= _ALL_CAPS_HEADING_MAX_WORDS
+def _normalize_heading_line_key(text: str) -> str:
+    collapsed = re.sub(r"\s+", " ", str(text or "").strip())
+    return collapsed.casefold()
+
+
+def _build_heading_line_keys(
+    chapter_title: str,
+    heading_lines: Optional[Iterable[str]],
+) -> set[str]:
+    _ = chapter_title
+    keys: set[str] = set()
+    if not heading_lines:
+        return keys
+    for line in heading_lines:
+        key = _normalize_heading_line_key(str(line))
+        if key:
+            keys.add(key)
+    return keys
 
 
 def _normalize_all_caps_title_line(
@@ -502,36 +513,47 @@ def _normalize_all_caps_sentence_line(
     return "".join(pieces)
 
 
-def _normalize_all_caps_line(line: str, case_map: Dict[str, str]) -> str:
+def _normalize_all_caps_line(
+    line: str, case_map: Dict[str, str], heading_line_keys: set[str]
+) -> str:
     if not _is_all_caps_block(line):
         return line
     matches = list(_WORD_RE.finditer(line))
     if not matches:
         return line
-    if _should_titlecase_all_caps_line(line, matches):
+    key = _normalize_heading_line_key(line)
+    if key and key in heading_line_keys:
         return _normalize_all_caps_title_line(line, matches, case_map)
     return _normalize_all_caps_sentence_line(line, matches, case_map)
 
 
 def normalize_all_caps(
-    text: str, extra_words: Optional[Iterable[str]] = None
+    text: str,
+    extra_words: Optional[Iterable[str]] = None,
+    chapter_title: str = "",
+    heading_lines: Optional[Iterable[str]] = None,
 ) -> str:
     if not text:
         return text
     case_map = _build_case_map(text, extra_words or [])
+    heading_line_keys = _build_heading_line_keys(chapter_title, heading_lines)
     blocks = re.split(r"\n\s*\n", text)
     normalized: List[str] = []
     for block in blocks:
         if "\n" in block:
             lines = block.split("\n")
             normalized_lines = [
-                _normalize_all_caps_line(line, case_map=case_map)
+                _normalize_all_caps_line(
+                    line, case_map=case_map, heading_line_keys=heading_line_keys
+                )
                 for line in lines
             ]
             normalized.append("\n".join(normalized_lines))
         else:
             normalized.append(
-                _normalize_all_caps_line(block, case_map=case_map)
+                _normalize_all_caps_line(
+                    block, case_map=case_map, heading_line_keys=heading_line_keys
+                )
             )
     return "\n\n".join(normalized)
 
@@ -550,6 +572,26 @@ def _case_context_words(metadata: dict, chapter_title: str) -> List[str]:
     if chapter_title:
         extra.append(chapter_title)
     return extra
+
+
+def _chapter_heading_lines(entry: dict, chapter_title: str) -> List[str]:
+    _ = chapter_title
+    items: List[str] = []
+    raw = entry.get("headings") if isinstance(entry, dict) else None
+    if isinstance(raw, list):
+        for value in raw:
+            heading = str(value).strip()
+            if heading:
+                items.append(heading)
+    out: List[str] = []
+    seen: set[str] = set()
+    for item in items:
+        key = _normalize_heading_line_key(item)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
 
 
 def _collapse_dialogue_continuation_breaks(text: str) -> str:
@@ -626,13 +668,20 @@ def _sanitize_text_for_ruby_tracking(
     cutoff_patterns: List[re.Pattern],
     remove_patterns: List[re.Pattern],
     case_words: Iterable[str],
+    chapter_title: str,
+    heading_lines: Optional[Iterable[str]],
 ) -> str:
     normalized = normalize_text(text)
     cutoff_text, _ = apply_section_cutoff(normalized, cutoff_patterns)
     cleaned, _ = apply_remove_patterns(cutoff_text, remove_patterns)
     cleaned = normalize_text(cleaned)
     cleaned = normalize_small_caps(cleaned, extra_words=case_words)
-    cleaned = normalize_all_caps(cleaned, extra_words=case_words)
+    cleaned = normalize_all_caps(
+        cleaned,
+        extra_words=case_words,
+        chapter_title=chapter_title,
+        heading_lines=heading_lines,
+    )
     return cleaned
 
 
@@ -756,6 +805,8 @@ def _collect_clean_ruby_spans_from_raw(
     cutoff_patterns: List[re.Pattern],
     remove_patterns: List[re.Pattern],
     case_words: Iterable[str],
+    chapter_title: str,
+    heading_lines: Optional[Iterable[str]],
 ) -> Optional[List[dict]]:
     if not raw_spans:
         return []
@@ -777,10 +828,20 @@ def _collect_clean_ruby_spans_from_raw(
     ruby_marked = _inject_ruby_markers(raw_text_original, tracked, use_reading=True)
 
     base_cleaned_marked = _sanitize_text_for_ruby_tracking(
-        base_marked, cutoff_patterns, remove_patterns, case_words
+        base_marked,
+        cutoff_patterns,
+        remove_patterns,
+        case_words,
+        chapter_title,
+        heading_lines,
     )
     ruby_cleaned_marked = _sanitize_text_for_ruby_tracking(
-        ruby_marked, cutoff_patterns, remove_patterns, case_words
+        ruby_marked,
+        cutoff_patterns,
+        remove_patterns,
+        case_words,
+        chapter_title,
+        heading_lines,
     )
     plain_base, base_ranges = _extract_ruby_marker_ranges(base_cleaned_marked)
     plain_ruby, ruby_ranges = _extract_ruby_marker_ranges(ruby_cleaned_marked)
@@ -1088,8 +1149,14 @@ def sanitize_book(
         cleaned, stats = apply_remove_patterns(cutoff_text, remove_patterns)
         cleaned = normalize_text(cleaned)
         case_words = _case_context_words(metadata, title)
+        heading_lines = _chapter_heading_lines(entry, title)
         cleaned = normalize_small_caps(cleaned, extra_words=case_words)
-        cleaned = normalize_all_caps(cleaned, extra_words=case_words)
+        cleaned = normalize_all_caps(
+            cleaned,
+            extra_words=case_words,
+            chapter_title=title,
+            heading_lines=heading_lines,
+        )
 
         ruby_entry_to_hash = None
         if ruby_chapters:
@@ -1109,6 +1176,8 @@ def sanitize_book(
                         cutoff_patterns=cutoff_patterns,
                         remove_patterns=remove_patterns,
                         case_words=case_words,
+                        chapter_title=title,
+                        heading_lines=heading_lines,
                     )
                     if clean_spans is None:
                         ruby_text = tts_util.apply_ruby_spans(
@@ -1126,7 +1195,10 @@ def sanitize_book(
                             ruby_cleaned, extra_words=case_words
                         )
                         ruby_cleaned = normalize_all_caps(
-                            ruby_cleaned, extra_words=case_words
+                            ruby_cleaned,
+                            extra_words=case_words,
+                            chapter_title=title,
+                            heading_lines=heading_lines,
                         )
                         clean_spans = _diff_ruby_spans(cleaned, ruby_cleaned)
                     ruby_entry["clean_spans"] = clean_spans
@@ -1161,6 +1233,7 @@ def sanitize_book(
                 "title": title,
                 "path": clean_path.relative_to(book_dir).as_posix(),
                 "source_index": entry.get("index", None),
+                "headings": heading_lines,
                 "kind": "chapter",
             }
         )
@@ -1457,8 +1530,14 @@ def restore_chapter(
     cleaned = normalize_text(cleaned)
     metadata = toc.get("metadata", {}) if isinstance(toc, dict) else {}
     case_words = _case_context_words(metadata, raw_title)
+    heading_lines = _chapter_heading_lines(raw_entry, raw_title)
     cleaned = normalize_small_caps(cleaned, extra_words=case_words)
-    cleaned = normalize_all_caps(cleaned, extra_words=case_words)
+    cleaned = normalize_all_caps(
+        cleaned,
+        extra_words=case_words,
+        chapter_title=raw_title,
+        heading_lines=heading_lines,
+    )
 
     clean_dir = book_dir / "clean" / "chapters"
     clean_dir.mkdir(parents=True, exist_ok=True)
@@ -1485,6 +1564,7 @@ def restore_chapter(
         "title": raw_title or "Chapter",
         "path": clean_rel,
         "source_index": source_index,
+        "headings": heading_lines,
         "kind": "chapter",
     }
 

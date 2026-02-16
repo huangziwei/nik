@@ -40,6 +40,20 @@ def test_sanitize_book_creates_clean_chapters(tmp_path: Path) -> None:
     assert title_path.exists() is False
 
 
+def test_sanitize_book_preserves_epub_headings_in_clean_toc(tmp_path: Path) -> None:
+    book_dir = _write_book(tmp_path)
+    toc_path = book_dir / "toc.json"
+    toc = json.loads(toc_path.read_text(encoding="utf-8"))
+    toc["chapters"][0]["headings"] = ["CHAPTER FIRST", "SUBTITLE"]
+    toc_path.write_text(json.dumps(toc, ensure_ascii=False), encoding="utf-8")
+
+    sanitize_util.sanitize_book(book_dir=book_dir, overwrite=True)
+    clean_toc = json.loads((book_dir / "clean" / "toc.json").read_text(encoding="utf-8"))
+    headings = clean_toc["chapters"][0]["headings"]
+    assert "CHAPTER FIRST" in headings
+    assert "SUBTITLE" in headings
+
+
 def test_refresh_chunks_creates_manifest(tmp_path: Path) -> None:
     book_dir = _write_book(tmp_path)
     sanitize_util.sanitize_book(book_dir=book_dir, overwrite=True)
@@ -148,6 +162,49 @@ def test_normalize_text_does_not_promote_breaks_on_reclean() -> None:
     assert "ほうがいい。\n　方針さえ決まれば" in second
 
 
+def test_normalize_all_caps_only_titlecases_explicit_heading_lines() -> None:
+    text = "CHAPTER FIRST"
+    heading = sanitize_util.normalize_all_caps(
+        text,
+        chapter_title="",
+        heading_lines=["CHAPTER FIRST"],
+    )
+    no_heading = sanitize_util.normalize_all_caps(text, chapter_title="")
+    assert heading == "Chapter First"
+    assert no_heading == "Chapter first"
+
+
+def test_sanitize_book_uses_toc_heading_lines_for_all_caps_heading(tmp_path: Path) -> None:
+    book_dir = tmp_path / "book"
+    raw_dir = book_dir / "raw" / "chapters"
+    raw_dir.mkdir(parents=True)
+    raw_path = raw_dir / "0001-chapter.txt"
+    raw_path.write_text("CHAPTER FIRST\n\nTHE BODY LINE", encoding="utf-8")
+    toc = {
+        "created_unix": 0,
+        "source_epub": "book.epub",
+        "metadata": {"title": "Test Book"},
+        "chapters": [
+            {
+                "index": 1,
+                "title": "chapter-001.xhtml",
+                "headings": ["CHAPTER FIRST"],
+                "path": raw_path.relative_to(book_dir).as_posix(),
+            }
+        ],
+    }
+    (book_dir / "toc.json").write_text(
+        json.dumps(toc, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    sanitize_util.sanitize_book(book_dir=book_dir, overwrite=True)
+    cleaned = (
+        book_dir / "clean" / "chapters" / "0001-chapter.txt"
+    ).read_text(encoding="utf-8")
+    assert cleaned.startswith("Chapter First")
+
+
 def test_diff_ruby_spans_splits_kana_boundary() -> None:
     spans = sanitize_util._diff_ruby_spans("荘で監視", "そうでかんし")
     assert spans == [
@@ -197,6 +254,8 @@ def test_collect_clean_ruby_spans_from_raw_tracks_span_identity() -> None:
         cutoff_patterns=[],
         remove_patterns=[],
         case_words=set(),
+        chapter_title="",
+        heading_lines=[],
     )
 
     assert spans is not None

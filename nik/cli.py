@@ -357,6 +357,7 @@ def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
                 "title": title,
                 "href": chapter.href,
                 "source": chapter.source,
+                "headings": chapter.headings,
                 "path": out_path.relative_to(out_dir).as_posix(),
             }
         )

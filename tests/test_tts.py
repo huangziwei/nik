@@ -201,11 +201,24 @@ def test_compute_chunk_pause_multipliers_detects_title_and_section_breaks() -> N
     spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
     chunks = [text[start:end] for start, end in spans]
     assert chunks == ["序章", "本文一。", "本文二。"]
-    multipliers = tts_util.compute_chunk_pause_multipliers(text, spans)
+    multipliers = tts_util.compute_chunk_pause_multipliers(
+        text,
+        spans,
+        heading_lines=["序章"],
+    )
     assert len(multipliers) == len(spans)
     assert multipliers[0] >= 5
     assert multipliers[1] >= 3
     assert multipliers[2] == 1
+
+
+def test_compute_chunk_pause_multipliers_does_not_infer_heading_without_epub_data() -> None:
+    text = "序章\n\n本文。"
+    spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["序章", "本文。"]
+    multipliers = tts_util.compute_chunk_pause_multipliers(text, spans)
+    assert multipliers == [1, 1]
 
 
 @pytest.mark.parametrize(
@@ -357,6 +370,65 @@ def test_chunk_book_writes_manifest(tmp_path: Path) -> None:
     manifest = tts_util.chunk_book(book_dir)
     assert manifest["chapters"]
     assert (book_dir / "tts" / "manifest.json").exists()
+
+
+def test_chunk_book_uses_explicit_epub_headings_for_pause_multipliers(
+    tmp_path: Path,
+) -> None:
+    book_dir = tmp_path / "book"
+    clean_dir = book_dir / "clean" / "chapters"
+    clean_dir.mkdir(parents=True)
+    chapter_path = clean_dir / "0001-chapter.txt"
+    chapter_path.write_text("序章\n\n本文一。", encoding="utf-8")
+
+    toc = {
+        "created_unix": 0,
+        "metadata": {"title": "Sample"},
+        "chapters": [
+            {
+                "index": 1,
+                "title": "chapter-001.xhtml",
+                "headings": ["序章"],
+                "path": chapter_path.relative_to(book_dir).as_posix(),
+            }
+        ],
+    }
+    toc_path = book_dir / "clean" / "toc.json"
+    toc_path.write_text(json.dumps(toc, ensure_ascii=False), encoding="utf-8")
+
+    manifest = tts_util.chunk_book(book_dir)
+    chapter = manifest["chapters"][0]
+    assert chapter.get("headings") == ["序章"]
+    assert chapter["pause_multipliers"][0] >= 5
+
+
+def test_chunk_book_does_not_infer_headings_without_epub_heading_metadata(
+    tmp_path: Path,
+) -> None:
+    book_dir = tmp_path / "book"
+    clean_dir = book_dir / "clean" / "chapters"
+    clean_dir.mkdir(parents=True)
+    chapter_path = clean_dir / "0001-chapter.txt"
+    chapter_path.write_text("序章\n\n本文一。", encoding="utf-8")
+
+    toc = {
+        "created_unix": 0,
+        "metadata": {"title": "Sample"},
+        "chapters": [
+            {
+                "index": 1,
+                "title": "chapter-001.xhtml",
+                "path": chapter_path.relative_to(book_dir).as_posix(),
+            }
+        ],
+    }
+    toc_path = book_dir / "clean" / "toc.json"
+    toc_path.write_text(json.dumps(toc, ensure_ascii=False), encoding="utf-8")
+
+    manifest = tts_util.chunk_book(book_dir)
+    chapter = manifest["chapters"][0]
+    assert chapter.get("headings") == []
+    assert chapter["pause_multipliers"][0] == 1
 
 
 def test_prepare_manifest_applies_chapter_boundary_pause_multiplier(
