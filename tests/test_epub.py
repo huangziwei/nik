@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from ebooklib import epub
-import pytest
 
 from nik import epub as epub_util
 from nik.text import SECTION_BREAK
@@ -46,6 +45,55 @@ def _write_sample_epub(epub_path: Path) -> None:
     epub.write_epub(str(epub_path), book)
 
 
+def _write_structural_heading_epub(epub_path: Path) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("structural-heading-book")
+    book.set_title("Structural Heading Sample")
+    book.set_language("ja")
+
+    style = epub.EpubItem(
+        uid="style",
+        file_name="style.css",
+        media_type="text/css",
+        content=(
+            ".book-title { font-weight: bold; }\n"
+            ".class_s2 { text-align: left; }\n"
+            ".class_s4xe2 { font-weight: bold; }\n"
+        ).encode("utf-8"),
+    )
+    book.add_item(style)
+
+    chapters = []
+    for idx, number in enumerate(("１", "２", "３", "４"), start=1):
+        chapter = epub.EpubHtml(
+            title=f"Chapter {idx}",
+            file_name=f"structural-{idx}.xhtml",
+            lang="ja",
+        )
+        chapter.add_item(style)
+        chapter.content = f"""
+        <html>
+          <body>
+            <div class="book-title">
+              <div class="h-indent-4em">
+                <p class="calibre"><span class="gfont2">　一章　つれ込んだら無くなった</span></p>
+              </div>
+            </div>
+            <p class="class_s2"><span class="class_s4xe2">{number}</span></p>
+            <p class="class_s2">本文{idx}です。</p>
+          </body>
+        </html>
+        """
+        book.add_item(chapter)
+        chapters.append(chapter)
+
+    book.toc = tuple(chapters)
+    book.spine = ["nav", *chapters]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
 def test_extract_chapters_from_sample_epub(tmp_path: Path) -> None:
     epub_path = tmp_path / "sample.epub"
     _write_sample_epub(epub_path)
@@ -70,16 +118,18 @@ def test_extract_html_headings_supports_heading_tags_and_class_markers() -> None
     assert "- Intro -" in headings
 
 
-def test_extract_chapters_real_epub_keeps_heading_markers() -> None:
-    epub_path = Path("tests/data/バビロン１ ―女― (講談社タイガ).epub")
-    if not epub_path.exists():
-        pytest.skip(f"Missing test EPUB: {epub_path}")
+def test_extract_chapters_detects_structural_numeric_heading_classes(
+    tmp_path: Path,
+) -> None:
+    epub_path = tmp_path / "structural-heading.epub"
+    _write_structural_heading_epub(epub_path)
     book = epub_util.read_epub(epub_path)
     chapters = epub_util.extract_chapters(book, prefer_toc=True)
     headings = [heading for chapter in chapters for heading in chapter.headings]
     assert headings
-    assert any("Ⅰ" in heading or "Ⅱ" in heading for heading in headings)
-    assert any("女" in heading for heading in headings)
+    assert any("つれ込んだら無くなった" in heading for heading in headings)
+    assert any(heading == "１" for heading in headings)
+    assert any(heading == "４" for heading in headings)
 
 
 def test_extract_ruby_pairs_and_strip_rt() -> None:

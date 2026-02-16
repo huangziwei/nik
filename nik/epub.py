@@ -8,7 +8,7 @@ from typing import Iterable, List, Optional
 from urllib.parse import unquote
 
 from bs4 import BeautifulSoup
-from ebooklib import ITEM_DOCUMENT, ITEM_IMAGE, epub
+from ebooklib import ITEM_DOCUMENT, ITEM_IMAGE, ITEM_STYLE, epub
 
 from .text import SECTION_BREAK, normalize_section_breaks
 
@@ -706,8 +706,16 @@ def _title_from_text(text: str, max_len: int = _TITLE_MAX_LEN) -> str:
     return ""
 
 
-def _extract_heading_title(html: bytes | str) -> str:
-    headings = _extract_html_headings(html)
+def _extract_heading_title(
+    html: bytes | str,
+    heading_class_markers: Optional[set[str]] = None,
+    heading_id_markers: Optional[set[str]] = None,
+) -> str:
+    headings = _extract_html_headings(
+        html,
+        heading_class_markers=heading_class_markers,
+        heading_id_markers=heading_id_markers,
+    )
     if headings:
         return headings[0]
 
@@ -730,18 +738,168 @@ _HEADING_CLASS_HINTS = (
     "heading",
     "midashi",
 )
+_SHORT_HEADING_LABEL_RE = re.compile(
+    r"^(?:"
+    r"第?[0-9０-９一二三四五六七八九十百千〇零]+(?:[章話部節巻回篇編])?"
+    r"|[0-9０-９一二三四五六七八九十百千〇零]+(?:[.)．、])?"
+    r"|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+(?:[.)．、])?"
+    r"|[IVXLCDM]+(?:[.)．、])?"
+    r")$"
+)
+_CSS_SELECTOR_RULE_RE = re.compile(r"([^{}]+)\{")
+_CSS_CLASS_OR_ID_RE = re.compile(r"([.#])([A-Za-z_][A-Za-z0-9_-]*)")
+_BLOCK_TEXT_TAGS = {
+    "p",
+    "div",
+    "section",
+    "article",
+    "li",
+    "dt",
+    "dd",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "td",
+    "th",
+    "caption",
+}
+_INLINE_TEXT_TAGS = {"span", "a", "em", "strong", "b", "i", "u", "small", "sup", "sub"}
 
 
-def _looks_like_heading_marker(value: str) -> bool:
+def _looks_like_heading_marker(
+    value: str, explicit_markers: Optional[set[str]] = None
+) -> bool:
     cleaned = str(value or "").strip().lower()
     if not cleaned:
         return False
+    if explicit_markers and cleaned in explicit_markers:
+        return True
     if any(token in cleaned for token in _HEADING_CLASS_HINTS):
         return True
     return bool(re.search(r"(^|[-_])(ttl|hd)([-_0-9]|$)", cleaned))
 
 
-def _extract_html_headings(html: bytes | str) -> List[str]:
+def _normalize_heading_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _normalized_node_text(node: object) -> str:
+    text = getattr(node, "get_text", lambda *_args, **_kwargs: "")(
+        separator=" ", strip=True
+    )
+    return _normalize_heading_text(text)
+
+
+def _looks_like_short_structural_heading(value: str) -> bool:
+    cleaned = _normalize_heading_text(value)
+    if not cleaned or len(cleaned) > 40:
+        return False
+    compact = re.sub(r"[\s\u3000]+", "", cleaned)
+    if len(compact) > 20:
+        return False
+    return bool(_SHORT_HEADING_LABEL_RE.fullmatch(compact))
+
+
+def _is_standalone_heading_node(node: object, text: str) -> bool:
+    name = str(getattr(node, "name", "") or "").lower()
+    if name in _BLOCK_TEXT_TAGS:
+        return True
+    if name not in _INLINE_TEXT_TAGS:
+        return False
+    parent = getattr(node, "parent", None)
+    if not parent:
+        return False
+    parent_name = str(getattr(parent, "name", "") or "").lower()
+    if parent_name not in _BLOCK_TEXT_TAGS:
+        return False
+    return _normalized_node_text(parent) == text
+
+
+def _decode_css_text(data: bytes) -> str:
+    for encoding in ("utf-8-sig", "utf-16", "cp932"):
+        try:
+            return data.decode(encoding)
+        except Exception:
+            continue
+    return data.decode("utf-8", errors="ignore")
+
+
+def _collect_css_heading_markers(book: epub.EpubBook) -> tuple[set[str], set[str]]:
+    class_markers: set[str] = set()
+    id_markers: set[str] = set()
+    for item in book.get_items():
+        name = _item_name(item).lower()
+        if item.get_type() != ITEM_STYLE and not name.endswith(".css"):
+            continue
+        content = item.get_content()
+        if not content:
+            continue
+        css_text = _decode_css_text(content)
+        for selector in _CSS_SELECTOR_RULE_RE.findall(css_text):
+            for marker_type, marker_name in _CSS_CLASS_OR_ID_RE.findall(selector):
+                cleaned = marker_name.strip().lower()
+                if not _looks_like_heading_marker(cleaned):
+                    continue
+                if marker_type == ".":
+                    class_markers.add(cleaned)
+                else:
+                    id_markers.add(cleaned)
+    return class_markers, id_markers
+
+
+def _collect_structural_heading_classes(book: epub.EpubBook) -> set[str]:
+    class_totals: dict[str, int] = {}
+    class_heading_like: dict[str, int] = {}
+    for item in book.get_items_of_type(ITEM_DOCUMENT):
+        content = item.get_content()
+        if not content:
+            continue
+        soup = _parse_html_soup(content)
+        root = soup.body if soup.body else soup
+        for node in root.find_all(True):
+            classes = getattr(node, "get", lambda *_args, **_kwargs: [])("class", [])
+            if isinstance(classes, str):
+                classes = [classes]
+            cleaned_classes = [str(cls).strip().lower() for cls in classes if str(cls).strip()]
+            if not cleaned_classes:
+                continue
+            text = _normalized_node_text(node)
+            heading_like = (
+                _looks_like_short_structural_heading(text)
+                and _is_standalone_heading_node(node, text)
+            )
+            for cls in cleaned_classes:
+                class_totals[cls] = class_totals.get(cls, 0) + 1
+                if heading_like:
+                    class_heading_like[cls] = class_heading_like.get(cls, 0) + 1
+
+    inferred: set[str] = set()
+    for cls, total in class_totals.items():
+        hits = class_heading_like.get(cls, 0)
+        if hits < 4:
+            continue
+        if (hits / total) >= 0.8:
+            inferred.add(cls)
+    return inferred
+
+
+def _collect_book_heading_markers(book: epub.EpubBook) -> tuple[set[str], set[str]]:
+    class_markers, id_markers = _collect_css_heading_markers(book)
+    class_markers.update(_collect_structural_heading_classes(book))
+    return class_markers, id_markers
+
+
+def _extract_html_headings(
+    html: bytes | str,
+    heading_class_markers: Optional[set[str]] = None,
+    heading_id_markers: Optional[set[str]] = None,
+) -> List[str]:
+    class_markers = {marker.strip().lower() for marker in (heading_class_markers or set())}
+    id_markers = {marker.strip().lower() for marker in (heading_id_markers or set())}
+
     soup = _parse_html_soup(html)
     for tag in soup.find_all(["rt", "rp", "script", "style"]):
         tag.decompose()
@@ -750,10 +908,7 @@ def _extract_html_headings(html: bytes | str) -> List[str]:
     seen: set[str] = set()
 
     def add_node_text(node: object) -> None:
-        text = node.get_text(separator=" ", strip=True)
-        if not text:
-            return
-        cleaned = re.sub(r"\s+", " ", text).strip()
+        cleaned = _normalized_node_text(node)
         if not cleaned or len(cleaned) > 120:
             return
         key = cleaned.casefold()
@@ -773,9 +928,11 @@ def _extract_html_headings(html: bytes | str) -> List[str]:
         classes = getattr(node, "get", lambda *_args, **_kwargs: [])("class", [])
         if isinstance(classes, str):
             classes = [classes]
-        id_value = str(getattr(node, "get", lambda *_args, **_kwargs: "")("id", "") or "")
-        has_marker = any(_looks_like_heading_marker(cls) for cls in classes)
-        if not has_marker and not _looks_like_heading_marker(id_value):
+        id_value = str(
+            getattr(node, "get", lambda *_args, **_kwargs: "")("id", "") or ""
+        )
+        has_marker = any(_looks_like_heading_marker(cls, class_markers) for cls in classes)
+        if not has_marker and not _looks_like_heading_marker(id_value, id_markers):
             continue
         add_node_text(node)
     return out
@@ -806,6 +963,8 @@ def _chapters_from_entries(
     footnote_index: dict[str, set[str]] | None = None,
     title_overrides: Optional[dict[str, str]] = None,
     fallback_prefix: str = "Chapter",
+    heading_class_markers: Optional[set[str]] = None,
+    heading_id_markers: Optional[set[str]] = None,
 ) -> List[Chapter]:
     seen: set[str] = set()
     chapters: List[Chapter] = []
@@ -833,7 +992,11 @@ def _chapters_from_entries(
         ruby_pairs = [
             (span.get("base", ""), span.get("reading", "")) for span in ruby_spans
         ]
-        headings = _extract_html_headings(content)
+        headings = _extract_html_headings(
+            content,
+            heading_class_markers=heading_class_markers,
+            heading_id_markers=heading_id_markers,
+        )
 
         title = ""
         if title_overrides and base_href in title_overrides:
@@ -841,7 +1004,11 @@ def _chapters_from_entries(
         if not title:
             title = entry.title or _item_title(item) or ""
         if _looks_like_filename(title, base_href):
-            heading = _extract_heading_title(item.get_content())
+            heading = _extract_heading_title(
+                item.get_content(),
+                heading_class_markers=heading_class_markers,
+                heading_id_markers=heading_id_markers,
+            )
             if heading and not _looks_like_filename(heading, base_href):
                 title = heading
         if _looks_like_filename(title, base_href):
@@ -865,6 +1032,8 @@ def _chapters_from_toc_entries(
     book: epub.EpubBook,
     entries: Iterable[TocEntry],
     footnote_index: dict[str, set[str]] | None = None,
+    heading_class_markers: Optional[set[str]] = None,
+    heading_id_markers: Optional[set[str]] = None,
 ) -> List[Chapter]:
     spine_items = _build_spine_items(book)
     spine_index = {href: idx for idx, (href, _item) in enumerate(spine_items)}
@@ -916,7 +1085,11 @@ def _chapters_from_toc_entries(
             heading_seen: set[str] = set()
             for merged in merged_items:
                 merged_content = merged.get_content()
-                for heading in _extract_html_headings(merged_content):
+                for heading in _extract_html_headings(
+                    merged_content,
+                    heading_class_markers=heading_class_markers,
+                    heading_id_markers=heading_id_markers,
+                ):
                     key = heading.casefold()
                     if key in heading_seen:
                         continue
@@ -939,7 +1112,11 @@ def _chapters_from_toc_entries(
                 footnote_index=footnote_index,
                 source_href=_item_name(item_for_title),
             )
-            headings = _extract_html_headings(content)
+            headings = _extract_html_headings(
+                content,
+                heading_class_markers=heading_class_markers,
+                heading_id_markers=heading_id_markers,
+            )
             ruby_pairs = [
                 (span.get("base", ""), span.get("reading", ""))
                 for span in ruby_spans
@@ -966,20 +1143,35 @@ def _chapters_from_toc_entries(
 
 def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> List[Chapter]:
     footnote_index = _collect_footnote_index(book)
+    heading_class_markers, heading_id_markers = _collect_book_heading_markers(book)
     entries = build_toc_entries(book) if prefer_toc else []
     chapters = (
-        _chapters_from_toc_entries(book, entries, footnote_index)
+        _chapters_from_toc_entries(
+            book,
+            entries,
+            footnote_index,
+            heading_class_markers=heading_class_markers,
+            heading_id_markers=heading_id_markers,
+        )
         if entries
         else []
     )
     if entries and not chapters:
-        chapters = _chapters_from_entries(book, entries, footnote_index)
+        chapters = _chapters_from_entries(
+            book,
+            entries,
+            footnote_index,
+            heading_class_markers=heading_class_markers,
+            heading_id_markers=heading_id_markers,
+        )
     if chapters and prefer_toc:
         spine_chapters = _chapters_from_entries(
             book,
             build_spine_entries(book),
             footnote_index,
             title_overrides={normalize_href(e.href): e.title for e in entries if e.href},
+            heading_class_markers=heading_class_markers,
+            heading_id_markers=heading_id_markers,
         )
         if spine_chapters:
             toc_chars = sum(len(ch.text) for ch in chapters if ch.text)
@@ -990,6 +1182,10 @@ def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> List[Chapt
                     chapters = spine_chapters
     if not chapters:
         chapters = _chapters_from_entries(
-            book, build_spine_entries(book), footnote_index
+            book,
+            build_spine_entries(book),
+            footnote_index,
+            heading_class_markers=heading_class_markers,
+            heading_id_markers=heading_id_markers,
         )
     return chapters
