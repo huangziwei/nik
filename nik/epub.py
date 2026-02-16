@@ -696,6 +696,14 @@ def slugify(text: str) -> str:
 _TITLE_MAX_LEN = 40
 _TITLE_ONLY_CHAPTER_MAX_LEN = 80
 _TITLE_ONLY_MERGE_MIN_NEXT_TEXT_LEN = 400
+_NON_CONTENT_TOC_TITLES = {
+    "表紙",
+    "目次",
+    "contents",
+    "toc",
+    "奥付",
+}
+_NON_CONTENT_TOC_TITLES_CASEFOLD = {value.casefold() for value in _NON_CONTENT_TOC_TITLES}
 
 
 def _title_from_text(text: str, max_len: int = _TITLE_MAX_LEN) -> str:
@@ -1128,6 +1136,13 @@ def _looks_like_filename(title: str, href: str) -> bool:
     return False
 
 
+def _is_non_content_toc_title(title: str) -> bool:
+    cleaned = _normalize_heading_text(title).casefold()
+    if not cleaned:
+        return True
+    return cleaned in _NON_CONTENT_TOC_TITLES_CASEFOLD
+
+
 def _chapter_nonempty_lines(text: str) -> List[str]:
     return [line.strip() for line in text.splitlines() if line.strip()]
 
@@ -1175,6 +1190,37 @@ def _should_merge_title_only_chapter_with_next(
     return True
 
 
+def _shift_ruby_spans(ruby_spans: List[dict], offset: int) -> List[dict]:
+    if offset <= 0:
+        return [dict(span) for span in ruby_spans]
+    shifted: List[dict] = []
+    for span in ruby_spans:
+        out = dict(span)
+        try:
+            start = int(out.get("start"))
+            end = int(out.get("end"))
+        except (TypeError, ValueError):
+            shifted.append(out)
+            continue
+        out["start"] = start + offset
+        out["end"] = end + offset
+        shifted.append(out)
+    return shifted
+
+
+def _prepend_title_to_text_and_ruby_spans(
+    title: str, text: str, ruby_spans: List[dict]
+) -> tuple[str, List[dict]]:
+    cleaned_title = _normalize_heading_text(title)
+    if not cleaned_title:
+        return text, [dict(span) for span in ruby_spans]
+    first_line = _chapter_first_nonempty_line(text)
+    if _normalize_heading_text(first_line) == cleaned_title:
+        return text, [dict(span) for span in ruby_spans]
+    prefix = f"{cleaned_title}\n\n"
+    return prefix + text, _shift_ruby_spans(ruby_spans, len(prefix))
+
+
 def _merge_title_only_chapter_with_next(chapter: Chapter, next_chapter: Chapter) -> Chapter:
     chapter_headings = list(chapter.headings)
     chapter_heading_categories = dict(chapter.heading_categories)
@@ -1192,13 +1238,18 @@ def _merge_title_only_chapter_with_next(chapter: Chapter, next_chapter: Chapter)
         next_chapter.headings,
         next_chapter.heading_categories,
     )
+    merged_text, merged_ruby_spans = _prepend_title_to_text_and_ruby_spans(
+        chapter.title,
+        next_chapter.text,
+        next_chapter.ruby_spans,
+    )
     return Chapter(
         title=chapter.title,
         href=next_chapter.href,
         source=next_chapter.source,
-        text=next_chapter.text,
+        text=merged_text,
         ruby_pairs=next_chapter.ruby_pairs,
-        ruby_spans=next_chapter.ruby_spans,
+        ruby_spans=merged_ruby_spans,
         headings=merged_headings,
         heading_categories=merged_categories,
     )
@@ -1220,6 +1271,71 @@ def _merge_title_only_chapters(chapters: List[Chapter]) -> List[Chapter]:
     return merged
 
 
+def _build_spine_title_overrides_from_toc(
+    book: epub.EpubBook,
+    entries: Iterable[TocEntry],
+    footnote_index: dict[str, set[str]] | None = None,
+) -> tuple[dict[str, str], set[str]]:
+    overrides: dict[str, str] = {}
+    for entry in entries:
+        href = normalize_href(entry.href)
+        if not href:
+            continue
+        title = str(entry.title or "").strip()
+        if not title:
+            continue
+        overrides[href] = title
+    if not overrides:
+        return overrides, set()
+
+    spine_items = _build_spine_items(book)
+    if not spine_items:
+        return overrides, set()
+    spine_index = {href: idx for idx, (href, _item) in enumerate(spine_items)}
+    toc_hrefs = set(overrides.keys())
+    inherited_hrefs: set[str] = set()
+    text_cache: dict[str, str] = {}
+
+    def item_text(href: str, item: object) -> str:
+        if href in text_cache:
+            return text_cache[href]
+        text = html_to_text(
+            item.get_content(),
+            footnote_index=footnote_index,
+            source_href=_item_name(item),
+        )
+        text_cache[href] = text
+        return text
+
+    for href, title in list(overrides.items()):
+        if _looks_like_filename(title, href):
+            continue
+        if _is_non_content_toc_title(title):
+            continue
+        idx = spine_index.get(href)
+        if idx is None:
+            continue
+        current_href, current_item = spine_items[idx]
+        if item_text(current_href, current_item):
+            continue
+        for next_idx in range(idx + 1, len(spine_items)):
+            next_href, next_item = spine_items[next_idx]
+            if not item_text(next_href, next_item):
+                continue
+            if next_href in toc_hrefs:
+                next_toc_title = str(overrides.get(next_href, "")).strip()
+                if next_toc_title and not _looks_like_filename(next_toc_title, next_href):
+                    break
+            next_override = str(overrides.get(next_href, "")).strip()
+            if next_override and not _looks_like_filename(next_override, next_href):
+                break
+            overrides[next_href] = title
+            inherited_hrefs.add(next_href)
+            break
+
+    return overrides, inherited_hrefs
+
+
 def _chapters_from_entries(
     book: epub.EpubBook,
     entries: Iterable[TocEntry],
@@ -1228,6 +1344,7 @@ def _chapters_from_entries(
     fallback_prefix: str = "Chapter",
     heading_class_markers: Optional[set[str]] = None,
     heading_id_markers: Optional[set[str]] = None,
+    prepend_title_hrefs: Optional[set[str]] = None,
 ) -> List[Chapter]:
     seen: set[str] = set()
     chapters: List[Chapter] = []
@@ -1280,6 +1397,15 @@ def _chapters_from_entries(
                 title = text_title
         if _looks_like_filename(title, base_href):
             title = f"{fallback_prefix} {idx}"
+        if prepend_title_hrefs and base_href in prepend_title_hrefs:
+            text, ruby_spans = _prepend_title_to_text_and_ruby_spans(
+                title,
+                text,
+                ruby_spans,
+            )
+            ruby_pairs = [
+                (span.get("base", ""), span.get("reading", "")) for span in ruby_spans
+            ]
         resolved_heading_categories = _heading_categories_for_values(
             headings, heading_categories
         )
@@ -1445,6 +1571,16 @@ def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> List[Chapt
     footnote_index = _collect_footnote_index(book)
     heading_class_markers, heading_id_markers = _collect_book_heading_markers(book)
     entries = build_toc_entries(book) if prefer_toc else []
+    spine_title_overrides: dict[str, str] = {}
+    spine_prepend_title_hrefs: set[str] = set()
+    if entries and prefer_toc:
+        spine_title_overrides, spine_prepend_title_hrefs = (
+            _build_spine_title_overrides_from_toc(
+                book,
+                entries,
+                footnote_index=footnote_index,
+            )
+        )
     chapters = (
         _chapters_from_toc_entries(
             book,
@@ -1469,9 +1605,10 @@ def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> List[Chapt
             book,
             build_spine_entries(book),
             footnote_index,
-            title_overrides={normalize_href(e.href): e.title for e in entries if e.href},
+            title_overrides=spine_title_overrides,
             heading_class_markers=heading_class_markers,
             heading_id_markers=heading_id_markers,
+            prepend_title_hrefs=spine_prepend_title_hrefs,
         )
         if spine_chapters:
             toc_chars = sum(len(ch.text) for ch in chapters if ch.text)
@@ -1485,7 +1622,9 @@ def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> List[Chapt
             book,
             build_spine_entries(book),
             footnote_index,
+            title_overrides=spine_title_overrides if spine_title_overrides else None,
             heading_class_markers=heading_class_markers,
             heading_id_markers=heading_id_markers,
+            prepend_title_hrefs=spine_prepend_title_hrefs or None,
         )
     return chapters

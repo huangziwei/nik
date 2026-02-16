@@ -153,6 +153,38 @@ def _write_split_title_page_epub(
     epub.write_epub(str(epub_path), book)
 
 
+def _write_toc_title_page_then_body_epub(epub_path: Path, toc_title: str) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("toc-title-then-body-book")
+    book.set_title("TOC Title Then Body")
+    book.set_language("ja")
+
+    title_page = epub.EpubHtml(
+        title=toc_title,
+        file_name="title-page.xhtml",
+        lang="ja",
+    )
+    title_page.content = "<html><body><img src='missing.jpg' alt=''/></body></html>"
+
+    body_page = epub.EpubHtml(
+        title="body.xhtml",
+        file_name="body.xhtml",
+        lang="ja",
+    )
+    body_lines = ["１", "本文です。"]
+    body_lines.extend("本文です。" for _ in range(80))
+    body_html = "".join(f"<p>{line}</p>" for line in body_lines)
+    body_page.content = f"<html><body>{body_html}</body></html>"
+
+    book.add_item(title_page)
+    book.add_item(body_page)
+    book.toc = (title_page,)
+    book.spine = ["nav", title_page, body_page]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
 def test_extract_chapters_from_sample_epub(tmp_path: Path) -> None:
     epub_path = tmp_path / "sample.epub"
     _write_sample_epub(epub_path)
@@ -217,7 +249,7 @@ def test_extract_chapters_merges_title_only_page_into_following_body(tmp_path: P
     chapters = epub_util.extract_chapters(book, prefer_toc=False)
     assert len(chapters) == 1
     assert chapters[0].title == "森の奥"
-    assert chapters[0].text.startswith("「おじさん、ちょっとおじさん」")
+    assert chapters[0].text.startswith("森の奥\n\n「おじさん、ちょっとおじさん」")
     assert "本文です。" in chapters[0].text
 
 
@@ -231,6 +263,26 @@ def test_extract_chapters_keeps_title_only_page_when_next_starts_with_structural
     assert len(chapters) == 2
     assert chapters[0].title == "森の奥"
     assert chapters[1].title == "１"
+
+
+def test_extract_chapters_inherits_toc_title_from_empty_title_page(tmp_path: Path) -> None:
+    epub_path = tmp_path / "toc-title-then-body.epub"
+    _write_toc_title_page_then_body_epub(epub_path, toc_title="第一章 さくら荘へようこそ")
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=True)
+    assert len(chapters) == 1
+    assert chapters[0].title == "第一章 さくら荘へようこそ"
+    assert chapters[0].text.startswith("第一章 さくら荘へようこそ\n\n１")
+
+
+def test_extract_chapters_does_not_inherit_non_content_toc_title(tmp_path: Path) -> None:
+    epub_path = tmp_path / "toc-non-content-then-body.epub"
+    _write_toc_title_page_then_body_epub(epub_path, toc_title="目次")
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=True)
+    assert len(chapters) == 1
+    assert chapters[0].title == "１"
+    assert chapters[0].text.startswith("１")
 
 
 def test_extract_ruby_pairs_and_strip_rt() -> None:
