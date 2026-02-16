@@ -126,10 +126,16 @@ def test_extract_chapters_detects_structural_numeric_heading_classes(
     book = epub_util.read_epub(epub_path)
     chapters = epub_util.extract_chapters(book, prefer_toc=True)
     headings = [heading for chapter in chapters for heading in chapter.headings]
+    heading_categories = {}
+    for chapter in chapters:
+        heading_categories.update(chapter.heading_categories)
     assert headings
     assert any("つれ込んだら無くなった" in heading for heading in headings)
     assert any(heading == "１" for heading in headings)
     assert any(heading == "４" for heading in headings)
+    assert heading_categories.get("１") == "section"
+    assert heading_categories.get("４") == "section"
+    assert any(category == "title" for category in heading_categories.values())
 
 
 def test_extract_ruby_pairs_and_strip_rt() -> None:

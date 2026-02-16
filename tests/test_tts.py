@@ -196,7 +196,7 @@ def test_ellipsis_only_run_length_ignores_quotes_and_separator() -> None:
     assert tts_util._ellipsis_only_run_length("……三ケ月前") == 0
 
 
-def test_compute_chunk_pause_multipliers_detects_title_and_section_breaks() -> None:
+def test_compute_chunk_pause_multipliers_uses_section_pause_for_explicit_headings() -> None:
     text = f"序章\n\n本文一。\n\n{SECTION_BREAK}\n\n本文二。"
     spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
     chunks = [text[start:end] for start, end in spans]
@@ -207,9 +207,40 @@ def test_compute_chunk_pause_multipliers_detects_title_and_section_breaks() -> N
         heading_lines=["序章"],
     )
     assert len(multipliers) == len(spans)
-    assert multipliers[0] >= 5
+    assert multipliers[0] == 3
     assert multipliers[1] >= 3
     assert multipliers[2] == 1
+
+
+def test_compute_chunk_pause_multipliers_keeps_same_category_pause_for_numbered_headings() -> None:
+    text = "Ⅰ．\n\n１\n\n本文。\n\n２\n\n続き。"
+    spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["Ⅰ．", "１", "本文。", "２", "続き。"]
+    multipliers = tts_util.compute_chunk_pause_multipliers(
+        text,
+        spans,
+        heading_lines=["Ⅰ．", "１", "２"],
+        heading_categories={"Ⅰ．": "section", "１": "section", "２": "section"},
+    )
+    assert multipliers[0] == 3
+    assert multipliers[1] == 3
+    assert multipliers[3] == 3
+
+
+def test_compute_chunk_pause_multipliers_uses_title_pause_for_title_category() -> None:
+    text = "序章\n\n本文一。"
+    spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["序章", "本文一。"]
+    multipliers = tts_util.compute_chunk_pause_multipliers(
+        text,
+        spans,
+        heading_lines=["序章"],
+        heading_categories={"序章": "title"},
+    )
+    assert multipliers[0] >= 5
+    assert multipliers[1] == 1
 
 
 def test_compute_chunk_pause_multipliers_does_not_infer_heading_without_epub_data() -> None:
@@ -389,6 +420,7 @@ def test_chunk_book_uses_explicit_epub_headings_for_pause_multipliers(
                 "index": 1,
                 "title": "chapter-001.xhtml",
                 "headings": ["序章"],
+                "heading_categories": {"序章": "section"},
                 "path": chapter_path.relative_to(book_dir).as_posix(),
             }
         ],
@@ -399,6 +431,41 @@ def test_chunk_book_uses_explicit_epub_headings_for_pause_multipliers(
     manifest = tts_util.chunk_book(book_dir)
     chapter = manifest["chapters"][0]
     assert chapter.get("headings") == ["序章"]
+    assert chapter.get("heading_categories") == {
+        tts_util._normalize_heading_line_key("序章"): "section"
+    }
+    assert chapter["pause_multipliers"][0] == 3
+
+
+def test_chunk_book_promotes_heading_matching_chapter_title_to_title_pause(
+    tmp_path: Path,
+) -> None:
+    book_dir = tmp_path / "book"
+    clean_dir = book_dir / "clean" / "chapters"
+    clean_dir.mkdir(parents=True)
+    chapter_path = clean_dir / "0001-chapter.txt"
+    chapter_path.write_text("序章\n\n本文一。", encoding="utf-8")
+
+    toc = {
+        "created_unix": 0,
+        "metadata": {"title": "Sample"},
+        "chapters": [
+            {
+                "index": 1,
+                "title": "序章",
+                "headings": ["序章"],
+                "path": chapter_path.relative_to(book_dir).as_posix(),
+            }
+        ],
+    }
+    toc_path = book_dir / "clean" / "toc.json"
+    toc_path.write_text(json.dumps(toc, ensure_ascii=False), encoding="utf-8")
+
+    manifest = tts_util.chunk_book(book_dir)
+    chapter = manifest["chapters"][0]
+    assert chapter.get("heading_categories") == {
+        tts_util._normalize_heading_line_key("序章"): "title"
+    }
     assert chapter["pause_multipliers"][0] >= 5
 
 

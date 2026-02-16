@@ -594,6 +594,25 @@ def _chapter_heading_lines(entry: dict, chapter_title: str) -> List[str]:
     return out
 
 
+def _chapter_heading_categories(entry: dict) -> Dict[str, str]:
+    raw = entry.get("heading_categories") if isinstance(entry, dict) else None
+    if not isinstance(raw, dict):
+        return {}
+    out: Dict[str, str] = {}
+    for raw_key, raw_value in raw.items():
+        key = _normalize_heading_line_key(str(raw_key))
+        if not key:
+            continue
+        category = str(raw_value or "").strip().lower()
+        if category != "title":
+            category = "section"
+        prev = out.get(key)
+        if prev == "title":
+            continue
+        out[key] = category
+    return out
+
+
 def _collapse_dialogue_continuation_breaks(text: str) -> str:
     if "\n\n" not in text:
         return text
@@ -1150,6 +1169,7 @@ def sanitize_book(
         cleaned = normalize_text(cleaned)
         case_words = _case_context_words(metadata, title)
         heading_lines = _chapter_heading_lines(entry, title)
+        heading_categories = _chapter_heading_categories(entry)
         cleaned = normalize_small_caps(cleaned, extra_words=case_words)
         cleaned = normalize_all_caps(
             cleaned,
@@ -1234,6 +1254,7 @@ def sanitize_book(
                 "path": clean_path.relative_to(book_dir).as_posix(),
                 "source_index": entry.get("index", None),
                 "headings": heading_lines,
+                "heading_categories": heading_categories,
                 "kind": "chapter",
             }
         )
@@ -1531,6 +1552,7 @@ def restore_chapter(
     metadata = toc.get("metadata", {}) if isinstance(toc, dict) else {}
     case_words = _case_context_words(metadata, raw_title)
     heading_lines = _chapter_heading_lines(raw_entry, raw_title)
+    heading_categories = _chapter_heading_categories(raw_entry)
     cleaned = normalize_small_caps(cleaned, extra_words=case_words)
     cleaned = normalize_all_caps(
         cleaned,
@@ -1565,6 +1587,7 @@ def restore_chapter(
         "path": clean_rel,
         "source_index": source_index,
         "headings": heading_lines,
+        "heading_categories": heading_categories,
         "kind": "chapter",
     }
 

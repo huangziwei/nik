@@ -17,7 +17,7 @@ import unicodedata
 import urllib.parse
 import urllib.request
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -101,6 +101,12 @@ _CHAPTER_BREAK_PAD_MULTIPLIER = 4
 _CHAPTER_PAD_MULT = _CHAPTER_BREAK_PAD_MULTIPLIER
 _SECTION_BREAK_PAUSE_MULTIPLIER = 1 + _SECTION_PAD_MULT
 _TITLE_BREAK_PAUSE_MULTIPLIER = 1 + _CHAPTER_PAD_MULT
+_HEADING_CATEGORY_SECTION = "section"
+_HEADING_CATEGORY_TITLE = "title"
+_HEADING_CATEGORY_TO_PAUSE_MULTIPLIER = {
+    _HEADING_CATEGORY_SECTION: _SECTION_BREAK_PAUSE_MULTIPLIER,
+    _HEADING_CATEGORY_TITLE: _TITLE_BREAK_PAUSE_MULTIPLIER,
+}
 _DEFAULT_OUTPUT_SAMPLE_RATE = 24000
 _ELLIPSIS_ONLY_RE = re.compile(r"[…⋯]+")
 _ELLIPSIS_PAUSE_BASE_MS = 380
@@ -830,6 +836,7 @@ class ChapterInput:
     text: str
     path: Optional[str] = None
     headings: Tuple[str, ...] = ()
+    heading_categories: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -1777,37 +1784,93 @@ def _normalize_heading_lines(values: object) -> List[str]:
     return out
 
 
-def _is_explicit_heading_chunk(chunk: str, heading_line_keys: set[str]) -> bool:
+def _normalize_heading_category(value: object) -> str:
+    cleaned = str(value or "").strip().lower()
+    if cleaned == _HEADING_CATEGORY_TITLE:
+        return _HEADING_CATEGORY_TITLE
+    return _HEADING_CATEGORY_SECTION
+
+
+def _normalize_heading_categories(values: object) -> Dict[str, str]:
+    if not isinstance(values, dict):
+        return {}
+    out: Dict[str, str] = {}
+    for raw_key, raw_value in values.items():
+        key = _normalize_heading_line_key(str(raw_key))
+        if not key:
+            continue
+        category = _normalize_heading_category(raw_value)
+        prev = out.get(key)
+        if prev == _HEADING_CATEGORY_TITLE:
+            continue
+        out[key] = category
+    return out
+
+
+def _with_chapter_title_heading_category(
+    chapter_title: str,
+    heading_lines: Sequence[str],
+    heading_categories: Dict[str, str],
+) -> Dict[str, str]:
+    title_key = _normalize_heading_line_key(chapter_title)
+    if not title_key:
+        return dict(heading_categories)
+    heading_keys = {_normalize_heading_line_key(line) for line in heading_lines}
+    if title_key not in heading_keys:
+        return dict(heading_categories)
+    out = dict(heading_categories)
+    out[title_key] = _HEADING_CATEGORY_TITLE
+    return out
+
+
+def _heading_pause_multiplier_from_category(category: object) -> int:
+    normalized = _normalize_heading_category(category)
+    return _HEADING_CATEGORY_TO_PAUSE_MULTIPLIER.get(
+        normalized, _SECTION_BREAK_PAUSE_MULTIPLIER
+    )
+
+
+def _explicit_heading_chunk_pause_multiplier(
+    chunk: str,
+    heading_line_keys: set[str],
+    heading_categories: Dict[str, str],
+) -> Optional[int]:
     if not heading_line_keys:
-        return False
+        return None
     lines = [line for line in chunk.splitlines() if line.strip()]
     if not lines:
-        return False
+        return None
+    pause = _SECTION_BREAK_PAUSE_MULTIPLIER
     for line in lines:
         key = _normalize_heading_line_key(line)
         if not key or key not in heading_line_keys:
-            return False
-    return True
+            return None
+        category = heading_categories.get(key, _HEADING_CATEGORY_SECTION)
+        pause = max(pause, _heading_pause_multiplier_from_category(category))
+    return pause
 
 
 def compute_chunk_pause_multipliers(
     text: str,
     spans: Sequence[Tuple[int, int]],
     heading_lines: Optional[Sequence[str]] = None,
+    heading_categories: Optional[Dict[str, str]] = None,
 ) -> List[int]:
     if not spans:
         return []
     multipliers = [1] * len(spans)
     chunk_texts = [text[int(start) : int(end)] for start, end in spans]
     heading_line_keys = _build_heading_line_keys(heading_lines)
-    heading_like = [
-        _is_explicit_heading_chunk(chunk, heading_line_keys)
+    heading_category_map = _normalize_heading_categories(heading_categories)
+    heading_pause_by_chunk: List[Optional[int]] = [
+        _explicit_heading_chunk_pause_multiplier(
+            chunk,
+            heading_line_keys,
+            heading_category_map,
+        )
         for chunk in chunk_texts
     ]
-    first_body_idx = next(
-        (idx for idx, is_heading in enumerate(heading_like) if not is_heading),
-        len(heading_like),
-    )
+    heading_like = [pause is not None for pause in heading_pause_by_chunk]
     for idx in range(len(spans) - 1):
         end = int(spans[idx][1])
         next_start = int(spans[idx + 1][0])
@@ -1823,8 +1886,10 @@ def compute_chunk_pause_multipliers(
                 pause = max(pause, _SECTION_BREAK_PAUSE_MULTIPLIER)
             if heading_like[idx] or heading_like[idx + 1]:
                 heading_pause = _SECTION_BREAK_PAUSE_MULTIPLIER
-                if heading_like[idx] and idx < first_body_idx:
-                    heading_pause = _TITLE_BREAK_PAUSE_MULTIPLIER
+                if heading_pause_by_chunk[idx] is not None:
+                    heading_pause = max(heading_pause, heading_pause_by_chunk[idx])
+                if heading_pause_by_chunk[idx + 1] is not None:
+                    heading_pause = max(heading_pause, heading_pause_by_chunk[idx + 1])
                 pause = max(pause, heading_pause)
         multipliers[idx] = pause
     return multipliers
@@ -5129,6 +5194,8 @@ def load_book_chapters(book_dir: Path) -> List[ChapterInput]:
 
     headings_by_source_index: Dict[int, List[str]] = {}
     headings_by_filename: Dict[str, List[str]] = {}
+    heading_categories_by_source_index: Dict[int, Dict[str, str]] = {}
+    heading_categories_by_filename: Dict[str, Dict[str, str]] = {}
     raw_toc_path = book_dir / "toc.json"
     if raw_toc_path.exists():
         raw_toc = json.loads(raw_toc_path.read_text(encoding="utf-8"))
@@ -5139,17 +5206,37 @@ def load_book_chapters(book_dir: Path) -> List[ChapterInput]:
                     continue
                 normalized_headings = _normalize_heading_lines(raw_entry.get("headings"))
                 if not normalized_headings:
-                    continue
+                    normalized_headings = []
+                normalized_categories = _normalize_heading_categories(
+                    raw_entry.get("heading_categories")
+                )
                 try:
                     source_index = int(raw_entry.get("index"))
                 except (TypeError, ValueError):
                     source_index = -1
-                if source_index > 0 and source_index not in headings_by_source_index:
-                    headings_by_source_index[source_index] = normalized_headings
+                if source_index > 0:
+                    if (
+                        normalized_headings
+                        and source_index not in headings_by_source_index
+                    ):
+                        headings_by_source_index[source_index] = normalized_headings
+                    if (
+                        normalized_categories
+                        and source_index not in heading_categories_by_source_index
+                    ):
+                        heading_categories_by_source_index[source_index] = (
+                            normalized_categories
+                        )
                 raw_rel = str(raw_entry.get("path") or "")
                 raw_name = Path(raw_rel).name
-                if raw_name and raw_name not in headings_by_filename:
-                    headings_by_filename[raw_name] = normalized_headings
+                if raw_name:
+                    if normalized_headings and raw_name not in headings_by_filename:
+                        headings_by_filename[raw_name] = normalized_headings
+                    if (
+                        normalized_categories
+                        and raw_name not in heading_categories_by_filename
+                    ):
+                        heading_categories_by_filename[raw_name] = normalized_categories
 
     chapters: List[ChapterInput] = []
     for fallback_idx, entry in enumerate(entries, start=1):
@@ -5168,15 +5255,30 @@ def load_book_chapters(book_dir: Path) -> List[ChapterInput]:
         title = str(entry.get("title") or f"Chapter {index}")
         chapter_id = chapter_id_from_path(index, title, rel)
         heading_items = _normalize_heading_lines(entry.get("headings"))
+        heading_category_map = _normalize_heading_categories(
+            entry.get("heading_categories")
+        )
+        try:
+            source_index = int(entry.get("source_index"))
+        except (TypeError, ValueError):
+            source_index = -1
+        if not heading_items and source_index > 0:
+            heading_items = headings_by_source_index.get(source_index, [])
         if not heading_items:
-            try:
-                source_index = int(entry.get("source_index"))
-            except (TypeError, ValueError):
-                source_index = -1
-            if source_index > 0:
-                heading_items = headings_by_source_index.get(source_index, [])
-            if not heading_items:
-                heading_items = headings_by_filename.get(Path(rel).name, [])
+            heading_items = headings_by_filename.get(Path(rel).name, [])
+        if not heading_category_map and source_index > 0:
+            heading_category_map = heading_categories_by_source_index.get(
+                source_index, {}
+            )
+        if not heading_category_map:
+            heading_category_map = heading_categories_by_filename.get(
+                Path(rel).name, {}
+            )
+        heading_category_map = _with_chapter_title_heading_category(
+            title,
+            heading_items,
+            heading_category_map,
+        )
 
         chapters.append(
             ChapterInput(
@@ -5186,6 +5288,7 @@ def load_book_chapters(book_dir: Path) -> List[ChapterInput]:
                 text=_normalize_text(text),
                 path=rel,
                 headings=tuple(heading_items),
+                heading_categories=dict(heading_category_map),
             )
         )
 
@@ -5890,11 +5993,13 @@ def _prepare_manifest(
                     chapter.text,
                     chunk_spans,
                     heading_lines=chapter.headings,
+                    heading_categories=chapter.heading_categories,
                 )
                 if len(chunk_spans) == len(chunks)
                 else [1] * len(chunks)
             )
             ch_manifest["headings"] = list(chapter.headings)
+            ch_manifest["heading_categories"] = dict(chapter.heading_categories)
             legacy_pause = _legacy_pause_multipliers(
                 ch_manifest.get("chunk_section_breaks"),
                 len(chunks),
@@ -5905,7 +6010,7 @@ def _prepare_manifest(
                 for idx in range(len(chunks))
             ]
             ch_manifest["pause_multipliers"] = _normalize_pause_multipliers(
-                ch_manifest.get("pause_multipliers"),
+                fallback_pause,
                 len(chunks),
                 fallback=fallback_pause,
             )
@@ -5924,6 +6029,7 @@ def _prepare_manifest(
             ch.text,
             spans,
             heading_lines=ch.headings,
+            heading_categories=ch.heading_categories,
         )
         section_breaks = [
             idx for idx, chv in enumerate(ch.text) if chv == SECTION_BREAK
@@ -5956,6 +6062,7 @@ def _prepare_manifest(
                 "chunks": chunks,
                 "chunk_spans": [[start, end] for start, end in spans],
                 "headings": list(ch.headings),
+                "heading_categories": dict(ch.heading_categories),
                 "chunk_section_breaks": chunk_section_breaks,
                 "pause_multipliers": pause_multipliers,
                 "durations_ms": [None] * len(chunks),
@@ -6708,10 +6815,14 @@ def synthesize_chunk(
                 heading_lines = entry.get("headings")
                 if not isinstance(heading_lines, list):
                     heading_lines = []
+                heading_categories = entry.get("heading_categories")
+                if not isinstance(heading_categories, dict):
+                    heading_categories = {}
                 computed_pause = compute_chunk_pause_multipliers(
                     chapter_text,
                     span_pairs,
                     heading_lines=heading_lines,
+                    heading_categories=heading_categories,
                 )
     legacy_pause = _legacy_pause_multipliers(
         chunk_section_breaks,
@@ -6722,7 +6833,7 @@ def synthesize_chunk(
         max(computed_pause[idx], legacy_pause[idx]) for idx in range(chunk_count)
     ]
     pause_multipliers = _normalize_pause_multipliers(
-        pause_multipliers,
+        fallback_pause,
         chunk_count,
         fallback=fallback_pause,
     )

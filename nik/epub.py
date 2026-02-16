@@ -28,6 +28,7 @@ class Chapter:
     ruby_pairs: List[tuple[str, str]] = field(default_factory=list)
     ruby_spans: List[dict] = field(default_factory=list)
     headings: List[str] = field(default_factory=list)
+    heading_categories: dict[str, str] = field(default_factory=dict)
 
 
 def read_epub(path: Path) -> epub.EpubBook:
@@ -767,6 +768,8 @@ _BLOCK_TEXT_TAGS = {
     "caption",
 }
 _INLINE_TEXT_TAGS = {"span", "a", "em", "strong", "b", "i", "u", "small", "sup", "sub"}
+_HEADING_CATEGORY_SECTION = "section"
+_HEADING_CATEGORY_TITLE = "title"
 
 
 def _looks_like_heading_marker(
@@ -784,6 +787,40 @@ def _looks_like_heading_marker(
 
 def _normalize_heading_text(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
+
+
+def _normalize_heading_key(value: str) -> str:
+    return _normalize_heading_text(value).casefold()
+
+
+def _heading_category_priority(value: str) -> int:
+    if value == _HEADING_CATEGORY_TITLE:
+        return 2
+    return 1
+
+
+def _merge_heading_category(current: str, candidate: str) -> str:
+    if _heading_category_priority(candidate) > _heading_category_priority(current):
+        return candidate
+    return current
+
+
+def _heading_category_from_marker_name(marker: str) -> str:
+    cleaned = str(marker or "").strip().lower()
+    if not cleaned:
+        return _HEADING_CATEGORY_SECTION
+    if "subtitle" in cleaned:
+        return _HEADING_CATEGORY_SECTION
+    if "title" in cleaned:
+        return _HEADING_CATEGORY_TITLE
+    return _HEADING_CATEGORY_SECTION
+
+
+def _heading_category_from_tag_name(tag: str) -> str:
+    cleaned = str(tag or "").strip().lower()
+    if cleaned == "h1":
+        return _HEADING_CATEGORY_TITLE
+    return _HEADING_CATEGORY_SECTION
 
 
 def _normalized_node_text(node: object) -> str:
@@ -892,11 +929,27 @@ def _collect_book_heading_markers(book: epub.EpubBook) -> tuple[set[str], set[st
     return class_markers, id_markers
 
 
-def _extract_html_headings(
+def _heading_categories_from_entries(
+    entries: List[tuple[str, str]],
+) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for text, category in entries:
+        key = _normalize_heading_key(text)
+        if not key:
+            continue
+        previous = out.get(key)
+        if previous is None:
+            out[key] = category
+            continue
+        out[key] = _merge_heading_category(previous, category)
+    return out
+
+
+def _extract_html_heading_entries(
     html: bytes | str,
     heading_class_markers: Optional[set[str]] = None,
     heading_id_markers: Optional[set[str]] = None,
-) -> List[str]:
+) -> List[tuple[str, str]]:
     class_markers = {marker.strip().lower() for marker in (heading_class_markers or set())}
     id_markers = {marker.strip().lower() for marker in (heading_id_markers or set())}
 
@@ -904,22 +957,28 @@ def _extract_html_headings(
     for tag in soup.find_all(["rt", "rp", "script", "style"]):
         tag.decompose()
     root = soup.body if soup.body else soup
-    out: List[str] = []
-    seen: set[str] = set()
+    out: List[tuple[str, str]] = []
+    seen: dict[str, int] = {}
 
-    def add_node_text(node: object) -> None:
+    def add_node_text(node: object, category: str) -> None:
         cleaned = _normalized_node_text(node)
         if not cleaned or len(cleaned) > 120:
             return
         key = cleaned.casefold()
-        if key in seen:
+        idx = seen.get(key)
+        if idx is not None:
+            prev_text, prev_category = out[idx]
+            merged = _merge_heading_category(prev_category, category)
+            if merged != prev_category:
+                out[idx] = (prev_text, merged)
             return
-        seen.add(key)
-        out.append(cleaned)
+        seen[key] = len(out)
+        out.append((cleaned, category))
 
     for tag in _HEADING_TAGS:
+        category = _heading_category_from_tag_name(tag)
         for node in root.find_all(tag):
-            add_node_text(node)
+            add_node_text(node, category)
 
     for node in root.find_all(True):
         name = str(getattr(node, "name", "") or "").lower()
@@ -931,10 +990,120 @@ def _extract_html_headings(
         id_value = str(
             getattr(node, "get", lambda *_args, **_kwargs: "")("id", "") or ""
         )
-        has_marker = any(_looks_like_heading_marker(cls, class_markers) for cls in classes)
-        if not has_marker and not _looks_like_heading_marker(id_value, id_markers):
+        marker_categories: List[str] = []
+        for cls in classes:
+            cls_text = str(cls or "").strip()
+            if not _looks_like_heading_marker(cls_text, class_markers):
+                continue
+            marker_categories.append(_heading_category_from_marker_name(cls_text))
+        if _looks_like_heading_marker(id_value, id_markers):
+            marker_categories.append(_heading_category_from_marker_name(id_value))
+        if not marker_categories:
             continue
-        add_node_text(node)
+        category = _HEADING_CATEGORY_SECTION
+        for marker_category in marker_categories:
+            category = _merge_heading_category(category, marker_category)
+        add_node_text(node, category)
+    return out
+
+
+def _extract_html_headings(
+    html: bytes | str,
+    heading_class_markers: Optional[set[str]] = None,
+    heading_id_markers: Optional[set[str]] = None,
+) -> List[str]:
+    return [
+        text
+        for text, _category in _extract_html_heading_entries(
+            html,
+            heading_class_markers=heading_class_markers,
+            heading_id_markers=heading_id_markers,
+        )
+    ]
+
+
+def _extract_html_heading_categories(
+    html: bytes | str,
+    heading_class_markers: Optional[set[str]] = None,
+    heading_id_markers: Optional[set[str]] = None,
+) -> dict[str, str]:
+    entries = _extract_html_heading_entries(
+        html,
+        heading_class_markers=heading_class_markers,
+        heading_id_markers=heading_id_markers,
+    )
+    return _heading_categories_from_entries(entries)
+
+
+def _extract_html_headings_and_categories(
+    html: bytes | str,
+    heading_class_markers: Optional[set[str]] = None,
+    heading_id_markers: Optional[set[str]] = None,
+) -> tuple[List[str], dict[str, str]]:
+    entries = _extract_html_heading_entries(
+        html,
+        heading_class_markers=heading_class_markers,
+        heading_id_markers=heading_id_markers,
+    )
+    headings = [text for text, _category in entries]
+    categories = _heading_categories_from_entries(entries)
+    return headings, categories
+
+
+def _merge_heading_categories(
+    base: dict[str, str], incoming: dict[str, str]
+) -> dict[str, str]:
+    merged = dict(base)
+    for key, category in incoming.items():
+        if key not in merged:
+            merged[key] = category
+            continue
+        merged[key] = _merge_heading_category(merged[key], category)
+    return merged
+
+
+def _merge_headings_with_categories(
+    headings: List[str],
+    categories: dict[str, str],
+    incoming_headings: List[str],
+    incoming_categories: dict[str, str],
+) -> tuple[List[str], dict[str, str]]:
+    seen = {_normalize_heading_key(value) for value in headings}
+    for heading in incoming_headings:
+        key = _normalize_heading_key(heading)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        headings.append(heading)
+    categories = _merge_heading_categories(categories, incoming_categories)
+    return headings, categories
+
+
+def _heading_categories_for_values(
+    headings: List[str], categories: dict[str, str]
+) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for heading in headings:
+        key = _normalize_heading_key(heading)
+        if not key:
+            continue
+        category = categories.get(key, _HEADING_CATEGORY_SECTION)
+        out[key] = category
+    return out
+
+
+def _apply_chapter_title_heading_category(
+    chapter_title: str,
+    headings: List[str],
+    categories: dict[str, str],
+) -> dict[str, str]:
+    title_key = _normalize_heading_key(chapter_title)
+    if not title_key:
+        return categories
+    if title_key not in {_normalize_heading_key(heading) for heading in headings}:
+        return categories
+    out = dict(categories)
+    out[title_key] = _HEADING_CATEGORY_TITLE
     return out
 
 
@@ -992,7 +1161,7 @@ def _chapters_from_entries(
         ruby_pairs = [
             (span.get("base", ""), span.get("reading", "")) for span in ruby_spans
         ]
-        headings = _extract_html_headings(
+        headings, heading_categories = _extract_html_headings_and_categories(
             content,
             heading_class_markers=heading_class_markers,
             heading_id_markers=heading_id_markers,
@@ -1013,6 +1182,14 @@ def _chapters_from_entries(
                 title = heading
         if _looks_like_filename(title, base_href):
             title = f"{fallback_prefix} {idx}"
+        resolved_heading_categories = _heading_categories_for_values(
+            headings, heading_categories
+        )
+        resolved_heading_categories = _apply_chapter_title_heading_category(
+            title,
+            headings,
+            resolved_heading_categories,
+        )
         chapters.append(
             Chapter(
                 title=title,
@@ -1022,6 +1199,7 @@ def _chapters_from_entries(
                 ruby_pairs=ruby_pairs,
                 ruby_spans=ruby_spans,
                 headings=headings,
+                heading_categories=resolved_heading_categories,
             )
         )
 
@@ -1055,6 +1233,7 @@ def _chapters_from_toc_entries(
         seen.add(base_href)
         ruby_spans: List[dict] = []
         headings: List[str] = []
+        heading_categories: dict[str, str] = {}
 
         start_idx = spine_index.get(base_href)
         merged_items: List[object] = []
@@ -1082,19 +1261,19 @@ def _chapters_from_toc_entries(
             text, ruby_pairs, ruby_spans = _join_item_text_and_ruby(
                 merged_items, footnote_index=footnote_index
             )
-            heading_seen: set[str] = set()
             for merged in merged_items:
                 merged_content = merged.get_content()
-                for heading in _extract_html_headings(
+                merged_headings, merged_categories = _extract_html_headings_and_categories(
                     merged_content,
                     heading_class_markers=heading_class_markers,
                     heading_id_markers=heading_id_markers,
-                ):
-                    key = heading.casefold()
-                    if key in heading_seen:
-                        continue
-                    heading_seen.add(key)
-                    headings.append(heading)
+                )
+                headings, heading_categories = _merge_headings_with_categories(
+                    headings,
+                    heading_categories,
+                    merged_headings,
+                    merged_categories,
+                )
             item_for_title = merged_items[0]
         else:
             item_for_title = None
@@ -1112,7 +1291,7 @@ def _chapters_from_toc_entries(
                 footnote_index=footnote_index,
                 source_href=_item_name(item_for_title),
             )
-            headings = _extract_html_headings(
+            headings, heading_categories = _extract_html_headings_and_categories(
                 content,
                 heading_class_markers=heading_class_markers,
                 heading_id_markers=heading_id_markers,
@@ -1126,6 +1305,14 @@ def _chapters_from_toc_entries(
             continue
 
         title = entry.title or _item_title(item_for_title) or Path(base_href).stem
+        resolved_heading_categories = _heading_categories_for_values(
+            headings, heading_categories
+        )
+        resolved_heading_categories = _apply_chapter_title_heading_category(
+            title,
+            headings,
+            resolved_heading_categories,
+        )
         chapters.append(
             Chapter(
                 title=title,
@@ -1135,6 +1322,7 @@ def _chapters_from_toc_entries(
                 ruby_pairs=ruby_pairs,
                 ruby_spans=ruby_spans,
                 headings=headings,
+                heading_categories=resolved_heading_categories,
             )
         )
 
