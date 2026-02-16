@@ -173,10 +173,9 @@ _ISOLATED_SINGLE_KANJI_PARTICLES = {
     "ナ",
     "ワ",
 }
+_PRONUNCIATION_PARTICLE_SURFACES = {"は", "へ", "を"}
 _HIRAGANA_PRONUNCIATION_PARTICLE_MAP = {
     "は": "わ",
-    "へ": "え",
-    "を": "お",
 }
 _ISOLATED_SINGLE_KANJI_COPULA_BOUNDARY_CHARS = {"だ", "で", "ダ", "デ"}
 _RUBY_SUTEGANA_LARGE_CHARS = "あいうえおつやゆよわかけアイウエオツヤユヨワカケ"
@@ -3802,7 +3801,7 @@ def _should_convert_honorific_prefix(
 
 def _is_pronunciation_particle_token(token: Any) -> bool:
     surface = unicodedata.normalize("NFKC", str(getattr(token, "surface", "") or ""))
-    if surface not in _HIRAGANA_PRONUNCIATION_PARTICLE_MAP:
+    if surface not in _PRONUNCIATION_PARTICLE_SURFACES:
         return False
     attrs = _extract_token_attrs(token)
     pos1 = attrs.get("pos1") or ""
