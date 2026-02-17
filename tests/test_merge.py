@@ -98,3 +98,33 @@ def test_load_chapter_segments_raises_when_no_prefix_is_available(
 
     with pytest.raises(FileNotFoundError, match="No synthesized segments available"):
         merge._load_chapter_segments(tts_dir)
+
+
+def test_load_chapter_segments_skips_missing_zero_duration_chunks(
+    tmp_path: Path,
+) -> None:
+    tts_dir = tmp_path / "tts"
+    seg_root = tts_dir / "segments"
+    _write_manifest(
+        tts_dir,
+        chapters=[
+            {
+                "id": "c1",
+                "title": "Chapter 1",
+                "chunks": ["a", "b", "c"],
+                "durations_ms": [120, 0, 120],
+            },
+            {"id": "c2", "title": "Chapter 2", "chunks": ["d"], "durations_ms": [120]},
+        ],
+    )
+    _write_wav(seg_root / "c1" / "000001.wav", duration_ms=120)
+    _write_wav(seg_root / "c1" / "000003.wav", duration_ms=120)
+    _write_wav(seg_root / "c2" / "000001.wav", duration_ms=120)
+
+    chapters, total_ms = merge._load_chapter_segments(tts_dir)
+
+    assert [entry["title"] for entry in chapters] == ["Chapter 1", "Chapter 2"]
+    assert [path.name for path in chapters[0]["segments"]] == ["000001.wav", "000003.wav"]
+    assert chapters[0]["duration_ms"] == 240
+    assert chapters[1]["duration_ms"] == 120
+    assert total_ms == 360

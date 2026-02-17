@@ -274,6 +274,16 @@ def _resolve_chunk_count(entry: dict, chapter_dir: Path) -> int:
     return 0
 
 
+def _duration_hint_ms(durations: Sequence[object], idx: int) -> int | None:
+    pos = idx - 1
+    if pos < 0 or pos >= len(durations):
+        return None
+    candidate = durations[pos]
+    if isinstance(candidate, (int, float)):
+        return int(candidate)
+    return None
+
+
 def _build_concat_file(
     segment_paths: List[Path], concat_path: Path, base_dir: Path
 ) -> None:
@@ -341,14 +351,18 @@ def _ensure_merge_inputs(tts_dir: Path, metadata: dict) -> tuple[Path, Path, int
         for idx in range(1, chunk_count + 1):
             seg_path = chapter_dir / f"{idx:06d}.wav"
             if not seg_path.exists():
+                duration_hint = _duration_hint_ms(durations_list, idx)
+                if duration_hint is not None and duration_hint <= 0:
+                    # Some normalization paths intentionally emit zero-duration
+                    # chunks without producing a WAV segment file.
+                    continue
                 missing.append(seg_path)
                 continue
             segment_paths.append(seg_path)
             duration_ms = None
-            if idx - 1 < len(durations_list):
-                candidate = durations_list[idx - 1]
-                if isinstance(candidate, (int, float)) and candidate > 0:
-                    duration_ms = int(candidate)
+            duration_hint = _duration_hint_ms(durations_list, idx)
+            if duration_hint is not None and duration_hint > 0:
+                duration_ms = duration_hint
             if duration_ms is None:
                 duration_ms = _wav_duration_ms(seg_path)
             chapter_total_ms += duration_ms
@@ -399,14 +413,17 @@ def _load_chapter_segments(tts_dir: Path) -> tuple[List[dict], int]:
         for idx in range(1, chunk_count + 1):
             seg_path = chapter_dir / f"{idx:06d}.wav"
             if not seg_path.exists():
+                duration_hint = _duration_hint_ms(durations_list, idx)
+                if duration_hint is not None and duration_hint <= 0:
+                    # Skip intentionally silent/empty chunks.
+                    continue
                 first_missing = seg_path
                 break
             segments.append(seg_path)
             duration_ms = None
-            if idx - 1 < len(durations_list):
-                candidate = durations_list[idx - 1]
-                if isinstance(candidate, (int, float)) and candidate > 0:
-                    duration_ms = int(candidate)
+            duration_hint = _duration_hint_ms(durations_list, idx)
+            if duration_hint is not None and duration_hint > 0:
+                duration_ms = duration_hint
             if duration_ms is None:
                 duration_ms = _wav_duration_ms(seg_path)
             chapter_total_ms += duration_ms
