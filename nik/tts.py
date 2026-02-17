@@ -228,6 +228,15 @@ _ASCII_ROMAN_MAX_VALUE = 50
 _KANJI_NUMERAL_RANGE_CHARS = "〇零一二三四五六七八九十百千万億兆京"
 _FORCE_FIRST_TOKEN_NOISE_RE = re.compile(r"^[cC][0-9A-Za-z]{2,12}$")
 _LATIN_PHRASE_RE = re.compile(r"[A-Za-z]+(?:[ \t]+[A-Za-z]+)*")
+_STYLIZED_KANJI_SEPARATORS = "、，,・"
+_STYLIZED_KANJI_SEP_RE = re.compile(rf"[{re.escape(_STYLIZED_KANJI_SEPARATORS)}]")
+_STYLIZED_SINGLE_KANJI_RUN_RE = re.compile(
+    r"(?<![\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF])"
+    r"(?:[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF][、，,・]){2,}"
+    r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF](?![\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF])"
+)
+_STYLIZED_SINGLE_KANJI_MIN = 4
+_STYLIZED_JOIN_TOKEN_MIN = 2
 _NAME_HONORIFIC_SUFFIX_SURFACES = {
     "さん",
     "サン",
@@ -4232,11 +4241,12 @@ def _transform_mid_token_latin_phrases(
     *,
     debug_sources: Optional[List[str]] = None,
 ) -> str:
-    normalized = unicodedata.normalize("NFKC", text or "")
+    original = text or ""
+    normalized = _nfkc_preserve_ellipsis(original)
     if not normalized:
         return text
     if not _LATIN_PHRASE_RE.search(normalized):
-        return normalized
+        return original
 
     out: List[str] = []
     last = 0
@@ -4266,9 +4276,115 @@ def _transform_mid_token_latin_phrases(
         converted = True
 
     if not converted:
-        return normalized
+        return original
 
     out.append(normalized[last:])
+    return "".join(out)
+
+
+def _is_punctuation_surface(surface: str) -> bool:
+    if not surface:
+        return False
+    return all(unicodedata.category(ch).startswith("P") for ch in surface)
+
+
+def _is_stylized_separator_surface(surface: str) -> bool:
+    if not surface:
+        return False
+    return all(ch in _STYLIZED_KANJI_SEPARATORS for ch in surface)
+
+
+def _normalize_stylized_single_kanji_runs(
+    text: str,
+    tagger: Any,
+    *,
+    debug_sources: Optional[List[str]] = None,
+) -> str:
+    if not text or not _STYLIZED_SINGLE_KANJI_RUN_RE.search(text):
+        return text
+
+    out: List[str] = []
+    last = 0
+    replaced_any = False
+
+    for match in _STYLIZED_SINGLE_KANJI_RUN_RE.finditer(text):
+        span = match.group(0)
+        joined = _STYLIZED_KANJI_SEP_RE.sub("", span)
+        if len(joined) < _STYLIZED_SINGLE_KANJI_MIN:
+            continue
+        try:
+            span_tokens = list(tagger(span))
+            joined_tokens = list(tagger(joined))
+        except Exception:
+            continue
+        if not span_tokens or not joined_tokens:
+            continue
+
+        # Only patch when split stylization actually causes missing readings.
+        saw_kanji = False
+        missing_reading_in_split = False
+        split_valid = True
+        for token in span_tokens:
+            surface = unicodedata.normalize(
+                "NFKC", str(getattr(token, "surface", "") or "")
+            )
+            if not surface:
+                continue
+            if _is_stylized_separator_surface(surface) or _is_punctuation_surface(surface):
+                continue
+            if not all(_is_kanji_char(ch) for ch in surface):
+                split_valid = False
+                break
+            saw_kanji = True
+            if not _extract_token_reading(token):
+                missing_reading_in_split = True
+        if not split_valid or not saw_kanji or not missing_reading_in_split:
+            continue
+
+        # Joined form must be fully readable and segment into longer dictionary
+        # words to avoid collapsing ordinary comma-separated lists.
+        joined_valid = True
+        joined_chars = 0
+        joined_has_short_token = False
+        for token in joined_tokens:
+            surface = unicodedata.normalize(
+                "NFKC", str(getattr(token, "surface", "") or "")
+            )
+            if (
+                not surface
+                or _is_stylized_separator_surface(surface)
+                or _is_punctuation_surface(surface)
+            ):
+                joined_valid = False
+                break
+            if not all(_is_kanji_char(ch) for ch in surface):
+                joined_valid = False
+                break
+            if not _extract_token_reading(token):
+                joined_valid = False
+                break
+            joined_chars += len(surface)
+            if len(surface) < _STYLIZED_JOIN_TOKEN_MIN:
+                joined_has_short_token = True
+        if not joined_valid or joined_chars != len(joined):
+            continue
+        if joined_has_short_token:
+            continue
+
+        out.append(text[last : match.start()])
+        out.append(joined)
+        last = match.end()
+        replaced_any = True
+        _append_kana_debug(
+            debug_sources,
+            span,
+            joined,
+            source="stylized-kanji-join",
+        )
+
+    if not replaced_any:
+        return text
+    out.append(text[last:])
     return "".join(out)
 
 
@@ -4949,6 +5065,12 @@ def _normalize_kana_text(
             )
         return text
     tagger = _get_kana_tagger()
+    if transform_mid_token_to_kana:
+        text = _normalize_stylized_single_kanji_runs(
+            text,
+            tagger,
+            debug_sources=debug_sources,
+        )
     zh_lexicon: Optional[set[str]] = None
     if kana_style == "partial" and transform_mid_token_to_kana:
         zh_lexicon = _load_zh_lexicon()

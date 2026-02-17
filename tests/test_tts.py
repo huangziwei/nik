@@ -2658,6 +2658,176 @@ def test_normalize_kana_text_does_not_transform_latin_without_japanese_context()
     assert out == text
 
 
+def test_normalize_kana_text_mid_token_transform_preserves_unicode_ellipsis() -> None:
+    text = "あ……い"
+    out = tts_util._normalize_kana_text(
+        text,
+        kana_style="hiragana",
+        transform_mid_token_to_kana=True,
+    )
+    assert out == text
+
+
+def test_normalize_kana_text_stylized_single_kanji_run_join_fix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, text: str):
+            if text == "人、工、肛、門":
+                return [
+                    DummyToken("人", "ヒト"),
+                    DummyToken("、", None),
+                    DummyToken("工", "コウ"),
+                    DummyToken("、", None),
+                    DummyToken("肛", None),
+                    DummyToken("、", None),
+                    DummyToken("門", "モン"),
+                ]
+            if text == "人工肛門":
+                return [
+                    DummyToken("人工", "ジンコウ"),
+                    DummyToken("肛門", "コウモン"),
+                ]
+            return [DummyToken(text, None)]
+
+    monkeypatch.setattr(tts_util, "_get_kana_tagger", lambda: DummyTagger())
+    fixed = tts_util._normalize_kana_text(
+        "人、工、肛、門",
+        kana_style="hiragana",
+        transform_mid_token_to_kana=True,
+    )
+    assert "肛" not in fixed
+    assert "こうもん" in fixed
+    assert "、" not in fixed
+
+
+def test_normalize_kana_text_stylized_single_kanji_run_requires_multi_kanji_joined_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, text: str):
+            if text == "鶏、鶏、豚、魚":
+                return [
+                    DummyToken("鶏", "ニワトリ"),
+                    DummyToken("、", None),
+                    DummyToken("鶏", None),
+                    DummyToken("、", None),
+                    DummyToken("豚", "ブタ"),
+                    DummyToken("、", None),
+                    DummyToken("魚", "サカナ"),
+                ]
+            if text == "鶏鶏豚魚":
+                return [
+                    DummyToken("鶏", "ニワトリ"),
+                    DummyToken("鶏豚", "ケイトン"),
+                    DummyToken("魚", "サカナ"),
+                ]
+            return [DummyToken(text, None)]
+
+    monkeypatch.setattr(tts_util, "_get_kana_tagger", lambda: DummyTagger())
+    out = tts_util._normalize_kana_text(
+        "鶏、鶏、豚、魚",
+        kana_style="hiragana",
+        transform_mid_token_to_kana=True,
+    )
+    assert "けいとん" not in out
+    assert "、" in out
+    assert "鶏" in out
+
+
+def test_normalize_kana_text_stylized_single_kanji_run_requires_ge_4(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, text: str):
+            if text == "木、金、土":
+                return [
+                    DummyToken("木", "モク"),
+                    DummyToken("、", None),
+                    DummyToken("金", "キン"),
+                    DummyToken("、", None),
+                    DummyToken("土", "ド"),
+                ]
+            if text == "木金土":
+                return [DummyToken("木金土", "モクキンド")]
+            return [DummyToken(text, None)]
+
+    monkeypatch.setattr(tts_util, "_get_kana_tagger", lambda: DummyTagger())
+    out = tts_util._normalize_kana_text(
+        "木、金、土",
+        kana_style="hiragana",
+        transform_mid_token_to_kana=True,
+    )
+    assert "、" in out
+
+
+def test_normalize_kana_text_stylized_single_kanji_run_respects_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, text: str):
+            if text == "人、工、肛、門":
+                return [
+                    DummyToken("人", "ヒト"),
+                    DummyToken("、", None),
+                    DummyToken("工", "コウ"),
+                    DummyToken("、", None),
+                    DummyToken("肛", None),
+                    DummyToken("、", None),
+                    DummyToken("門", "モン"),
+                ]
+            if text == "人工肛門":
+                return [
+                    DummyToken("人工", "ジンコウ"),
+                    DummyToken("肛門", "コウモン"),
+                ]
+            return [DummyToken(text, None)]
+
+    monkeypatch.setattr(tts_util, "_get_kana_tagger", lambda: DummyTagger())
+    out = tts_util._normalize_kana_text(
+        "人、工、肛、門",
+        kana_style="hiragana",
+        transform_mid_token_to_kana=False,
+    )
+    assert "肛" in out
+
+
 def test_normalize_kana_text_rebalances_existing_separator_without_kanji(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
