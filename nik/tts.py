@@ -3761,6 +3761,100 @@ def _should_partial_convert(
     return True
 
 
+def _is_numeric_token_attrs(attrs: Dict[str, str]) -> bool:
+    if not attrs:
+        return False
+    return attrs.get("pos2") == "数詞" or attrs.get("type") == "数"
+
+
+def _is_counter_like_token_attrs(attrs: Dict[str, str]) -> bool:
+    if not attrs:
+        return False
+    if attrs.get("pos3") == "助数詞" or attrs.get("type") == "助数":
+        return True
+    # UniDic can tag counters like 人 in 数人 as:
+    # pos1=接尾辞,pos2=名詞的,pos3=一般,type=接尾体
+    return (
+        attrs.get("pos1") == "接尾辞"
+        and attrs.get("pos2") == "名詞的"
+        and attrs.get("type") in {"接尾体", "助数"}
+    )
+
+
+def _plan_kanji_run_actions(
+    tokens: Sequence[Any],
+    *,
+    kana_style: str,
+    transform_mid_token_to_kana: bool,
+    zh_lexicon: Optional[set[str]],
+) -> tuple[List[str], set[int]]:
+    run_action: List[str] = [""] * len(tokens)
+    hiragana_join_indices: set[int] = set()
+    if not tokens:
+        return run_action, hiragana_join_indices
+
+    idx = 0
+    while idx < len(tokens):
+        surface = str(getattr(tokens[idx], "surface", "") or "")
+        if not _is_kanji_only(surface):
+            idx += 1
+            continue
+        end = idx + 1
+        while end < len(tokens):
+            next_surface = str(getattr(tokens[end], "surface", "") or "")
+            if not _is_kanji_only(next_surface):
+                break
+            end += 1
+        if end - idx >= 2:
+            if kana_style == "hiragana":
+                # In full-hiragana mode, keep contiguous readable kanji runs as one
+                # prosodic chunk; separators should mark the run boundary rather than
+                # each UniDic token boundary.
+                readable_start: Optional[int] = None
+                for pos in range(idx, end):
+                    reading = _extract_token_reading(tokens[pos])
+                    is_readable = bool(reading and reading != "*")
+                    if is_readable:
+                        if readable_start is None:
+                            readable_start = pos
+                        continue
+                    if readable_start is not None and pos - readable_start >= 2:
+                        for run_pos in range(readable_start, pos):
+                            hiragana_join_indices.add(run_pos)
+                    readable_start = None
+                if readable_start is not None and end - readable_start >= 2:
+                    for run_pos in range(readable_start, end):
+                        hiragana_join_indices.add(run_pos)
+                idx = end
+                continue
+            has_numeric = False
+            has_counter = False
+            for pos in range(idx, end):
+                attrs = _extract_token_attrs(tokens[pos])
+                if _is_numeric_token_attrs(attrs):
+                    has_numeric = True
+                if _is_counter_like_token_attrs(attrs):
+                    has_counter = True
+            if has_numeric and has_counter:
+                if kana_style == "partial":
+                    for pos in range(idx, end):
+                        run_action[pos] = "convert"
+            elif (
+                kana_style == "partial"
+                and transform_mid_token_to_kana
+                and zh_lexicon is not None
+            ):
+                run_surface = "".join(
+                    str(getattr(tokens[pos], "surface", "") or "")
+                    for pos in range(idx, end)
+                )
+                if run_surface and run_surface in zh_lexicon:
+                    for pos in range(idx, end):
+                        run_action[pos] = "convert"
+        idx = end
+    return run_action, hiragana_join_indices
+
+
 def _resolve_honorific_reading_kata(
     surface: str,
     reading_kata: str,
@@ -4532,6 +4626,7 @@ def _normalize_kana_with_tagger(
     first_force_separator_marker = "\0NIK_FIRST_FORCE_SEPARATOR\0"
     tokens = list(tagger(text))
     run_action: List[str] = [""] * len(tokens)
+    hiragana_join_indices: set[int] = set()
     force_first_kanji_indices: set[int] = set()
     force_first_token_idx: Optional[int] = None
     force_first_kanji_last_idx: Optional[int] = None
@@ -4545,47 +4640,15 @@ def _normalize_kana_with_tagger(
         if force_first_kanji_indices:
             force_first_kanji_last_idx = max(force_first_kanji_indices)
         first_force_separator = token_separator
-    if kana_style == "partial" and tokens:
-        if transform_mid_token_to_kana and zh_lexicon is None:
+    if tokens:
+        if kana_style == "partial" and transform_mid_token_to_kana and zh_lexicon is None:
             zh_lexicon = _load_zh_lexicon()
-        idx = 0
-        while idx < len(tokens):
-            surface = getattr(tokens[idx], "surface", "") or ""
-            if not _is_kanji_only(surface):
-                idx += 1
-                continue
-            end = idx + 1
-            while end < len(tokens):
-                next_surface = getattr(tokens[end], "surface", "") or ""
-                if not _is_kanji_only(next_surface):
-                    break
-                end += 1
-            if end - idx >= 2:
-                run_surface = "".join(
-                    str(getattr(tokens[pos], "surface", "") or "")
-                    for pos in range(idx, end)
-                )
-                has_numeric = False
-                has_counter = False
-                for pos in range(idx, end):
-                    attrs = _extract_token_attrs(tokens[pos])
-                    if attrs.get("pos2") == "数詞" or attrs.get("type") == "数":
-                        has_numeric = True
-                    if attrs.get("pos3") == "助数詞" or attrs.get("type") == "助数":
-                        has_counter = True
-                action = ""
-                if has_numeric and has_counter:
-                    action = "convert"
-                elif (
-                    transform_mid_token_to_kana
-                    and run_surface
-                    and run_surface in (zh_lexicon or set())
-                ):
-                    action = "convert"
-                if action:
-                    for pos in range(idx, end):
-                        run_action[pos] = action
-            idx = end
+        run_action, hiragana_join_indices = _plan_kanji_run_actions(
+            tokens,
+            kana_style=kana_style,
+            transform_mid_token_to_kana=transform_mid_token_to_kana,
+            zh_lexicon=zh_lexicon,
+        )
 
     def _append_first_force_separator() -> None:
         nonlocal first_force_separator_inserted
@@ -4932,9 +4995,18 @@ def _normalize_kana_with_tagger(
         elif kana_style == "hiragana":
             output = _katakana_to_hiragana(reading_kata)
             output = _render_pronunciation_particle_hiragana(token, output)
-            output = _append_transform_separator(output)
-            if _should_prepend_hiragana_transform_separator(idx):
-                output = _prepend_transform_separator(output)
+            in_join_run = idx in hiragana_join_indices
+            if in_join_run:
+                is_run_start = idx <= 0 or (idx - 1) not in hiragana_join_indices
+                is_run_end = idx + 1 >= len(tokens) or (idx + 1) not in hiragana_join_indices
+                if is_run_end:
+                    output = _append_transform_separator(output)
+                if is_run_start and _should_prepend_hiragana_transform_separator(idx):
+                    output = _prepend_transform_separator(output)
+            else:
+                output = _append_transform_separator(output)
+                if _should_prepend_hiragana_transform_separator(idx):
+                    output = _prepend_transform_separator(output)
             out.append(output)
             _append_kana_debug(
                 debug_sources,
@@ -5927,19 +5999,95 @@ def _load_ruby_data(book_dir: Path) -> dict:
     return ruby_data if isinstance(ruby_data, dict) else {}
 
 
+_RUBY_CONFLICT_GLOBAL_MIN_COUNT = 5
+_RUBY_CONFLICT_GLOBAL_MIN_RATIO = 0.9
+
+
 def _ruby_global_overrides(ruby_data: dict) -> List[dict[str, str]]:
     overrides: List[dict[str, str]] = []
-    items = ruby_data.get("global") if isinstance(ruby_data, dict) else None
+    if not isinstance(ruby_data, dict):
+        return overrides
+
+    seen_entries: set[tuple[str, str]] = set()
+    literal_bases: set[str] = set()
+
+    def add_entry(entry: dict[str, str]) -> None:
+        base = str(entry.get("base") or "").strip()
+        pattern = str(entry.get("pattern") or "").strip()
+        reading = str(entry.get("reading") or "").strip()
+        if not reading:
+            return
+        if base:
+            # Keep legacy single-kanji protection for literal global base overrides.
+            if len(base) == 1:
+                return
+            key = (f"lit:{base}", reading)
+            literal_bases.add(base)
+        elif pattern:
+            key = (f"re:{pattern}", reading)
+        else:
+            return
+        if key in seen_entries:
+            return
+        seen_entries.add(key)
+        overrides.append(entry)
+
+    items = ruby_data.get("global")
     if isinstance(items, list):
         for item in items:
             entry = _normalize_reading_override_entry(item)
             if not entry:
                 continue
-            base = str(entry.get("base") or "").strip()
-            # Keep legacy single-kanji protection for literal global base overrides.
-            if base and len(base) == 1:
+            add_entry(entry)
+
+    conflicts = ruby_data.get("conflicts")
+    if not isinstance(conflicts, list):
+        return overrides
+    for item in conflicts:
+        if not isinstance(item, dict):
+            continue
+        base = str(item.get("base") or "").strip()
+        majority = str(item.get("majority") or "").strip()
+        if not base or not majority:
+            continue
+        # Explicit global overrides should keep priority for the same base.
+        if base in literal_bases:
+            continue
+        if len(base) == 1:
+            continue
+        if not _is_kanji_only(base):
+            continue
+
+        readings = item.get("readings")
+        if not isinstance(readings, list):
+            continue
+
+        total_count = 0
+        majority_count = 0
+        for reading_entry in readings:
+            if not isinstance(reading_entry, dict):
                 continue
-            overrides.append(entry)
+            reading = str(reading_entry.get("reading") or "").strip()
+            count_raw = reading_entry.get("count")
+            try:
+                count = int(count_raw)
+            except (TypeError, ValueError):
+                continue
+            if count <= 0:
+                continue
+            total_count += count
+            if reading == majority:
+                majority_count += count
+        if majority_count < _RUBY_CONFLICT_GLOBAL_MIN_COUNT:
+            continue
+        if total_count <= 0:
+            continue
+        if (majority_count / total_count) < _RUBY_CONFLICT_GLOBAL_MIN_RATIO:
+            continue
+        entry = _normalize_reading_override_entry({"base": base, "reading": majority})
+        if not entry:
+            continue
+        add_entry(entry)
     return overrides
 
 

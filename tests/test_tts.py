@@ -794,6 +794,30 @@ def test_apply_ruby_evidence_to_chunk_skips_single_kanji_global() -> None:
     assert out == chunk_text
 
 
+def test_apply_ruby_evidence_to_chunk_promotes_conflict_majority_compound() -> None:
+    chunk_text = "押し寄せる虚脱感に空太は手で顔を覆った。"
+    ruby_data = {
+        "conflicts": [
+            {
+                "base": "空太",
+                "majority": "そらた",
+                "readings": [
+                    {"reading": "そらた", "count": 614},
+                    {"reading": "そうた", "count": 2},
+                ],
+            }
+        ]
+    }
+    out = tts_util._apply_ruby_evidence_to_chunk(
+        chunk_text,
+        None,
+        [],
+        ruby_data,
+    )
+    assert "空太" not in out
+    assert "そらた" in out
+
+
 def test_apply_ruby_evidence_to_chunk_drops_suspicious_span() -> None:
     chunk_text = "本町に西田医院という耳鼻科があったのを覚えているか。"
     chunk_span = (0, len(chunk_text))
@@ -1503,6 +1527,307 @@ def test_normalize_kana_with_stub_tagger_partial_numeric_counter() -> None:
         "十日", DummyTagger(), kana_style="partial", zh_lexicon=set()
     )
     assert out == "\\とおか\\"
+
+
+def test_normalize_kana_with_stub_tagger_partial_numeric_counter_suffix_person() -> None:
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            *,
+            pos1: str | None = None,
+            pos2: str | None = None,
+            pos3: str | None = None,
+            type_: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+            self.pos2 = pos2
+            self.pos3 = pos3
+            self.type = type_
+
+    class DummyToken:
+        def __init__(self, surface: str, feature: DummyFeature) -> None:
+            self.surface = surface
+            self.feature = feature
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("数", DummyFeature("スウ", pos1="名詞", pos2="数詞", type_="数")),
+                DummyToken(
+                    "人",
+                    DummyFeature(
+                        "ニン",
+                        pos1="接尾辞",
+                        pos2="名詞的",
+                        pos3="一般",
+                        type_="接尾体",
+                    ),
+                ),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "数人", DummyTagger(), kana_style="partial", zh_lexicon=set()
+    )
+    assert out == "\\すうにん\\"
+
+
+_CORPUS_NUMERIC_COUNTER_GAP_CASES = [
+    # さくら荘のペットな彼女 全13巻
+    pytest.param("五", "イツ", "日", "カ", "接尾辞", "名詞的", "助数詞", "助数", id="sakurasou-五日"),
+    pytest.param("何", "ナン", "人", "ニン", "接尾辞", "名詞的", "一般", "接尾体", id="sakurasou-何人"),
+    # サクラダリセット（角川文庫）【全7冊 合本版】
+    pytest.param("三", "サン", "者", "シャ", "接尾辞", "名詞的", "一般", "接尾体", id="sagrada-三者"),
+    pytest.param("二", "フツ", "日", "カ", "接尾辞", "名詞的", "助数詞", "助数", id="sagrada-二日"),
+    # バビロン１ ―女― (講談社タイガ)
+    pytest.param("数", "スウ", "冊", "サツ", "接尾辞", "名詞的", "一般", "接尾体", id="babylon-数冊"),
+    pytest.param("一", "イッ", "発", "パツ", "接尾辞", "名詞的", "一般", "接尾体", id="babylon-一発"),
+    # 可愛い女の子に攻略されるのは好きですか？
+    pytest.param("数", "スウ", "日", "ジツ", "接尾辞", "名詞的", "一般", "接尾体", id="kawaii-数日"),
+    pytest.param("何", "ナン", "人", "ニン", "接尾辞", "名詞的", "一般", "接尾体", id="kawaii-何人"),
+    # 天国旅行（新潮文庫）
+    pytest.param("数", "スウ", "人", "ニン", "接尾辞", "名詞的", "一般", "接尾体", id="tengoku-数人"),
+    pytest.param("数", "スウ", "枚", "マイ", "接尾辞", "名詞的", "助数詞", "助数", id="tengoku-数枚"),
+    # 平場の月 (光文社文庫)
+    pytest.param("一", "イッ", "発", "パツ", "接尾辞", "名詞的", "一般", "接尾体", id="hiraba-一発"),
+    pytest.param("何", "ナン", "歳", "サイ", "接尾辞", "名詞的", "助数詞", "助数", id="hiraba-何歳"),
+    # 究極の純愛小説を、君に (徳間文庫)
+    pytest.param("二", "ニ", "次", "ジ", "接尾辞", "名詞的", "助数詞", "助数", id="kyuukyoku-二次"),
+    pytest.param("何", "ナン", "冊", "サツ", "接尾辞", "名詞的", "一般", "接尾体", id="kyuukyoku-何冊"),
+    # ＧＯＴＨ【３冊 合本版】 『夜の章』『僕の章』『番外篇』 (角川文庫)
+    pytest.param("幾", "イク", "人", "ニン", "接尾辞", "名詞的", "一般", "接尾体", id="goth-幾人"),
+    pytest.param("二十", "ハツ", "日", "カ", "接尾辞", "名詞的", "助数詞", "助数", id="goth-二十日"),
+]
+
+_CORPUS_NON_COUNTER_COMPOUND_CASES = [
+    pytest.param("空", "ソラ", "太", "フト", id="sakurasou-空太"),
+    pytest.param("携帯", "ケイタイ", "電話", "デンワ", id="sagrada-携帯電話"),
+    pytest.param("正", "セイ", "崎", "サキ", id="babylon-正崎"),
+    pytest.param("図書", "トショ", "委員", "イイン", id="kawaii-図書委員"),
+    pytest.param("石塚", "イシズカ", "家", "ケ", id="tengoku-石塚家"),
+    pytest.param("自転", "ジテン", "車", "シャ", id="hiraba-自転車"),
+    pytest.param("文芸", "ブンゲイ", "部", "ブ", id="kyuukyoku-文芸部"),
+    pytest.param("講義", "コウギ", "室", "シツ", id="goth-講義室"),
+]
+
+
+def _normalize_numeric_counter_pair_with_stub(
+    left_surface: str,
+    left_reading: str,
+    right_surface: str,
+    right_reading: str,
+    *,
+    right_pos1: str,
+    right_pos2: str,
+    right_pos3: str,
+    right_type: str,
+    kana_style: str,
+) -> str:
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            *,
+            pos1: str | None = None,
+            pos2: str | None = None,
+            pos3: str | None = None,
+            type_: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+            self.pos2 = pos2
+            self.pos3 = pos3
+            self.type = type_
+
+    class DummyToken:
+        def __init__(self, surface: str, feature: DummyFeature) -> None:
+            self.surface = surface
+            self.feature = feature
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken(
+                    left_surface,
+                    DummyFeature(
+                        left_reading,
+                        pos1="名詞",
+                        pos2="数詞",
+                        type_="数",
+                    ),
+                ),
+                DummyToken(
+                    right_surface,
+                    DummyFeature(
+                        right_reading,
+                        pos1=right_pos1,
+                        pos2=right_pos2,
+                        pos3=right_pos3,
+                        type_=right_type,
+                    ),
+                ),
+            ]
+
+    return tts_util._normalize_kana_with_tagger(
+        left_surface + right_surface,
+        DummyTagger(),
+        kana_style=kana_style,
+        zh_lexicon=set(),
+    )
+
+
+@pytest.mark.parametrize(
+    (
+        "left_surface",
+        "left_reading",
+        "right_surface",
+        "right_reading",
+        "right_pos1",
+        "right_pos2",
+        "right_pos3",
+        "right_type",
+    ),
+    _CORPUS_NUMERIC_COUNTER_GAP_CASES,
+)
+def test_normalize_kana_partial_numeric_counter_corpus_cases(
+    left_surface: str,
+    left_reading: str,
+    right_surface: str,
+    right_reading: str,
+    right_pos1: str,
+    right_pos2: str,
+    right_pos3: str,
+    right_type: str,
+) -> None:
+    source = left_surface + right_surface
+    assert tts_util._normalize_numbers(source) == source
+    out = _normalize_numeric_counter_pair_with_stub(
+        left_surface,
+        left_reading,
+        right_surface,
+        right_reading,
+        right_pos1=right_pos1,
+        right_pos2=right_pos2,
+        right_pos3=right_pos3,
+        right_type=right_type,
+        kana_style="partial",
+    )
+    sep = _default_first_token_separator()
+    reading = tts_util._katakana_to_hiragana(left_reading + right_reading)
+    assert out == f"{sep}{reading}{sep}"
+
+
+@pytest.mark.parametrize(
+    (
+        "left_surface",
+        "left_reading",
+        "right_surface",
+        "right_reading",
+        "right_pos1",
+        "right_pos2",
+        "right_pos3",
+        "right_type",
+    ),
+    _CORPUS_NUMERIC_COUNTER_GAP_CASES,
+)
+def test_normalize_kana_hiragana_numeric_counter_corpus_cases(
+    left_surface: str,
+    left_reading: str,
+    right_surface: str,
+    right_reading: str,
+    right_pos1: str,
+    right_pos2: str,
+    right_pos3: str,
+    right_type: str,
+) -> None:
+    source = left_surface + right_surface
+    assert tts_util._normalize_numbers(source) == source
+    out = _normalize_numeric_counter_pair_with_stub(
+        left_surface,
+        left_reading,
+        right_surface,
+        right_reading,
+        right_pos1=right_pos1,
+        right_pos2=right_pos2,
+        right_pos3=right_pos3,
+        right_type=right_type,
+        kana_style="hiragana",
+    )
+    sep = _default_first_token_separator()
+    reading = tts_util._katakana_to_hiragana(left_reading + right_reading)
+    assert out == f"{reading}{sep}"
+
+
+@pytest.mark.parametrize(
+    ("left_surface", "left_reading", "right_surface", "right_reading"),
+    _CORPUS_NON_COUNTER_COMPOUND_CASES,
+)
+def test_normalize_kana_hiragana_non_counter_compound_corpus_cases(
+    left_surface: str,
+    left_reading: str,
+    right_surface: str,
+    right_reading: str,
+) -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken(left_surface, left_reading),
+                DummyToken(right_surface, right_reading),
+                DummyToken("で", "デ"),
+            ]
+
+    compound = left_surface + right_surface
+    assert tts_util._normalize_numbers(compound) == compound
+    out = tts_util._normalize_kana_with_tagger(
+        compound + "で",
+        DummyTagger(),
+        kana_style="hiragana",
+    )
+    sep = _default_first_token_separator()
+    reading = tts_util._katakana_to_hiragana(left_reading + right_reading)
+    assert out == f"{reading}{sep}で"
+
+
+def test_normalize_kana_hiragana_non_counter_compound_three_token_run() -> None:
+    class DummyFeature:
+        def __init__(self, kana: str | None) -> None:
+            self.kana = kana
+            self.pron = kana
+
+    class DummyToken:
+        def __init__(self, surface: str, kana: str | None) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("東京", "トウキョウ"),
+                DummyToken("地", "チ"),
+                DummyToken("検", "ケン"),
+                DummyToken("で", "デ"),
+            ]
+
+    out = tts_util._normalize_kana_with_tagger(
+        "東京地検で",
+        DummyTagger(),
+        kana_style="hiragana",
+    )
+    sep = _default_first_token_separator()
+    assert out == f"とうきょうちけん{sep}で"
 
 
 def test_normalize_kana_with_stub_tagger_partial_kanji_run_keep() -> None:
@@ -2440,6 +2765,55 @@ def test_normalize_kana_hiragana_separator_after_sokuon_moves_forward() -> None:
         kana_style="hiragana",
     )
     assert out == f"しって{sep}います"
+
+
+def test_normalize_kana_hiragana_numeric_counter_run_keeps_compound() -> None:
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            *,
+            pos1: str | None = None,
+            pos2: str | None = None,
+            pos3: str | None = None,
+            type_: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+            self.pos2 = pos2
+            self.pos3 = pos3
+            self.type = type_
+
+    class DummyToken:
+        def __init__(self, surface: str, feature: DummyFeature) -> None:
+            self.surface = surface
+            self.feature = feature
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("数", DummyFeature("スウ", pos1="名詞", pos2="数詞", type_="数")),
+                DummyToken(
+                    "人",
+                    DummyFeature(
+                        "ニン",
+                        pos1="接尾辞",
+                        pos2="名詞的",
+                        pos3="一般",
+                        type_="接尾体",
+                    ),
+                ),
+                DummyToken("の", DummyFeature("ノ", pos1="助詞", pos2="格助詞")),
+            ]
+
+    sep = _default_first_token_separator()
+    out = tts_util._normalize_kana_with_tagger(
+        "数人の",
+        DummyTagger(),
+        kana_style="hiragana",
+    )
+    assert out == f"すうにん{sep}の"
 
 
 def test_normalize_kana_hiragana_mid_sentence_transforms_use_prepend_separator() -> None:
@@ -4008,6 +4382,59 @@ def test_ruby_global_overrides_supports_regex_entries() -> None:
     assert {"base": "暗殺者", "reading": "あんさつしや"} in overrides
     assert {"pattern": "上手(?=い)", "reading": "うま"} in overrides
     assert {"base": "巻", "reading": "ま"} not in overrides
+
+
+def test_ruby_global_overrides_promotes_high_conflict_majority() -> None:
+    ruby_data = {
+        "conflicts": [
+            {
+                "base": "空太",
+                "majority": "そらた",
+                "readings": [
+                    {"reading": "そらた", "count": 614},
+                    {"reading": "そうた", "count": 2},
+                ],
+            },
+            {
+                "base": "躊躇",
+                "majority": "ためら",
+                "readings": [
+                    {"reading": "ためら", "count": 5},
+                    {"reading": "ちゅうちょ", "count": 2},
+                ],
+            },
+            {
+                "base": "空",
+                "majority": "そら",
+                "readings": [
+                    {"reading": "そら", "count": 1210},
+                    {"reading": "くう", "count": 77},
+                ],
+            },
+        ]
+    }
+    overrides = tts_util._ruby_global_overrides(ruby_data)
+    assert {"base": "空太", "reading": "そらた"} in overrides
+    assert {"base": "躊躇", "reading": "ためら"} not in overrides
+    assert {"base": "空", "reading": "そら"} not in overrides
+
+
+def test_ruby_global_overrides_conflict_does_not_override_explicit_global() -> None:
+    ruby_data = {
+        "global": [{"base": "空太", "reading": "そうた"}],
+        "conflicts": [
+            {
+                "base": "空太",
+                "majority": "そらた",
+                "readings": [
+                    {"reading": "そらた", "count": 614},
+                    {"reading": "そうた", "count": 2},
+                ],
+            }
+        ],
+    }
+    overrides = tts_util._ruby_global_overrides(ruby_data)
+    assert overrides == [{"base": "空太", "reading": "そうた"}]
 
 
 def test_merge_reading_overrides_prefers_chapter() -> None:
