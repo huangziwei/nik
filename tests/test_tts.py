@@ -4559,6 +4559,184 @@ def test_augment_chapter_overrides_with_ruby_compounds_allows_singleton_kun_hono
     assert tts_util.apply_reading_overrides("緑生君", augmented) == "ろくお君"
 
 
+def test_ruby_chapter_compound_overrides_infers_single_kanji_prefix_name_reading(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ruby_data = {
+        "chapters": {
+            "0003-chapter": {
+                "clean_spans": [
+                    {"start": 0, "end": 1, "base": "富", "reading": "と"},
+                ]
+            }
+        }
+    }
+    chapter_text = "富山明男は来た。"
+
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            *,
+            pos1: str | None = None,
+            pos2: str | None = None,
+            pos3: str | None = None,
+            pos4: str | None = None,
+            type_: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.reading = kana
+            self.pos1 = pos1
+            self.pos2 = pos2
+            self.pos3 = pos3
+            self.pos4 = pos4
+            self.type = type_
+
+    class DummyToken:
+        def __init__(
+            self,
+            surface: str,
+            kana: str | None,
+            *,
+            pos1: str | None = None,
+            pos2: str | None = None,
+            pos3: str | None = None,
+            pos4: str | None = None,
+            type_: str | None = None,
+        ) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(
+                kana,
+                pos1=pos1,
+                pos2=pos2,
+                pos3=pos3,
+                pos4=pos4,
+                type_=type_,
+            )
+
+    class DummyTagger:
+        def __call__(self, text: str):
+            if text == chapter_text:
+                return [
+                    DummyToken(
+                        "富山",
+                        "トミヤマ",
+                        pos1="名詞",
+                        pos2="固有名詞",
+                        pos3="人名",
+                    ),
+                    DummyToken(
+                        "明男",
+                        "アキオ",
+                        pos1="名詞",
+                        pos2="固有名詞",
+                        pos3="人名",
+                    ),
+                    DummyToken("は", "ハ", pos1="助詞"),
+                ]
+            if text == "富山明男":
+                return [DummyToken("富山明男", "トミヤマアキオ")]
+            if text == "富":
+                return [DummyToken("富", "トミ")]
+            return []
+
+    tts_util._RUBY_BASE_READING_CACHE.clear()
+    monkeypatch.setattr(tts_util, "_get_kana_tagger", lambda: DummyTagger())
+    overrides = tts_util._ruby_chapter_compound_overrides(
+        ruby_data,
+        chapter_id="0003-chapter",
+        chapter_text=chapter_text,
+    )
+    assert {"base": "富山明男", "reading": "とやまあきお"} in overrides
+
+
+def test_ruby_chapter_compound_overrides_does_not_infer_single_kanji_prefix_without_name_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ruby_data = {
+        "chapters": {
+            "0003-chapter": {
+                "clean_spans": [
+                    {"start": 0, "end": 1, "base": "富", "reading": "と"},
+                ]
+            }
+        }
+    }
+    chapter_text = "富士山は高い。"
+
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            *,
+            pos1: str | None = None,
+            pos2: str | None = None,
+            pos3: str | None = None,
+            pos4: str | None = None,
+            type_: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.reading = kana
+            self.pos1 = pos1
+            self.pos2 = pos2
+            self.pos3 = pos3
+            self.pos4 = pos4
+            self.type = type_
+
+    class DummyToken:
+        def __init__(
+            self,
+            surface: str,
+            kana: str | None,
+            *,
+            pos1: str | None = None,
+            pos2: str | None = None,
+            pos3: str | None = None,
+            pos4: str | None = None,
+            type_: str | None = None,
+        ) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(
+                kana,
+                pos1=pos1,
+                pos2=pos2,
+                pos3=pos3,
+                pos4=pos4,
+                type_=type_,
+            )
+
+    class DummyTagger:
+        def __call__(self, text: str):
+            if text == chapter_text:
+                return [
+                    DummyToken(
+                        "富士山",
+                        "フジサン",
+                        pos1="名詞",
+                        pos2="固有名詞",
+                        pos3="地名",
+                    ),
+                    DummyToken("は", "ハ", pos1="助詞"),
+                    DummyToken("高い", "タカイ", pos1="形容詞"),
+                ]
+            if text == "富士山":
+                return [DummyToken("富士山", "フジサン")]
+            if text == "富":
+                return [DummyToken("富", "トミ")]
+            return []
+
+    tts_util._RUBY_BASE_READING_CACHE.clear()
+    monkeypatch.setattr(tts_util, "_get_kana_tagger", lambda: DummyTagger())
+    overrides = tts_util._ruby_chapter_compound_overrides(
+        ruby_data,
+        chapter_id="0003-chapter",
+        chapter_text=chapter_text,
+    )
+    assert not any(item.get("base") == "富士山" for item in overrides)
+
+
 def test_merge_reading_overrides_prefers_chapter() -> None:
     global_overrides = [{"base": "山田太一", "reading": "やまだたいち"}]
     chapter_overrides = [{"base": "山田太一", "reading": "やまだたいいち"}]

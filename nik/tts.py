@@ -6114,6 +6114,129 @@ def _has_name_honorific_context(base: str, chapter_text: str | None) -> bool:
     return bool(pattern.search(chapter_text))
 
 
+def _chapter_person_name_surfaces(
+    chapter_text: str | None, *, tagger: Any | None = None
+) -> set[str]:
+    if not chapter_text:
+        return set()
+    if tagger is None:
+        try:
+            tagger = _get_kana_tagger()
+        except RuntimeError:
+            return set()
+
+    surfaces: set[str] = set()
+    run: list[str] = []
+
+    def flush_run() -> None:
+        nonlocal run
+        if len(run) >= 2:
+            joined = "".join(run)
+            if _is_kanji_only(joined):
+                surfaces.add(joined)
+        run = []
+
+    for token in tagger(chapter_text):
+        surface = str(getattr(token, "surface", "") or "")
+        if not surface or not _is_kanji_only(surface):
+            flush_run()
+            continue
+        attrs = _extract_token_attrs(token)
+        values = {
+            str(attrs.get("pos1") or ""),
+            str(attrs.get("pos2") or ""),
+            str(attrs.get("pos3") or ""),
+            str(attrs.get("pos4") or ""),
+            str(attrs.get("type") or ""),
+        }
+        if "人名" not in values:
+            flush_run()
+            continue
+        surfaces.add(surface)
+        run.append(surface)
+    flush_run()
+    return surfaces
+
+
+def _expand_kanji_run_for_span(
+    chapter_text: str, start: int, end: int
+) -> tuple[int, int, str] | None:
+    if not chapter_text:
+        return None
+    if start < 0 or end <= start or end > len(chapter_text):
+        return None
+    if not all(_is_kanji_char(ch) for ch in chapter_text[start:end]):
+        return None
+    left = start
+    while left > 0 and _is_kanji_char(chapter_text[left - 1]):
+        left -= 1
+    right = end
+    while right < len(chapter_text) and _is_kanji_char(chapter_text[right]):
+        right += 1
+    run_base = chapter_text[left:right]
+    if len(run_base) <= 1 or not _is_kanji_only(run_base):
+        return None
+    return left, right, run_base
+
+
+def _infer_name_compound_override_from_single_kanji_span(
+    span: dict,
+    *,
+    chapter_text: str | None,
+    person_name_surfaces: set[str],
+    tagger: Any | None,
+) -> dict[str, str] | None:
+    if not isinstance(span, dict):
+        return None
+    if not chapter_text or tagger is None:
+        return None
+    entry = _normalize_reading_override_entry(span)
+    if not entry:
+        return None
+    base = str(entry.get("base") or "").strip()
+    ruby_reading = str(entry.get("reading") or "").strip()
+    if len(base) != 1 or not _is_kanji_only(base):
+        return None
+    if not _is_kana_reading(ruby_reading):
+        return None
+    try:
+        start = int(span.get("start"))
+        end = int(span.get("end"))
+    except (TypeError, ValueError):
+        return None
+    run = _expand_kanji_run_for_span(chapter_text, start, end)
+    if run is None:
+        return None
+    run_start, _run_end, run_base = run
+    # Be conservative: only infer when ruby anchors the first kanji in the name run.
+    if run_start != start:
+        return None
+    if run_base not in person_name_surfaces and not _has_name_honorific_context(
+        run_base, chapter_text
+    ):
+        return None
+
+    run_default = _base_reading_kata(run_base, tagger)
+    base_default = _base_reading_kata(base, tagger)
+    if not run_default or not base_default:
+        return None
+    run_default_kata = _hiragana_to_katakana(unicodedata.normalize("NFKC", run_default))
+    base_default_kata = _hiragana_to_katakana(
+        unicodedata.normalize("NFKC", base_default)
+    )
+    ruby_kata = _hiragana_to_katakana(unicodedata.normalize("NFKC", ruby_reading))
+    if not run_default_kata.startswith(base_default_kata):
+        return None
+    inferred_kata = ruby_kata + run_default_kata[len(base_default_kata) :]
+    if inferred_kata == run_default_kata:
+        return None
+    inferred_hira = _katakana_to_hiragana(inferred_kata)
+    inferred_entry = _normalize_reading_override_entry(
+        {"base": run_base, "reading": inferred_hira}
+    )
+    return inferred_entry
+
+
 def _ruby_chapter_compound_overrides(
     ruby_data: dict,
     *,
@@ -6136,6 +6259,27 @@ def _ruby_chapter_compound_overrides(
 
     counts: dict[str, dict[str, int]] = {}
     order: dict[str, list[str]] = {}
+    tagger: Any | None = None
+    person_name_surfaces: set[str] = set()
+    if chapter_id is not None and chapter_text:
+        try:
+            tagger = _get_kana_tagger()
+        except RuntimeError:
+            tagger = None
+        if tagger is not None:
+            person_name_surfaces = _chapter_person_name_surfaces(
+                chapter_text, tagger=tagger
+            )
+
+    def add_count(base: str, reading: str) -> None:
+        if not base or not reading:
+            return
+        counts.setdefault(base, {})
+        counts[base][reading] = counts[base].get(reading, 0) + 1
+        order.setdefault(base, [])
+        if reading not in order[base]:
+            order[base].append(reading)
+
     for chapter_entry in chapter_entries:
         spans = _chapter_ruby_spans_for_counts(chapter_entry)
         if not spans:
@@ -6149,15 +6293,24 @@ def _ruby_chapter_compound_overrides(
             reading = str(entry.get("reading") or "").strip()
             if not base or not reading:
                 continue
-            if len(base) <= 1 or not _is_kanji_only(base):
+            if len(base) > 1 and _is_kanji_only(base) and _is_kana_reading(reading):
+                add_count(base, reading)
                 continue
-            if not _is_kana_reading(reading):
-                continue
-            counts.setdefault(base, {})
-            counts[base][reading] = counts[base].get(reading, 0) + 1
-            order.setdefault(base, [])
-            if reading not in order[base]:
-                order[base].append(reading)
+            inferred = _infer_name_compound_override_from_single_kanji_span(
+                item,
+                chapter_text=chapter_text,
+                person_name_surfaces=person_name_surfaces,
+                tagger=tagger,
+            )
+            if inferred:
+                inferred_base = str(inferred.get("base") or "").strip()
+                inferred_reading = str(inferred.get("reading") or "").strip()
+                if (
+                    len(inferred_base) > 1
+                    and _is_kanji_only(inferred_base)
+                    and _is_kana_reading(inferred_reading)
+                ):
+                    add_count(inferred_base, inferred_reading)
 
     overrides: List[dict[str, str]] = []
     for base in sorted(counts.keys()):
@@ -6179,7 +6332,10 @@ def _ruby_chapter_compound_overrides(
         allow_singleton_name = (
             majority_count > 0
             and total == 1
-            and _has_name_honorific_context(base, chapter_text)
+            and (
+                _has_name_honorific_context(base, chapter_text)
+                or base in person_name_surfaces
+            )
         )
         if majority_count < _RUBY_CHAPTER_COMPOUND_MIN_COUNT and not allow_singleton_name:
             continue
