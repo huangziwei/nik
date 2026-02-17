@@ -2739,7 +2739,7 @@
           cancel: "キャンセル",
           overridesTitle: "読み上げ置換（全体）",
           overridesHelp:
-            "1 行 1 件: 漢字=かな。re: で正規表現可（例: re:御(存知|迷惑)=ご\\1）。TTS 時のみ適用。",
+            "1 行 1 件: 漢字=かな。re: で正規表現可（例: re:御(存知|迷惑)=ご\\1）。# で始まる行はコメント。TTS 時のみ適用。",
           saveOverrides: "置換を保存",
           rulesTitle: "ルール",
           rulesDrop: "章タイトルの除外パターン",
@@ -3064,7 +3064,7 @@
           cancel: "Cancel",
           overridesTitle: "Reading overrides (global)",
           overridesHelp:
-            "One per line: 漢字=かな. Prefix with re: for regex (e.g., re:御(存知|迷惑)=ご\\1). Applied at TTS time only.",
+            "One per line: 漢字=かな. Prefix with re: for regex (e.g., re:御(存知|迷惑)=ご\\1). Lines starting with # are comments. Applied at TTS time only.",
           saveOverrides: "Save overrides",
           rulesTitle: "Rules",
           rulesDrop: "Drop chapter title patterns",
@@ -7668,6 +7668,13 @@
           .join("\n");
       }
 
+      function normalizeOverridesText(data, fallbackEntries = []) {
+        if (typeof data?.text === "string") {
+          return data.text;
+        }
+        return overridesToText(data?.overrides || fallbackEntries);
+      }
+
       function parseOverrideLines(text) {
         const entries = [];
         const invalid = [];
@@ -7677,6 +7684,9 @@
           .map((line) => line.trim())
           .forEach((line) => {
             if (!line) {
+              return;
+            }
+            if (line.startsWith("#")) {
               return;
             }
             let sepIndex = -1;
@@ -7778,7 +7788,7 @@
           const params = new URLSearchParams();
           params.set("book_id", state.book.id);
           const data = await fetchJson(`/api/reading-overrides?${params.toString()}`);
-          const text = overridesToText(data.overrides || []);
+          const text = normalizeOverridesText(data);
           readingOverrides.value = text;
           state.readingOverridesOriginal = text;
           state.readingOverridesDirty = false;
@@ -7802,9 +7812,10 @@
             body: JSON.stringify({
               book_id: state.book.id,
               overrides: entries,
+              text: readingOverrides.value || "",
             }),
           });
-          const text = overridesToText(data.overrides || entries);
+          const text = normalizeOverridesText(data, entries);
           readingOverrides.value = text;
           state.readingOverridesOriginal = text;
           state.readingOverridesDirty = false;

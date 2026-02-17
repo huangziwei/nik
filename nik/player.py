@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -758,6 +759,439 @@ def _normalize_reading_overrides(raw: object) -> List[dict[str, str]]:
     return cleaned
 
 
+def _reading_override_line(entry: dict[str, str]) -> str:
+    if not isinstance(entry, dict):
+        return ""
+    pattern = str(entry.get("pattern") or "").strip()
+    base = str(entry.get("base") or "").strip()
+    reading = str(entry.get("reading") or "").strip()
+    if not reading:
+        return ""
+    if pattern:
+        return f"re:{pattern}={reading}"
+    if base:
+        return f"{base}={reading}"
+    return ""
+
+
+def _overrides_to_text(entries: List[dict[str, str]]) -> str:
+    lines = [_reading_override_line(item) for item in entries]
+    return "\n".join(line for line in lines if line)
+
+
+def _normalize_reading_overrides_text(raw: object) -> str:
+    text = str(raw or "").replace("\r\n", "\n").replace("\r", "\n")
+    normalized = "\n".join(line.rstrip() for line in text.split("\n"))
+    return normalized.strip("\n")
+
+
+def _load_unidic_tagger_if_available() -> Optional[object]:
+    dict_dir = tts_util._resolve_unidic_dir()
+    if not (dict_dir / "dicrc").exists():
+        return None
+    try:
+        return tts_util._get_kana_tagger()
+    except Exception:
+        return None
+
+
+def _reading_to_kata(reading: str) -> str:
+    return tts_util._hiragana_to_katakana(unicodedata.normalize("NFKC", reading))
+
+
+def _token_reading_candidates_kata(token: object) -> List[str]:
+    out: List[str] = []
+    seen: set[str] = set()
+    primary = str(tts_util._extract_token_reading(token) or "").strip()
+    if primary:
+        candidate = _reading_to_kata(primary)
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            out.append(candidate)
+
+    feature = getattr(token, "feature", None)
+    if feature is None:
+        return out
+    for attr in (
+        "kana",
+        "pron",
+        "reading",
+        "kanaBase",
+        "pronBase",
+        "form",
+        "formBase",
+        "lForm",
+    ):
+        value = getattr(feature, attr, None)
+        if not value or value == "*":
+            continue
+        reading = str(value).strip()
+        if not reading or not tts_util._is_kana_reading(reading):
+            continue
+        candidate = _reading_to_kata(reading)
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        out.append(candidate)
+    return out
+
+
+def _surface_reading_candidates_kata(
+    surface: str,
+    tagger: Optional[object],
+    *,
+    max_candidates: int = 48,
+) -> set[str]:
+    if not surface or tagger is None:
+        return set()
+    try:
+        tokens = list(tagger(surface))
+    except Exception:
+        return set()
+    if not tokens:
+        return set()
+
+    per_token: List[List[str]] = []
+    for token in tokens:
+        candidates = _token_reading_candidates_kata(token)
+        if not candidates:
+            return set()
+        per_token.append(candidates)
+
+    combined = {""}
+    for candidates in per_token:
+        next_combined: set[str] = set()
+        for prefix in combined:
+            for suffix in candidates:
+                next_combined.add(prefix + suffix)
+                if len(next_combined) >= max_candidates:
+                    break
+            if len(next_combined) >= max_candidates:
+                break
+        combined = next_combined
+        if not combined:
+            return set()
+    return combined
+
+
+def _is_unidic_aligned_ruby_reading(
+    base: str,
+    reading: str,
+    tagger: Optional[object],
+) -> bool:
+    if not base or not reading or tagger is None:
+        return False
+    reading_text = unicodedata.normalize("NFKC", str(reading).strip())
+    if not reading_text or not tts_util._is_kana_reading(reading_text):
+        return False
+    try:
+        normalized = tts_util._normalize_ruby_reading(base, reading_text, tagger)
+        reading_kata = _reading_to_kata(normalized)
+    except Exception:
+        return False
+    if not reading_kata:
+        return False
+    candidates = _surface_reading_candidates_kata(base, tagger)
+    return reading_kata in candidates
+
+
+def _collect_ruby_reading_pairs(raw: object) -> List[tuple[str, str]]:
+    if not isinstance(raw, dict):
+        return []
+    pairs: List[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add_pair(base_raw: object, reading_raw: object) -> None:
+        base = str(base_raw or "").strip()
+        reading = str(reading_raw or "").strip()
+        if not base or not reading:
+            return
+        key = (base, reading)
+        if key in seen:
+            return
+        seen.add(key)
+        pairs.append(key)
+
+    def add_entry(item: object) -> None:
+        if isinstance(item, dict):
+            add_pair(item.get("base"), item.get("reading"))
+        elif isinstance(item, (list, tuple)) and len(item) >= 2:
+            add_pair(item[0], item[1])
+
+    def add_conflict(item: object) -> None:
+        if not isinstance(item, dict):
+            return
+        base = item.get("base")
+        readings = item.get("readings")
+        if not isinstance(readings, list):
+            return
+        for reading_item in readings:
+            if isinstance(reading_item, dict):
+                add_pair(base, reading_item.get("reading"))
+            else:
+                add_pair(base, reading_item)
+
+    chapters = raw.get("chapters")
+    if isinstance(chapters, dict):
+        for chapter_entry in chapters.values():
+            if not isinstance(chapter_entry, dict):
+                continue
+            replacements = chapter_entry.get("replacements")
+            if isinstance(replacements, list):
+                for item in replacements:
+                    add_entry(item)
+            conflicts = chapter_entry.get("conflicts")
+            if isinstance(conflicts, list):
+                for item in conflicts:
+                    add_conflict(item)
+
+    ruby_data = raw.get("ruby")
+    if isinstance(ruby_data, dict):
+        items = ruby_data.get("global")
+        if isinstance(items, list):
+            for item in items:
+                add_entry(item)
+        conflicts = ruby_data.get("conflicts")
+        if isinstance(conflicts, list):
+            for item in conflicts:
+                add_conflict(item)
+
+    return pairs
+
+
+def _chapter_text_paths_by_id(book_dir: Path) -> dict[str, Path]:
+    paths: dict[str, Path] = {}
+    toc_path = book_dir / "toc.json"
+    if toc_path.exists():
+        try:
+            toc_data = _load_json(toc_path)
+        except Exception:
+            toc_data = {}
+        chapters = toc_data.get("chapters") if isinstance(toc_data, dict) else None
+        if isinstance(chapters, list):
+            for item in chapters:
+                if not isinstance(item, dict):
+                    continue
+                rel_path = str(item.get("path") or "").strip()
+                if not rel_path:
+                    continue
+                chapter_id = Path(rel_path).stem
+                if not chapter_id:
+                    continue
+                path = book_dir / rel_path
+                if path.exists():
+                    paths[chapter_id] = path
+    chapters_dir = book_dir / "raw" / "chapters"
+    if chapters_dir.exists():
+        for path in sorted(chapters_dir.glob("*.txt")):
+            paths.setdefault(path.stem, path)
+    raw_dir = book_dir / "raw"
+    if raw_dir.exists():
+        for path in sorted(raw_dir.glob("*.txt")):
+            paths.setdefault(path.stem, path)
+    return paths
+
+
+def _span_surface_with_okurigana(text: str, start: int, end: int) -> str:
+    if not text or start < 0 or end <= start or end > len(text):
+        return ""
+    surface = text[start:end]
+    if not surface:
+        return ""
+    suffix: list[str] = []
+    cursor = end
+    while cursor < len(text):
+        ch = text[cursor]
+        if not tts_util._is_kana_reading(ch):
+            break
+        suffix.append(ch)
+        cursor += 1
+    return surface + "".join(suffix)
+
+
+def _collect_ruby_surface_candidates(book_dir: Path, raw: object) -> dict[tuple[str, str], set[str]]:
+    if not isinstance(raw, dict):
+        return {}
+    ruby_data = raw.get("ruby")
+    if not isinstance(ruby_data, dict):
+        return {}
+    chapters = ruby_data.get("chapters")
+    if not isinstance(chapters, dict):
+        return {}
+
+    path_map = _chapter_text_paths_by_id(book_dir)
+    text_cache: dict[str, str] = {}
+    surface_map: dict[tuple[str, str], set[str]] = {}
+
+    def add_surface(base: str, reading: str, surface: str) -> None:
+        base_text = str(base or "").strip()
+        reading_text = str(reading or "").strip()
+        surface_text = str(surface or "").strip()
+        if not base_text or not reading_text or not surface_text:
+            return
+        key = (base_text, reading_text)
+        surface_map.setdefault(key, set()).add(surface_text)
+
+    for chapter_id, chapter_data in chapters.items():
+        if not isinstance(chapter_data, dict):
+            continue
+        spans = chapter_data.get("raw_spans")
+        if not isinstance(spans, list) or not spans:
+            continue
+        chapter_id_text = str(chapter_id or "").strip()
+        if not chapter_id_text:
+            continue
+        path = path_map.get(chapter_id_text)
+        if not path:
+            continue
+        chapter_text = text_cache.get(chapter_id_text)
+        if chapter_text is None:
+            try:
+                chapter_text = path.read_text(encoding="utf-8")
+            except Exception:
+                chapter_text = ""
+            text_cache[chapter_id_text] = chapter_text
+        if not chapter_text:
+            continue
+        for span in spans:
+            if not isinstance(span, dict):
+                continue
+            base = str(span.get("base") or "").strip()
+            reading = str(span.get("reading") or "").strip()
+            if not base or not reading:
+                continue
+            try:
+                start = int(span.get("start"))
+                end = int(span.get("end"))
+            except (TypeError, ValueError):
+                continue
+            if start < 0 or end <= start or end > len(chapter_text):
+                continue
+            literal_surface = chapter_text[start:end].strip()
+            if literal_surface:
+                add_surface(base, reading, literal_surface)
+            with_okurigana = _span_surface_with_okurigana(chapter_text, start, end).strip()
+            if with_okurigana:
+                add_surface(base, reading, with_okurigana)
+    return surface_map
+
+
+def _is_unidic_aligned_ruby_reading_with_surfaces(
+    base: str,
+    reading: str,
+    tagger: Optional[object],
+    surfaces: set[str],
+) -> bool:
+    if not base or not reading or tagger is None or not surfaces:
+        return False
+    reading_text = unicodedata.normalize("NFKC", str(reading).strip())
+    if not reading_text or not tts_util._is_kana_reading(reading_text):
+        return False
+    try:
+        normalized = tts_util._normalize_ruby_reading(base, reading_text, tagger)
+    except Exception:
+        normalized = reading_text
+    reading_kata = _reading_to_kata(normalized)
+    if not reading_kata:
+        return False
+    for surface in sorted(surfaces, key=len, reverse=True):
+        surface_text = unicodedata.normalize("NFKC", str(surface).strip())
+        if not surface_text:
+            continue
+        for surface_kata in _surface_reading_candidates_kata(surface_text, tagger):
+            if surface_kata == reading_kata or surface_kata.startswith(reading_kata):
+                return True
+    return False
+
+
+def _suggest_unidic_mismatch_comments(
+    book_dir: Path,
+    global_overrides: List[dict[str, str]],
+) -> List[str]:
+    path = book_dir / "reading-overrides.json"
+    if not path.exists():
+        return []
+    try:
+        raw = _load_json(path)
+    except Exception:
+        return []
+    pairs = _collect_ruby_reading_pairs(raw)
+    if not pairs:
+        return []
+
+    tagger = _load_unidic_tagger_if_available()
+    if tagger is None:
+        return []
+    surface_candidates = _collect_ruby_surface_candidates(book_dir, raw)
+
+    overridden_bases = {
+        str(item.get("base") or "").strip()
+        for item in global_overrides
+        if isinstance(item, dict)
+    }
+    overridden_bases.discard("")
+    aligned_cache: dict[tuple[str, str], bool] = {}
+    suggestions: List[str] = []
+    seen_lines: set[str] = set()
+    for base, reading in pairs:
+        if base in overridden_bases:
+            continue
+        key = (base, reading)
+        aligned = aligned_cache.get(key)
+        if aligned is None:
+            aligned = _is_unidic_aligned_ruby_reading(base, reading, tagger)
+            if not aligned:
+                aligned = _is_unidic_aligned_ruby_reading_with_surfaces(
+                    base,
+                    reading,
+                    tagger,
+                    surface_candidates.get((base, reading), set()),
+                )
+            aligned_cache[key] = aligned
+        if aligned:
+            continue
+        line = f"{base}={reading}"
+        if line in seen_lines:
+            continue
+        seen_lines.add(line)
+        suggestions.append(line)
+    return suggestions
+
+
+def _merge_override_text_with_comments(text: str, comments: List[str]) -> str:
+    base_text = _normalize_reading_overrides_text(text)
+    if not comments:
+        return base_text
+
+    lines = base_text.splitlines() if base_text else []
+    existing_comments = {
+        line.strip()[1:].strip()
+        for line in lines
+        if line.strip().startswith("#") and line.strip()[1:].strip()
+    }
+    parsed_entries = tts_util._parse_reading_overrides_text(base_text)
+    existing_entries = {
+        line
+        for line in (_reading_override_line(item) for item in parsed_entries)
+        if line
+    }
+
+    missing = [
+        comment.strip()
+        for comment in comments
+        if comment.strip()
+        and comment.strip() not in existing_comments
+        and comment.strip() not in existing_entries
+    ]
+    if not missing:
+        return base_text
+
+    if lines and lines[-1].strip():
+        lines.append("")
+    lines.extend(f"# {item}" for item in missing)
+    return "\n".join(lines)
+
+
 def _load_voice_map(book_dir: Path, repo_root: Path) -> dict:
     path = _voice_map_path(book_dir)
     if not path.exists():
@@ -1393,6 +1827,7 @@ class CleanEditPayload(BaseModel):
 class ReadingOverridesPayload(BaseModel):
     book_id: str
     overrides: List[dict] = []
+    text: Optional[str] = None
 
 
 class PlaybackPayload(BaseModel):
@@ -2365,9 +2800,26 @@ def create_app(root_dir: Path) -> FastAPI:
             global_overrides, _ = tts_util._load_reading_overrides(
                 book_dir, include_template=False
             )
+            overrides_path = book_dir / "reading-overrides.json"
+            raw_data = _load_json(overrides_path) if overrides_path.exists() else {}
+            if not isinstance(raw_data, dict):
+                raw_data = {}
+            editor_text = _normalize_reading_overrides_text(raw_data.get("global_text"))
+            if not editor_text:
+                editor_text = _overrides_to_text(global_overrides)
+            editor_text = _merge_override_text_with_comments(
+                editor_text,
+                _suggest_unidic_mismatch_comments(book_dir, global_overrides),
+            )
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return _no_store({"book_id": book_id, "overrides": global_overrides})
+        return _no_store(
+            {
+                "book_id": book_id,
+                "overrides": global_overrides,
+                "text": editor_text,
+            }
+        )
 
     @app.post("/api/reading-overrides")
     def reading_overrides_save(payload: ReadingOverridesPayload) -> JSONResponse:
@@ -2382,7 +2834,12 @@ def create_app(root_dir: Path) -> FastAPI:
             raise HTTPException(
                 status_code=409, detail="Stop merge before editing readings."
             )
-        overrides = _normalize_reading_overrides(payload.overrides)
+        editor_text = _normalize_reading_overrides_text(payload.text)
+        if payload.text is not None:
+            overrides = tts_util._parse_reading_overrides_text(editor_text)
+        else:
+            overrides = _normalize_reading_overrides(payload.overrides)
+            editor_text = _overrides_to_text(overrides)
         overrides_path = book_dir / "reading-overrides.json"
         data: dict = {}
         if overrides_path.exists():
@@ -2396,13 +2853,24 @@ def create_app(root_dir: Path) -> FastAPI:
         data.setdefault("created_unix", now)
         data["updated_unix"] = now
         data["global"] = overrides
+        if editor_text:
+            data["global_text"] = editor_text
+        else:
+            data.pop("global_text", None)
         overrides_path.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write_json(overrides_path, data)
         try:
             tts_cleared = sanitize.refresh_chunks(book_dir=book_dir)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return _no_store({"status": "ok", "overrides": overrides, "tts_cleared": tts_cleared})
+        return _no_store(
+            {
+                "status": "ok",
+                "overrides": overrides,
+                "text": editor_text,
+                "tts_cleared": tts_cleared,
+            }
+        )
 
     @app.get("/api/synth/status")
     def synth_status(book_id: str) -> JSONResponse:

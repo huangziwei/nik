@@ -117,6 +117,153 @@ def test_normalize_reading_overrides() -> None:
     ]
 
 
+def test_reading_overrides_save_preserves_editor_text_comments(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, root_dir = _make_repo(tmp_path)
+    book_dir = _make_book(root_dir)
+    monkeypatch.setattr(player_util.sanitize, "refresh_chunks", lambda **_kwargs: True)
+
+    app = player_util.create_app(root_dir)
+    client = TestClient(app)
+
+    text = "# 事件=ヤマ\n事件=じけん\n# 検事=君ら"
+    response = client.post(
+        "/api/reading-overrides",
+        json={"book_id": "book", "overrides": [], "text": text},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["overrides"] == [{"base": "事件", "reading": "じけん"}]
+    assert payload["text"] == text
+
+    saved = json.loads((book_dir / "reading-overrides.json").read_text(encoding="utf-8"))
+    assert saved["global"] == [{"base": "事件", "reading": "じけん"}]
+    assert saved["global_text"] == text
+
+    loaded = client.get("/api/reading-overrides", params={"book_id": "book"})
+    assert loaded.status_code == 200
+    loaded_payload = loaded.json()
+    assert loaded_payload["text"] == text
+    assert loaded_payload["overrides"] == [{"base": "事件", "reading": "じけん"}]
+
+
+def test_reading_overrides_get_prefills_unidic_mismatch_comments(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, root_dir = _make_repo(tmp_path)
+    book_dir = _make_book(root_dir)
+    (book_dir / "reading-overrides.json").write_text(
+        json.dumps(
+            {
+                "global": [{"base": "善", "reading": "ぜん"}],
+                "ruby": {
+                    "global": [
+                        {"base": "事件", "reading": "ヤマ"},
+                        {"base": "検事", "reading": "けんじ"},
+                        {"base": "善", "reading": "よ"},
+                    ]
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(player_util, "_load_unidic_tagger_if_available", lambda: object())
+    monkeypatch.setattr(
+        player_util,
+        "_is_unidic_aligned_ruby_reading",
+        lambda base, reading, _tagger: (base, reading) == ("検事", "けんじ"),
+    )
+
+    app = player_util.create_app(root_dir)
+    client = TestClient(app)
+    response = client.get("/api/reading-overrides", params={"book_id": "book"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["overrides"] == [{"base": "善", "reading": "ぜん", "mode": "isolated"}]
+    assert "善=ぜん" in payload["text"]
+    assert "# 事件=ヤマ" in payload["text"]
+    assert "# 検事=けんじ" not in payload["text"]
+    assert "# 善=よ" not in payload["text"]
+
+
+def test_reading_overrides_get_skips_stem_ruby_mismatch_with_okurigana_surface(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, root_dir = _make_repo(tmp_path)
+    book_dir = _make_book(root_dir)
+    chapters_dir = book_dir / "raw" / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    (chapters_dir / "c1.txt").write_text("微笑んだ。", encoding="utf-8")
+    (book_dir / "reading-overrides.json").write_text(
+        json.dumps(
+            {
+                "ruby": {
+                    "global": [{"base": "微笑", "reading": "ほほえ"}],
+                    "chapters": {
+                        "c1": {
+                            "raw_spans": [
+                                {"start": 0, "end": 2, "base": "微笑", "reading": "ほほえ"}
+                            ]
+                        }
+                    },
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(player_util, "_load_unidic_tagger_if_available", lambda: object())
+    monkeypatch.setattr(
+        player_util,
+        "_is_unidic_aligned_ruby_reading",
+        lambda _base, _reading, _tagger: False,
+    )
+    monkeypatch.setattr(
+        player_util.tts_util,
+        "_normalize_ruby_reading",
+        lambda _base, reading, _tagger: reading,
+    )
+    monkeypatch.setattr(
+        player_util,
+        "_surface_reading_candidates_kata",
+        lambda surface, _tagger, **_kwargs: {
+            "微笑": {"ビショウ"},
+            "微笑んだ": {"ホホエンダ"},
+        }.get(surface, set()),
+    )
+
+    app = player_util.create_app(root_dir)
+    client = TestClient(app)
+    response = client.get("/api/reading-overrides", params={"book_id": "book"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "# 微笑=ほほえ" not in payload["text"]
+
+
+def test_is_unidic_aligned_ruby_reading_accepts_alternate_surface_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        player_util.tts_util,
+        "_normalize_ruby_reading",
+        lambda _base, reading, _tagger: reading,
+    )
+    monkeypatch.setattr(
+        player_util,
+        "_surface_reading_candidates_kata",
+        lambda surface, _tagger, **_kwargs: {"ジャコ", "ザコ"} if surface == "雑魚" else set(),
+    )
+
+    assert player_util._is_unidic_aligned_ruby_reading("雑魚", "ざこ", object()) is True
+
+
 def test_synth_request_defaults_use_hiragana_and_mid_sentence_conversion() -> None:
     payload = player_util.SynthRequest(book_id="book")
     assert payload.kana_style == "hiragana"
