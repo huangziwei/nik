@@ -177,6 +177,22 @@ _PRONUNCIATION_PARTICLE_SURFACES = {"は", "へ", "を"}
 _HIRAGANA_PRONUNCIATION_PARTICLE_MAP = {
     "は": "わ",
 }
+_HIRAGANA_HA_NO_CONVERT_AFTER_PARTICLE_SURFACES = {
+    "に",
+    "の",
+    "で",
+    "と",
+    "が",
+    "も",
+    "や",
+    "か",
+    "へ",
+    "を",
+    "から",
+    "まで",
+    "より",
+    "だけ",
+}
 _ISOLATED_SINGLE_KANJI_COPULA_BOUNDARY_CHARS = {"だ", "で", "ダ", "デ"}
 _RUBY_SUTEGANA_LARGE_CHARS = "あいうえおつやゆよわかけアイウエオツヤユヨワカケ"
 _RUBY_SUTEGANA_SMALL_CHARS = "ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶ"
@@ -3828,6 +3844,22 @@ def _is_pronunciation_particle_token(token: Any) -> bool:
     )
 
 
+def _is_particle_token(token: Any) -> bool:
+    attrs = _extract_token_attrs(token)
+    pos1 = attrs.get("pos1") or ""
+    if pos1 == "助詞":
+        return True
+    return any(
+        pos.endswith("助詞")
+        for pos in (
+            attrs.get("pos2") or "",
+            attrs.get("pos3") or "",
+            attrs.get("pos4") or "",
+        )
+        if pos
+    )
+
+
 def _render_pronunciation_particle_hiragana(token: Any, output: str) -> str:
     if not output:
         return output
@@ -4576,8 +4608,55 @@ def _normalize_kana_with_tagger(
             return value
         return f"{token_separator}{value}{token_separator}"
 
+    def _is_surface_punctuation(surface: str) -> bool:
+        if not surface:
+            return False
+        if surface == SECTION_BREAK:
+            return True
+        return all(unicodedata.category(ch).startswith("P") for ch in surface)
+
+    def _prev_content_token_idx(token_idx: int) -> Optional[int]:
+        prev_idx = token_idx - 1
+        while prev_idx >= 0:
+            prev_surface = unicodedata.normalize(
+                "NFKC", str(getattr(tokens[prev_idx], "surface", "") or "")
+            )
+            if not prev_surface:
+                prev_idx -= 1
+                continue
+            if prev_surface == token_separator or prev_surface == SECTION_BREAK:
+                prev_idx -= 1
+                continue
+            if _is_surface_punctuation(prev_surface):
+                prev_idx -= 1
+                continue
+            return prev_idx
+        return None
+
+    def _should_keep_hiragana_ha_surface(token_idx: int) -> bool:
+        token = tokens[token_idx]
+        surface = unicodedata.normalize(
+            "NFKC", str(getattr(token, "surface", "") or "")
+        )
+        if surface != "は" or not _is_pronunciation_particle_token(token):
+            return False
+        prev_idx = _prev_content_token_idx(token_idx)
+        if prev_idx is None:
+            return False
+        prev_token = tokens[prev_idx]
+        prev_surface = unicodedata.normalize(
+            "NFKC", str(getattr(prev_token, "surface", "") or "")
+        )
+        if not _is_particle_token(prev_token):
+            return False
+        return prev_surface in _HIRAGANA_HA_NO_CONVERT_AFTER_PARTICLE_SURFACES
+
     def _should_prepend_hiragana_transform_separator(token_idx: int) -> bool:
         if token_idx <= 0 or not token_separator:
+            return False
+        # Pronunciation particles (e.g. は->わ) should stay attached to the
+        # previous token; keep only trailing separator.
+        if _is_pronunciation_particle_token(tokens[token_idx]):
             return False
         prev_idx = token_idx - 1
         prev_surface = ""
@@ -4690,7 +4769,11 @@ def _normalize_kana_with_tagger(
                     )
                     continue
             if kana_style == "hiragana":
-                particle_output = _render_pronunciation_particle_hiragana(token, surface)
+                particle_output = surface
+                if not _should_keep_hiragana_ha_surface(idx):
+                    particle_output = _render_pronunciation_particle_hiragana(
+                        token, surface
+                    )
                 if particle_output != surface:
                     if _should_prepend_hiragana_transform_separator(idx):
                         particle_output = _prepend_transform_separator(particle_output)
@@ -4887,13 +4970,6 @@ def _normalize_kana_with_tagger(
             (attrs.get(key) or "").endswith("接尾辞")
             for key in ("pos2", "pos3", "pos4")
         )
-
-    def _is_surface_punctuation(surface: str) -> bool:
-        if not surface:
-            return False
-        if surface == SECTION_BREAK:
-            return True
-        return all(unicodedata.category(ch).startswith("P") for ch in surface)
 
     def _token_output_indices() -> Dict[int, int]:
         token_to_out_idx: Dict[int, int] = {}

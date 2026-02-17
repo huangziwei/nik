@@ -2277,7 +2277,7 @@ def test_normalize_kana_hiragana_particle_pronunciation_keeps_he_wo(
     assert out == f"あおと{sep}{particle_surface}{sep}{tail_output}{sep}"
 
 
-def test_normalize_kana_hiragana_particle_pronunciation_adds_mid_sentence_prepend() -> None:
+def test_normalize_kana_hiragana_particle_pronunciation_skips_mid_sentence_prepend() -> None:
     class DummyFeature:
         def __init__(
             self,
@@ -2316,7 +2316,102 @@ def test_normalize_kana_hiragana_particle_pronunciation_adds_mid_sentence_prepen
         DummyTagger(),
         kana_style="hiragana",
     )
-    assert out == f"という{sep}わ{sep}むね{sep}"
+    assert out == f"というわ{sep}むね{sep}"
+
+
+def test_normalize_kana_hiragana_particle_pronunciation_keeps_noha_attached() -> None:
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            pos1: str | None = None,
+            pos2: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+            self.pos2 = pos2
+
+    class DummyToken:
+        def __init__(
+            self,
+            surface: str,
+            kana: str | None,
+            *,
+            pos1: str | None = None,
+            pos2: str | None = None,
+        ) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana, pos1=pos1, pos2=pos2)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("殺し", "コロシ"),
+                DummyToken("た", "タ"),
+                DummyToken("の", "ノ", pos1="助詞", pos2="連体化"),
+                DummyToken("は", "ハ", pos1="助詞", pos2="係助詞"),
+                DummyToken("胸", "ムネ"),
+            ]
+
+    sep = _default_first_token_separator()
+    out = tts_util._normalize_kana_with_tagger(
+        "殺したのは胸",
+        DummyTagger(),
+        kana_style="hiragana",
+    )
+    assert out == f"ころし{sep}たのは{sep}むね{sep}"
+    assert "のわ" not in out
+
+
+@pytest.mark.parametrize(
+    "lead_surface",
+    ["に", "で", "と", "が", "も", "や", "か", "へ", "を", "から", "まで", "より", "だけ"],
+)
+def test_normalize_kana_hiragana_particle_pronunciation_keeps_ha_after_particles(
+    lead_surface: str,
+) -> None:
+    class DummyFeature:
+        def __init__(
+            self,
+            kana: str | None,
+            pos1: str | None = None,
+            pos2: str | None = None,
+        ) -> None:
+            self.kana = kana
+            self.pron = kana
+            self.pos1 = pos1
+            self.pos2 = pos2
+
+    class DummyToken:
+        def __init__(
+            self,
+            surface: str,
+            kana: str | None,
+            *,
+            pos1: str | None = None,
+            pos2: str | None = None,
+        ) -> None:
+            self.surface = surface
+            self.feature = DummyFeature(kana, pos1=pos1, pos2=pos2)
+
+    class DummyTagger:
+        def __call__(self, _text: str):
+            return [
+                DummyToken("話し", "ハナシ"),
+                DummyToken(lead_surface, lead_surface, pos1="助詞", pos2="格助詞"),
+                DummyToken("は", "ハ", pos1="助詞", pos2="係助詞"),
+                DummyToken("胸", "ムネ"),
+            ]
+
+    sep = _default_first_token_separator()
+    out = tts_util._normalize_kana_with_tagger(
+        f"話し{lead_surface}は胸",
+        DummyTagger(),
+        kana_style="hiragana",
+    )
+    assert out == f"はなし{sep}{lead_surface}は{sep}むね{sep}"
+    assert f"{lead_surface}わ" not in out
 
 
 def test_normalize_kana_hiragana_separator_after_sokuon_moves_forward() -> None:
