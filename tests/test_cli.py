@@ -174,7 +174,15 @@ def test_kana_defaults_are_hiragana_with_mid_sentence_enabled(argv: list[str]) -
     parser = cli.build_parser()
     args = parser.parse_args(argv)
     assert args.kana_style == "hiragana"
-    assert args.partial_mid_kanji is True
+    assert args.transform_mid_token_to_kana is True
+
+
+def test_legacy_partial_mid_kanji_flag_alias() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        ["kana", "inline text", "--no-partial-mid-kanji"]
+    )
+    assert args.transform_mid_token_to_kana is False
 
 
 def _entry(

@@ -227,6 +227,7 @@ _ASCII_ROMAN_NUMERAL_CHARS = "IVXLCDM"
 _ASCII_ROMAN_MAX_VALUE = 50
 _KANJI_NUMERAL_RANGE_CHARS = "〇零一二三四五六七八九十百千万億兆京"
 _FORCE_FIRST_TOKEN_NOISE_RE = re.compile(r"^[cC][0-9A-Za-z]{2,12}$")
+_LATIN_PHRASE_RE = re.compile(r"[A-Za-z]+(?:[ \t]+[A-Za-z]+)*")
 _NAME_HONORIFIC_SUFFIX_SURFACES = {
     "さん",
     "サン",
@@ -4164,6 +4165,113 @@ def _force_first_latin_phrase(
     return "".join(out), consumed
 
 
+def _prev_significant_char(text: str, idx: int) -> str:
+    pos = idx - 1
+    while pos >= 0:
+        ch = text[pos]
+        if ch.isspace() or unicodedata.category(ch).startswith("P"):
+            pos -= 1
+            continue
+        return ch
+    return ""
+
+
+def _next_significant_char(text: str, idx: int) -> str:
+    pos = idx
+    length = len(text)
+    while pos < length:
+        ch = text[pos]
+        if ch.isspace() or unicodedata.category(ch).startswith("P"):
+            pos += 1
+            continue
+        return ch
+    return ""
+
+
+def _convert_latin_phrase_words(
+    phrase: str,
+    *,
+    debug_sources: Optional[List[str]] = None,
+) -> tuple[str, bool]:
+    if not phrase:
+        return phrase, False
+    out: List[str] = []
+    idx = 0
+    converted_any = False
+    length = len(phrase)
+    while idx < length:
+        ch = phrase[idx]
+        if not (ch.isascii() and ch.isalpha()):
+            out.append(ch)
+            idx += 1
+            continue
+        start = idx
+        while idx < length and phrase[idx].isascii() and phrase[idx].isalpha():
+            idx += 1
+        word = phrase[start:idx]
+        if _FORCE_FIRST_TOKEN_NOISE_RE.fullmatch(word):
+            out.append(word)
+            continue
+        converted, source = _latin_prefix_to_kana_with_source(word)
+        if converted and converted != word:
+            out.append(converted)
+            converted_any = True
+            _append_kana_debug(
+                debug_sources,
+                word,
+                converted,
+                source=source or "latin-map",
+            )
+            continue
+        out.append(word)
+    return "".join(out), converted_any
+
+
+def _transform_mid_token_latin_phrases(
+    text: str,
+    *,
+    debug_sources: Optional[List[str]] = None,
+) -> str:
+    normalized = unicodedata.normalize("NFKC", text or "")
+    if not normalized:
+        return text
+    if not _LATIN_PHRASE_RE.search(normalized):
+        return normalized
+
+    out: List[str] = []
+    last = 0
+    converted = False
+    for match in _LATIN_PHRASE_RE.finditer(normalized):
+        start, end = match.span()
+        phrase = match.group(0)
+        compact = re.sub(r"\s+", "", phrase)
+        if _FORCE_FIRST_TOKEN_NOISE_RE.fullmatch(compact):
+            continue
+
+        prev_ch = _prev_significant_char(normalized, start)
+        next_ch = _next_significant_char(normalized, end)
+        if not (_is_japanese_char(prev_ch) or _is_japanese_char(next_ch)):
+            continue
+
+        rendered, rendered_any = _convert_latin_phrase_words(
+            phrase,
+            debug_sources=debug_sources,
+        )
+        if not rendered_any:
+            continue
+
+        out.append(normalized[last:start])
+        out.append(rendered)
+        last = end
+        converted = True
+
+    if not converted:
+        return normalized
+
+    out.append(normalized[last:])
+    return "".join(out)
+
+
 def _first_token_mode(text: str) -> str:
     normalized = unicodedata.normalize("NFKC", text or "").strip()
     if not normalized:
@@ -4264,7 +4372,7 @@ def _normalize_kana_with_tagger(
     kana_style: str = "hiragana",
     zh_lexicon: Optional[set[str]] = None,
     force_first_token_to_kana: bool = False,
-    partial_mid_kanji: bool = False,
+    transform_mid_token_to_kana: bool = False,
     debug_sources: Optional[List[str]] = None,
 ) -> str:
     if not text:
@@ -4290,7 +4398,7 @@ def _normalize_kana_with_tagger(
             force_first_kanji_last_idx = max(force_first_kanji_indices)
         first_force_separator = token_separator
     if kana_style == "partial" and tokens:
-        if partial_mid_kanji and zh_lexicon is None:
+        if transform_mid_token_to_kana and zh_lexicon is None:
             zh_lexicon = _load_zh_lexicon()
         idx = 0
         while idx < len(tokens):
@@ -4321,7 +4429,7 @@ def _normalize_kana_with_tagger(
                 if has_numeric and has_counter:
                     action = "convert"
                 elif (
-                    partial_mid_kanji
+                    transform_mid_token_to_kana
                     and run_surface
                     and run_surface in (zh_lexicon or set())
                 ):
@@ -4587,7 +4695,7 @@ def _normalize_kana_with_tagger(
                     reading=reading_kata,
                 )
                 continue
-            if partial_mid_kanji and _should_partial_convert(
+            if transform_mid_token_to_kana and _should_partial_convert(
                 surface, attrs, zh_lexicon or set()
             ):
                 output = _katakana_to_hiragana(
@@ -4805,7 +4913,7 @@ def _normalize_kana_text(
     *,
     kana_style: str = "hiragana",
     force_first_token_to_kana: bool = False,
-    partial_mid_kanji: bool = False,
+    transform_mid_token_to_kana: bool = False,
     debug_sources: Optional[List[str]] = None,
 ) -> str:
     kana_style = _normalize_kana_style(kana_style)
@@ -4819,6 +4927,11 @@ def _normalize_kana_text(
             debug_sources=debug_sources,
             separator=first_token_separator,
         )
+    if transform_mid_token_to_kana:
+        text = _transform_mid_token_latin_phrases(
+            text,
+            debug_sources=debug_sources,
+        )
     if not _has_kanji(text):
         sep = _first_token_separator()
         # Even kana-only text can carry pre-inserted separators from ruby/override
@@ -4831,13 +4944,13 @@ def _normalize_kana_text(
                 tagger,
                 kana_style=kana_style,
                 force_first_token_to_kana=False,
-                partial_mid_kanji=False,
+                transform_mid_token_to_kana=False,
                 debug_sources=debug_sources,
             )
         return text
     tagger = _get_kana_tagger()
     zh_lexicon: Optional[set[str]] = None
-    if kana_style == "partial" and partial_mid_kanji:
+    if kana_style == "partial" and transform_mid_token_to_kana:
         zh_lexicon = _load_zh_lexicon()
     parts = re.split(r"(\s+)", text)
     out: List[str] = []
@@ -4860,7 +4973,7 @@ def _normalize_kana_text(
                     kana_style=kana_style,
                     zh_lexicon=zh_lexicon,
                     force_first_token_to_kana=apply_first_token,
-                    partial_mid_kanji=partial_mid_kanji,
+                    transform_mid_token_to_kana=transform_mid_token_to_kana,
                     debug_sources=debug_sources,
                 )
             )
@@ -5061,7 +5174,7 @@ def _prepare_tts_pipeline(
     kana_normalize: bool = True,
     allow_kana_failure: bool = False,
     kana_style: str = "hiragana",
-    partial_mid_kanji: bool = True,
+    transform_mid_token_to_kana: bool = True,
     add_short_punct: bool = True,
     debug_sources: Optional[List[str]] = None,
 ) -> TtsPipeline:
@@ -5093,7 +5206,7 @@ def _prepare_tts_pipeline(
                 after_kana,
                 kana_style=kana_style,
                 force_first_token_to_kana=True,
-                partial_mid_kanji=partial_mid_kanji,
+                transform_mid_token_to_kana=transform_mid_token_to_kana,
                 debug_sources=debug_sources,
             )
         except Exception as exc:
@@ -6389,7 +6502,7 @@ def synthesize_book(
     backend: Optional[str] = None,
     kana_normalize: bool = True,
     kana_style: str = "hiragana",
-    partial_mid_kanji: bool = True,
+    transform_mid_token_to_kana: bool = True,
 ) -> int:
     chapters = load_book_chapters(book_dir)
     backend_name = _select_backend(backend)
@@ -6475,7 +6588,9 @@ def synthesize_book(
     manifest["chapter_pad_ms"] = int(pad_ms) * _CHAPTER_PAD_MULT
     manifest["kana_normalize"] = kana_normalize
     manifest["kana_style"] = kana_style
-    manifest["partial_mid_kanji"] = bool(partial_mid_kanji)
+    manifest["transform_mid_token_to_kana"] = bool(transform_mid_token_to_kana)
+    # Keep legacy key for old manifests/clients.
+    manifest["partial_mid_kanji"] = manifest["transform_mid_token_to_kana"]
     atomic_write_json(manifest_path, manifest)
 
     voice_configs: Dict[str, VoiceConfig] = {}
@@ -6669,7 +6784,7 @@ def synthesize_book(
                     kana_normalize=kana_normalize,
                     allow_kana_failure=True,
                     kana_style=kana_style,
-                    partial_mid_kanji=partial_mid_kanji,
+                    transform_mid_token_to_kana=transform_mid_token_to_kana,
                     add_short_punct=True,
                 )
                 tts_text = pipeline.prepared
@@ -6775,7 +6890,7 @@ def synthesize_book_sample(
     backend: Optional[str] = None,
     kana_normalize: bool = True,
     kana_style: str = "hiragana",
-    partial_mid_kanji: bool = True,
+    transform_mid_token_to_kana: bool = True,
 ) -> int:
     chapters = load_book_chapters(book_dir)
     if not chapters:
@@ -6822,7 +6937,7 @@ def synthesize_book_sample(
         backend=backend,
         kana_normalize=kana_normalize,
         kana_style=kana_style,
-        partial_mid_kanji=partial_mid_kanji,
+        transform_mid_token_to_kana=transform_mid_token_to_kana,
     )
 
 
@@ -6840,7 +6955,7 @@ def synthesize_chunk(
     backend: Optional[str] = None,
     kana_normalize: Optional[bool] = None,
     kana_style: Optional[str] = None,
-    partial_mid_kanji: Optional[bool] = None,
+    transform_mid_token_to_kana: Optional[bool] = None,
 ) -> dict:
     if base_dir is None:
         base_dir = Path.cwd()
@@ -6946,8 +7061,13 @@ def synthesize_chunk(
         kana_normalize = bool(manifest.get("kana_normalize"))
     if kana_style is None:
         kana_style = manifest.get("kana_style")
-    if partial_mid_kanji is None:
-        partial_mid_kanji = bool(manifest.get("partial_mid_kanji", True))
+    if transform_mid_token_to_kana is None:
+        if "transform_mid_token_to_kana" in manifest:
+            transform_mid_token_to_kana = bool(
+                manifest.get("transform_mid_token_to_kana")
+            )
+        else:
+            transform_mid_token_to_kana = bool(manifest.get("partial_mid_kanji", True))
     kana_style = _normalize_kana_style(kana_style)
     if kana_style == "off":
         kana_normalize = False
@@ -7042,7 +7162,7 @@ def synthesize_chunk(
             kana_normalize=bool(kana_normalize),
             allow_kana_failure=False,
             kana_style=kana_style,
-            partial_mid_kanji=partial_mid_kanji,
+            transform_mid_token_to_kana=transform_mid_token_to_kana,
             add_short_punct=True,
         )
     except RuntimeError as exc:

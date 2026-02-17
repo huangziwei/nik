@@ -1072,7 +1072,7 @@ def test_normalize_kana_with_stub_tagger_partial() -> None:
         DummyTagger(),
         kana_style="partial",
         zh_lexicon={"漢字"},
-        partial_mid_kanji=True,
+        transform_mid_token_to_kana=True,
     )
     assert out == "\\かんじ\\始まる"
 
@@ -1109,7 +1109,7 @@ def test_normalize_kana_with_stub_tagger_partial_common_noun(monkeypatch) -> Non
         DummyTagger(),
         kana_style="partial",
         zh_lexicon=set(),
-        partial_mid_kanji=True,
+        transform_mid_token_to_kana=True,
     )
     assert out == "自分"
 
@@ -1143,7 +1143,7 @@ def test_normalize_kana_with_stub_tagger_partial_honorific_prefix(monkeypatch) -
         DummyTagger(),
         kana_style="partial",
         zh_lexicon=set(),
-        partial_mid_kanji=True,
+        transform_mid_token_to_kana=True,
     )
     assert out == "\\ご\\ぞんじ\\"
 
@@ -1214,7 +1214,7 @@ def test_normalize_kana_with_stub_tagger_partial_honorific_prefix_go_o_choice(
         DummyTagger(),
         kana_style="partial",
         zh_lexicon=set(),
-        partial_mid_kanji=True,
+        transform_mid_token_to_kana=True,
     )
     assert out == "\\ご\\ぞんじ\\"
 
@@ -1294,7 +1294,7 @@ def test_normalize_kana_with_stub_tagger_partial_common_noun_guard(monkeypatch) 
         DummyTagger(),
         kana_style="partial",
         zh_lexicon=set(),
-        partial_mid_kanji=True,
+        transform_mid_token_to_kana=True,
     )
     assert out == "\\ぜんりゃく\\"
 
@@ -1330,7 +1330,7 @@ def test_normalize_kana_with_stub_tagger_partial_rare() -> None:
         DummyTagger(),
         kana_style="partial",
         zh_lexicon={"妻子"},
-        partial_mid_kanji=True,
+        transform_mid_token_to_kana=True,
     )
     assert out == "\\さいし\\"
 
@@ -1461,7 +1461,7 @@ def test_normalize_kana_with_stub_tagger_partial_kanji_run_convert() -> None:
         DummyTagger(),
         kana_style="partial",
         zh_lexicon={"漢字"},
-        partial_mid_kanji=True,
+        transform_mid_token_to_kana=True,
     )
     assert out == "\\かんじ\\"
 
@@ -2628,6 +2628,36 @@ def test_normalize_kana_text_force_first_token_chunk_only() -> None:
     assert "The" in out
 
 
+def test_normalize_kana_text_transforms_mid_token_latin_phrase_when_enabled() -> None:
+    text = "あ The Yellow Monkey い"
+    out = tts_util._normalize_kana_text(
+        text,
+        kana_style="hiragana",
+        transform_mid_token_to_kana=True,
+    )
+    assert out == "あ ザ イエロー モンキー い"
+
+
+def test_normalize_kana_text_keeps_mid_token_latin_phrase_when_disabled() -> None:
+    text = "あ The Yellow Monkey い"
+    out = tts_util._normalize_kana_text(
+        text,
+        kana_style="hiragana",
+        transform_mid_token_to_kana=False,
+    )
+    assert out == text
+
+
+def test_normalize_kana_text_does_not_transform_latin_without_japanese_context() -> None:
+    text = "C)2010-2014 HAJIME KAMOSHIDA"
+    out = tts_util._normalize_kana_text(
+        text,
+        kana_style="hiragana",
+        transform_mid_token_to_kana=True,
+    )
+    assert out == text
+
+
 def test_normalize_kana_text_rebalances_existing_separator_without_kanji(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3059,7 +3089,7 @@ def test_synthesize_book_force_first_token_to_kana(
         *,
         kana_style: str = "mixed",
         force_first_token_to_kana: bool = False,
-        partial_mid_kanji: bool = False,
+        transform_mid_token_to_kana: bool = False,
         debug_sources: list[str] | None = None,
     ) -> str:
         calls["force_first_token_to_kana"] = force_first_token_to_kana
@@ -3271,6 +3301,76 @@ def test_synthesize_chunk_ellipsis_only_writes_silence(
     assert written[1] > 0
     assert written[2] == 24000
     assert result["duration_ms"] >= 1000
+
+
+def test_synthesize_chunk_reads_legacy_partial_mid_kanji_manifest_field(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    out_dir = tmp_path / "book" / "tts"
+    out_dir.mkdir(parents=True)
+    manifest = {
+        "voice": "高橋一生",
+        "partial_mid_kanji": False,
+        "chapters": [
+            {
+                "id": "c1",
+                "title": "Chapter 1",
+                "voice": "高橋一生",
+                "chunks": ["こんにちは"],
+                "chunk_spans": [[0, 5]],
+                "durations_ms": [None],
+            }
+        ],
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_prepare_tts_pipeline(*_args, **kwargs):
+        captured["transform_mid_token_to_kana"] = kwargs.get(
+            "transform_mid_token_to_kana"
+        )
+        return tts_util.TtsPipeline(
+            ruby_text="こんにちは",
+            after_overrides="こんにちは",
+            after_numbers="こんにちは",
+            after_kana="こんにちは",
+            prepared="こんにちは",
+        )
+
+    monkeypatch.setattr(tts_util, "_select_backend", lambda _backend: "mlx")
+    monkeypatch.setattr(tts_util, "_resolve_model_name", lambda _name, _backend: "dummy")
+    monkeypatch.setattr(tts_util, "_load_mlx_model", lambda _name: object())
+    monkeypatch.setattr(
+        tts_util, "_generate_audio_mlx", lambda *_args, **_kwargs: ([tts_util.np.zeros(1)], 24000)
+    )
+    monkeypatch.setattr(tts_util, "_load_ruby_data", lambda _book_dir: {"chapters": {}})
+    monkeypatch.setattr(tts_util, "_load_reading_overrides", lambda _book_dir: ([], {}))
+    monkeypatch.setattr(tts_util, "_prepare_tts_pipeline", fake_prepare_tts_pipeline)
+    monkeypatch.setattr(tts_util, "_write_wav", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        tts_util.voice_util,
+        "resolve_voice_config",
+        lambda **_kwargs: voice_util.VoiceConfig(
+            name="高橋一生",
+            ref_audio="dummy.wav",
+            ref_text="dummy",
+            language="Japanese",
+            x_vector_only_mode=False,
+        ),
+    )
+
+    result = tts_util.synthesize_chunk(
+        out_dir=out_dir,
+        chapter_id="c1",
+        chunk_index=0,
+        base_dir=tmp_path,
+    )
+    assert result["status"] == "ok"
+    assert captured["transform_mid_token_to_kana"] is False
 
 
 def test_normalize_numbers_standalone_digits() -> None:

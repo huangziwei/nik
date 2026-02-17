@@ -120,7 +120,7 @@ def test_normalize_reading_overrides() -> None:
 def test_synth_request_defaults_use_hiragana_and_mid_sentence_conversion() -> None:
     payload = player_util.SynthRequest(book_id="book")
     assert payload.kana_style == "hiragana"
-    assert payload.partial_mid_kanji is True
+    assert payload.transform_mid_token_to_kana is True
 
 
 def test_delete_m4b_outputs_removes_parts(tmp_path: Path) -> None:

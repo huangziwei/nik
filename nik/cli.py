@@ -810,7 +810,7 @@ def _synth(args: argparse.Namespace) -> int:
             backend=args.backend,
             kana_normalize=args.kana_normalize,
             kana_style=args.kana_style,
-            partial_mid_kanji=args.partial_mid_kanji,
+            transform_mid_token_to_kana=args.transform_mid_token_to_kana,
         )
 
     return int(_with_first_token_separator(args.first_token_separator, _run))
@@ -852,7 +852,7 @@ def _sample(args: argparse.Namespace) -> int:
             backend=args.backend,
             kana_normalize=args.kana_normalize,
             kana_style=args.kana_style,
-            partial_mid_kanji=args.partial_mid_kanji,
+            transform_mid_token_to_kana=args.transform_mid_token_to_kana,
         )
 
     return int(_with_first_token_separator(args.first_token_separator, _run))
@@ -1182,7 +1182,7 @@ def _kana(args: argparse.Namespace) -> int:
             kana_normalize=bool(args.kana_normalize),
             allow_kana_failure=False,
             kana_style=args.kana_style,
-            partial_mid_kanji=args.partial_mid_kanji,
+            transform_mid_token_to_kana=args.transform_mid_token_to_kana,
             add_short_punct=True,
             debug_sources=kana_sources,
         )
@@ -1406,10 +1406,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Kana style when normalizing (default: hiragana; use off to keep kanji)",
     )
     synth.add_argument(
-        "--partial-mid-kanji",
+        "--transform-mid-token-to-kana",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Allow mid-sentence kanji->kana conversion in partial mode (default: enabled)",
+        help=(
+            "Transform mid-token content to kana (English->katakana globally; "
+            "kanji->kana in partial mode) (default: enabled)"
+        ),
+    )
+    synth.add_argument(
+        "--partial-mid-kanji",
+        dest="transform_mid_token_to_kana",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=argparse.SUPPRESS,
     )
     synth.add_argument(
         "--first-token-separator",
@@ -1498,10 +1508,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Kana style when normalizing (default: hiragana; use off to keep kanji)",
     )
     sample.add_argument(
-        "--partial-mid-kanji",
+        "--transform-mid-token-to-kana",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Allow mid-sentence kanji->kana conversion in partial mode (default: enabled)",
+        help=(
+            "Transform mid-token content to kana (English->katakana globally; "
+            "kanji->kana in partial mode) (default: enabled)"
+        ),
+    )
+    sample.add_argument(
+        "--partial-mid-kanji",
+        dest="transform_mid_token_to_kana",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=argparse.SUPPRESS,
     )
     sample.add_argument(
         "--first-token-separator",
@@ -1559,10 +1579,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Kana style when normalizing (default: hiragana; use off to keep kanji)",
     )
     kana.add_argument(
-        "--partial-mid-kanji",
+        "--transform-mid-token-to-kana",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Allow mid-sentence kanji->kana conversion in partial mode (default: enabled)",
+        help=(
+            "Transform mid-token content to kana (English->katakana globally; "
+            "kanji->kana in partial mode) (default: enabled)"
+        ),
+    )
+    kana.add_argument(
+        "--partial-mid-kanji",
+        dest="transform_mid_token_to_kana",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=argparse.SUPPRESS,
     )
     kana.add_argument(
         "--first-token-separator",

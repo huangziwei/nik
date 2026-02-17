@@ -1336,7 +1336,7 @@ class SynthRequest(BaseModel):
     use_voice_map: bool = False
     kana_normalize: bool = True
     kana_style: str = "hiragana"
-    partial_mid_kanji: bool = True
+    transform_mid_token_to_kana: bool = True
 
 
 class ChunkSynthRequest(BaseModel):
@@ -2568,10 +2568,10 @@ def create_app(root_dir: Path) -> FastAPI:
             cmd.append("--rechunk")
         if not payload.kana_normalize:
             cmd.append("--no-kana-normalize")
-        if payload.partial_mid_kanji:
-            cmd.append("--partial-mid-kanji")
+        if payload.transform_mid_token_to_kana:
+            cmd.append("--transform-mid-token-to-kana")
         else:
-            cmd.append("--no-partial-mid-kanji")
+            cmd.append("--no-transform-mid-token-to-kana")
 
         env = os.environ.copy()
         process = subprocess.Popen(
@@ -2682,10 +2682,10 @@ def create_app(root_dir: Path) -> FastAPI:
             cmd.append("--rechunk")
         if not payload.kana_normalize:
             cmd.append("--no-kana-normalize")
-        if payload.partial_mid_kanji:
-            cmd.append("--partial-mid-kanji")
+        if payload.transform_mid_token_to_kana:
+            cmd.append("--transform-mid-token-to-kana")
         else:
-            cmd.append("--no-partial-mid-kanji")
+            cmd.append("--no-transform-mid-token-to-kana")
 
         env = os.environ.copy()
         process = subprocess.Popen(
