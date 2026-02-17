@@ -1097,6 +1097,7 @@ def _kana(args: argparse.Namespace) -> int:
     chapter_ruby_spans: list[dict] = []
     chunk_span = None
     ruby_propagated_readings: dict[str, set[str]] = {}
+    chapter_text_for_overrides: str | None = None
     if book_dir and book_dir.exists():
         global_overrides, chapter_overrides = tts_util._load_reading_overrides(book_dir)
         ruby_data = tts_util._load_ruby_data(book_dir)
@@ -1127,6 +1128,7 @@ def _kana(args: argparse.Namespace) -> int:
                         chapter_text = tts_util._normalize_text(
                             read_clean_text(chapter_path)
                         )
+                        chapter_text_for_overrides = chapter_text
                         chapter_ruby_spans = tts_util._select_ruby_spans(
                             chapter_id, chapter_text, ruby_data
                         )
@@ -1135,6 +1137,12 @@ def _kana(args: argparse.Namespace) -> int:
                     chunk_span = span_list[chunk_index]
         if chapter_id:
             chapter_entries = chapter_overrides.get(chapter_id, [])
+            chapter_entries = tts_util._augment_chapter_overrides_with_ruby_compounds(
+                chapter_entries,
+                ruby_data,
+                chapter_id=chapter_id,
+                chapter_text=chapter_text_for_overrides,
+            )
             chapter_count = len(chapter_entries)
             merged_overrides = tts_util._merge_reading_overrides(
                 global_overrides,

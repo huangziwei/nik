@@ -818,6 +818,25 @@ def test_apply_ruby_evidence_to_chunk_promotes_conflict_majority_compound() -> N
     assert "そらた" in out
 
 
+def test_apply_ruby_evidence_to_chunk_coalesces_adjacent_single_kanji_spans() -> None:
+    chunk_text = "緑生さん"
+    chunk_span = (0, len(chunk_text))
+    chapter_spans = [
+        {"start": 0, "end": 1, "base": "緑", "reading": "ろく"},
+        {"start": 1, "end": 2, "base": "生", "reading": "お"},
+    ]
+    out = tts_util._apply_ruby_evidence_to_chunk(
+        chunk_text,
+        chunk_span,
+        chapter_spans,
+        {},
+    )
+    sep = _default_first_token_separator()
+    assert out.startswith(f"{sep}ろくお")
+    assert "\\ろく\\お" not in out
+    assert "さん" in out
+
+
 def test_apply_ruby_evidence_to_chunk_drops_suspicious_span() -> None:
     chunk_text = "本町に西田医院という耳鼻科があったのを覚えているか。"
     chunk_span = (0, len(chunk_text))
@@ -4437,6 +4456,109 @@ def test_ruby_global_overrides_conflict_does_not_override_explicit_global() -> N
     assert overrides == [{"base": "空太", "reading": "そうた"}]
 
 
+def test_ruby_chapter_compound_overrides_from_adjacent_single_kanji_spans() -> None:
+    ruby_data = {
+        "chapters": {
+            "0005-chapter": {
+                "clean_spans": [
+                    {"start": 0, "end": 1, "base": "緑", "reading": "ろく"},
+                    {"start": 1, "end": 2, "base": "生", "reading": "お"},
+                    {"start": 10, "end": 11, "base": "緑", "reading": "ろく"},
+                    {"start": 11, "end": 12, "base": "生", "reading": "お"},
+                ]
+            }
+        }
+    }
+    overrides = tts_util._ruby_chapter_compound_overrides(
+        ruby_data,
+        chapter_id="0005-chapter",
+    )
+    assert {"base": "緑生", "reading": "ろくお"} in overrides
+
+
+def test_ruby_chapter_compound_overrides_skips_ambiguous_readings() -> None:
+    ruby_data = {
+        "chapters": {
+            "0005-chapter": {
+                "clean_spans": [
+                    {"start": 0, "end": 1, "base": "緑", "reading": "ろく"},
+                    {"start": 1, "end": 2, "base": "生", "reading": "お"},
+                    {"start": 10, "end": 11, "base": "緑", "reading": "りょく"},
+                    {"start": 11, "end": 12, "base": "生", "reading": "せい"},
+                ]
+            }
+        }
+    }
+    overrides = tts_util._ruby_chapter_compound_overrides(
+        ruby_data,
+        chapter_id="0005-chapter",
+    )
+    assert {"base": "緑生", "reading": "ろくお"} not in overrides
+    assert {"base": "緑生", "reading": "りょくせい"} not in overrides
+
+
+def test_augment_chapter_overrides_with_ruby_compounds_keeps_explicit_override() -> None:
+    ruby_data = {
+        "chapters": {
+            "0005-chapter": {
+                "clean_spans": [
+                    {"start": 0, "end": 1, "base": "緑", "reading": "ろく"},
+                    {"start": 1, "end": 2, "base": "生", "reading": "お"},
+                    {"start": 10, "end": 11, "base": "緑", "reading": "ろく"},
+                    {"start": 11, "end": 12, "base": "生", "reading": "お"},
+                ]
+            }
+        }
+    }
+    chapter_overrides = [{"base": "緑生", "reading": "みどりお"}]
+    augmented = tts_util._augment_chapter_overrides_with_ruby_compounds(
+        chapter_overrides,
+        ruby_data,
+        chapter_id="0005-chapter",
+    )
+    assert tts_util.apply_reading_overrides("緑生さん", augmented) == "みどりおさん"
+
+
+def test_augment_chapter_overrides_with_ruby_compounds_allows_singleton_name_context() -> None:
+    ruby_data = {
+        "chapters": {
+            "0005-chapter": {
+                "clean_spans": [
+                    {"start": 0, "end": 1, "base": "緑", "reading": "ろく"},
+                    {"start": 1, "end": 2, "base": "生", "reading": "お"},
+                ]
+            }
+        }
+    }
+    augmented = tts_util._augment_chapter_overrides_with_ruby_compounds(
+        [],
+        ruby_data,
+        chapter_id="0005-chapter",
+        chapter_text="緑生さんの名を呼ぶ。",
+    )
+    assert tts_util.apply_reading_overrides("緑生さん", augmented) == "ろくおさん"
+
+
+def test_augment_chapter_overrides_with_ruby_compounds_allows_singleton_kun_honorific() -> None:
+    ruby_data = {
+        "chapters": {
+            "0005-chapter": {
+                "clean_spans": [
+                    {"start": 0, "end": 1, "base": "緑", "reading": "ろく"},
+                    {"start": 1, "end": 2, "base": "生", "reading": "お"},
+                ]
+            }
+        }
+    }
+    augmented = tts_util._augment_chapter_overrides_with_ruby_compounds(
+        [],
+        ruby_data,
+        chapter_id="0005-chapter",
+        chapter_text="緑生君が来た。",
+    )
+    assert tts_util.apply_reading_overrides("緑生君", augmented) == "ろくお君"
+
+
 def test_merge_reading_overrides_prefers_chapter() -> None:
     global_overrides = [{"base": "山田太一", "reading": "やまだたいち"}]
     chapter_overrides = [{"base": "山田太一", "reading": "やまだたいいち"}]
@@ -4490,6 +4612,26 @@ def test_ruby_propagated_reading_map_includes_chapter_spans() -> None:
         chapter_id="0004-chapter",
     )
     assert other_map == {"事件": {"ヤマ"}}
+
+
+def test_ruby_propagated_reading_map_coalesces_adjacent_single_kanji_spans() -> None:
+    ruby_data = {
+        "chapters": {
+            "0005-chapter": {
+                "clean_spans": [
+                    {"start": 0, "end": 1, "base": "緑", "reading": "ろく"},
+                    {"start": 1, "end": 2, "base": "生", "reading": "お"},
+                ],
+            }
+        }
+    }
+    chapter_map = tts_util._ruby_propagated_reading_map(
+        ruby_data,
+        chapter_id="0005-chapter",
+    )
+    assert chapter_map["緑生"] == {"ろくお"}
+    assert chapter_map["緑"] == {"ろく"}
+    assert chapter_map["生"] == {"お"}
 
 
 def test_merge_reading_overrides_prefers_global_over_single_kanji_ruby_chapter_entry() -> None:

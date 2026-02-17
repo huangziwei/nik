@@ -5568,6 +5568,83 @@ def _apply_ruby_evidence(
     return text
 
 
+def _coalesce_adjacent_single_kanji_ruby_spans(spans: Sequence[dict]) -> List[dict]:
+    if not spans:
+        return []
+    prepared: List[dict] = []
+    for item in spans:
+        if not isinstance(item, dict):
+            continue
+        try:
+            start = int(item.get("start"))
+            end = int(item.get("end"))
+        except (TypeError, ValueError):
+            continue
+        if end <= start:
+            continue
+        base = str(item.get("base") or "")
+        reading = str(item.get("reading") or "")
+        if not base or not reading:
+            continue
+        prepared.append(
+            {
+                "start": start,
+                "end": end,
+                "base": base,
+                "reading": reading,
+            }
+        )
+    if not prepared:
+        return []
+    prepared.sort(key=lambda span: (int(span["start"]), int(span["end"])))
+    out: List[dict] = []
+    idx = 0
+    while idx < len(prepared):
+        span = prepared[idx]
+        base = str(span.get("base") or "")
+        reading = str(span.get("reading") or "")
+        if (
+            len(base) != 1
+            or not _is_kanji_only(base)
+            or not _is_kana_reading(reading)
+        ):
+            out.append(span)
+            idx += 1
+            continue
+        run = [span]
+        end_pos = int(span["end"])
+        j = idx + 1
+        while j < len(prepared):
+            nxt = prepared[j]
+            nxt_base = str(nxt.get("base") or "")
+            nxt_reading = str(nxt.get("reading") or "")
+            if int(nxt["start"]) != end_pos:
+                break
+            if (
+                len(nxt_base) != 1
+                or not _is_kanji_only(nxt_base)
+                or not _is_kana_reading(nxt_reading)
+            ):
+                break
+            run.append(nxt)
+            end_pos = int(nxt["end"])
+            j += 1
+        if len(run) >= 2:
+            out.append(
+                {
+                    "start": int(run[0]["start"]),
+                    "end": int(run[-1]["end"]),
+                    "base": "".join(str(part.get("base") or "") for part in run),
+                    "reading": "".join(str(part.get("reading") or "") for part in run),
+                }
+            )
+            idx = j
+            continue
+        out.append(span)
+        idx += 1
+    return out
+
+
 def _chunk_ruby_spans(
     chunk_span: Optional[Sequence[int]],
     chapter_spans: Sequence[dict],
@@ -5604,7 +5681,7 @@ def _chunk_ruby_spans(
                 "reading": reading,
             }
         )
-    return spans
+    return _coalesce_adjacent_single_kanji_ruby_spans(spans)
 
 
 def _apply_ruby_evidence_to_chunk(
@@ -6001,6 +6078,137 @@ def _load_ruby_data(book_dir: Path) -> dict:
 
 _RUBY_CONFLICT_GLOBAL_MIN_COUNT = 5
 _RUBY_CONFLICT_GLOBAL_MIN_RATIO = 0.9
+_RUBY_CHAPTER_COMPOUND_MIN_COUNT = 2
+_RUBY_NAME_HONORIFIC_SUFFIXES = (
+    "さん",
+    "くん",
+    "君",
+    "ちゃん",
+    "様",
+    "氏",
+    "先生",
+    "先輩",
+    "殿",
+)
+
+
+def _chapter_ruby_spans_for_counts(chapter_entry: dict) -> List[dict]:
+    if not isinstance(chapter_entry, dict):
+        return []
+    clean_spans = chapter_entry.get("clean_spans")
+    if isinstance(clean_spans, list) and clean_spans:
+        return clean_spans
+    raw_spans = chapter_entry.get("raw_spans")
+    if isinstance(raw_spans, list):
+        return raw_spans
+    return []
+
+
+def _has_name_honorific_context(base: str, chapter_text: str | None) -> bool:
+    if not base or not chapter_text:
+        return False
+    suffix = "|".join(re.escape(item) for item in _RUBY_NAME_HONORIFIC_SUFFIXES)
+    if not suffix:
+        return False
+    pattern = re.compile(rf"{re.escape(base)}(?:{suffix})")
+    return bool(pattern.search(chapter_text))
+
+
+def _ruby_chapter_compound_overrides(
+    ruby_data: dict,
+    *,
+    chapter_id: Optional[str] = None,
+    chapter_text: str | None = None,
+) -> List[dict[str, str]]:
+    if not isinstance(ruby_data, dict):
+        return []
+    chapters = ruby_data.get("chapters")
+    if not isinstance(chapters, dict):
+        return []
+
+    chapter_entries: list[dict] = []
+    if chapter_id is not None:
+        selected = chapters.get(chapter_id)
+        if isinstance(selected, dict):
+            chapter_entries.append(selected)
+    else:
+        chapter_entries = [entry for entry in chapters.values() if isinstance(entry, dict)]
+
+    counts: dict[str, dict[str, int]] = {}
+    order: dict[str, list[str]] = {}
+    for chapter_entry in chapter_entries:
+        spans = _chapter_ruby_spans_for_counts(chapter_entry)
+        if not spans:
+            continue
+        coalesced = _coalesce_adjacent_single_kanji_ruby_spans(spans)
+        for item in coalesced:
+            entry = _normalize_reading_override_entry(item)
+            if not entry:
+                continue
+            base = str(entry.get("base") or "").strip()
+            reading = str(entry.get("reading") or "").strip()
+            if not base or not reading:
+                continue
+            if len(base) <= 1 or not _is_kanji_only(base):
+                continue
+            if not _is_kana_reading(reading):
+                continue
+            counts.setdefault(base, {})
+            counts[base][reading] = counts[base].get(reading, 0) + 1
+            order.setdefault(base, [])
+            if reading not in order[base]:
+                order[base].append(reading)
+
+    overrides: List[dict[str, str]] = []
+    for base in sorted(counts.keys()):
+        reading_counts = counts.get(base, {})
+        if not reading_counts:
+            continue
+        total = sum(count for count in reading_counts.values() if count > 0)
+        if total <= 0:
+            continue
+        reading_order = {reading: idx for idx, reading in enumerate(order.get(base, []))}
+        majority = min(
+            reading_counts.keys(),
+            key=lambda reading: (
+                -reading_counts.get(reading, 0),
+                reading_order.get(reading, 1 << 30),
+            ),
+        )
+        majority_count = reading_counts.get(majority, 0)
+        allow_singleton_name = (
+            majority_count > 0
+            and total == 1
+            and _has_name_honorific_context(base, chapter_text)
+        )
+        if majority_count < _RUBY_CHAPTER_COMPOUND_MIN_COUNT and not allow_singleton_name:
+            continue
+        # Require strict majority to avoid propagating ambiguous chapter-only ruby.
+        if majority_count * 2 <= total:
+            continue
+        entry = _normalize_reading_override_entry({"base": base, "reading": majority})
+        if entry:
+            overrides.append(entry)
+    return overrides
+
+
+def _augment_chapter_overrides_with_ruby_compounds(
+    chapter_overrides: Sequence[dict[str, str]],
+    ruby_data: dict,
+    *,
+    chapter_id: Optional[str],
+    chapter_text: str | None = None,
+) -> List[dict[str, str]]:
+    chapter_items = list(chapter_overrides)
+    ruby_compounds = _ruby_chapter_compound_overrides(
+        ruby_data,
+        chapter_id=chapter_id,
+        chapter_text=chapter_text,
+    )
+    if not ruby_compounds:
+        return chapter_items
+    # Keep explicit chapter overrides authoritative when keys collide.
+    return _merge_reading_overrides(ruby_compounds, chapter_items)
 
 
 def _ruby_global_overrides(ruby_data: dict) -> List[dict[str, str]]:
@@ -6127,8 +6335,14 @@ def _ruby_propagated_reading_map(
         chapter_entries = [entry for entry in chapters.values() if isinstance(entry, dict)]
 
     for chapter_entry in chapter_entries:
-        add_items(chapter_entry.get("clean_spans"))
-        add_items(chapter_entry.get("raw_spans"))
+        clean_spans = chapter_entry.get("clean_spans")
+        if isinstance(clean_spans, list) and clean_spans:
+            add_items(clean_spans)
+            add_items(_coalesce_adjacent_single_kanji_ruby_spans(clean_spans))
+        raw_spans = chapter_entry.get("raw_spans")
+        if isinstance(raw_spans, list) and raw_spans:
+            add_items(raw_spans)
+            add_items(_coalesce_adjacent_single_kanji_ruby_spans(raw_spans))
     return mapping
 
 
@@ -6851,6 +7065,7 @@ def synthesize_book(
     transform_mid_token_to_kana: bool = True,
 ) -> int:
     chapters = load_book_chapters(book_dir)
+    chapter_text_by_id = {chapter.id: chapter.text for chapter in chapters}
     backend_name = _select_backend(backend)
     model_name = _resolve_model_name(model_name, backend_name)
     global_overrides, reading_overrides = _load_reading_overrides(book_dir)
@@ -7046,6 +7261,12 @@ def synthesize_book(
             language = voice_languages.get(voice_id)
             voice_config = voice_configs.get(voice_id)
             chapter_overrides = reading_overrides.get(chapter_id, [])
+            chapter_overrides = _augment_chapter_overrides_with_ruby_compounds(
+                chapter_overrides,
+                ruby_data,
+                chapter_id=chapter_id,
+                chapter_text=chapter_text_by_id.get(chapter_id),
+            )
             ruby_propagated_readings = ruby_propagated_readings_by_chapter.setdefault(
                 chapter_id,
                 _ruby_propagated_reading_map(ruby_data, chapter_id=chapter_id),
@@ -7458,16 +7679,18 @@ def synthesize_chunk(
     override_dir = book_dir
     if (out_dir / "reading-overrides.json").exists():
         override_dir = out_dir
+    ruby_spans: List[dict] = []
+    chunk_span = None
+    chapter_text_for_overrides: str | None = None
     ruby_data = _load_ruby_data(override_dir)
     if ruby_data:
-        ruby_spans: List[dict] = []
         rel_path = entry.get("path")
         if rel_path:
             chapter_path = (book_dir / rel_path).resolve()
             if chapter_path.exists():
                 chapter_text = _normalize_text(read_clean_text(chapter_path))
+                chapter_text_for_overrides = chapter_text
                 ruby_spans = _select_ruby_spans(chapter_id, chapter_text, ruby_data)
-        chunk_span = None
         span_list = entry.get("chunk_spans")
         if isinstance(span_list, list) and len(span_list) > chunk_index:
             chunk_span = span_list[chunk_index]
@@ -7477,6 +7700,12 @@ def synthesize_chunk(
     )
     global_overrides, reading_overrides = _load_reading_overrides(override_dir)
     chapter_overrides = reading_overrides.get(chapter_id, [])
+    chapter_overrides = _augment_chapter_overrides_with_ruby_compounds(
+        chapter_overrides,
+        ruby_data,
+        chapter_id=chapter_id,
+        chapter_text=chapter_text_for_overrides,
+    )
     merged_overrides = _merge_reading_overrides(
         global_overrides,
         chapter_overrides,
