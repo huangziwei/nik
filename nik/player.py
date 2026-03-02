@@ -906,6 +906,8 @@ def _collect_ruby_reading_pairs(raw: object) -> List[tuple[str, str]]:
         reading = str(reading_raw or "").strip()
         if not base or not reading:
             return
+        if len(base) == 1:
+            return
         key = (base, reading)
         if key in seen:
             return
