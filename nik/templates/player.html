@@ -2264,11 +2264,11 @@
               <button class="btn circle" id="metaClose" type="button" aria-label="閉じる">x</button>
             </div>
             <div class="meta-form">
-              <label>Cover</label>
+              <label id="metaCoverFieldLabel">カバー画像</label>
               <div class="meta-cover-zone" id="metaCoverZone">
                 <div class="meta-cover-preview" id="metaCoverPreview"></div>
                 <div class="meta-cover-hint">
-                  <span>Drop image to replace</span>
+                  <span id="metaCoverHintText">画像をドロップして差し替え</span>
                 </div>
               </div>
               <input type="file" id="metaCoverInput" accept="image/*" hidden />
@@ -2432,6 +2432,8 @@
         voiceOptions: [],
         localVoiceValues: [],
         voiceGenderMap: {},
+        localVoicesCache: [],
+        builtinVoicesCache: [],
         cloneMode: "add",
         cloneEditVoice: null,
         cloneNameDirty: false,
@@ -2546,8 +2548,10 @@
       );
       const metaYear = document.getElementById("metaYear");
       const metaYearFieldLabel = document.getElementById("metaYearFieldLabel");
+      const metaCoverFieldLabel = document.getElementById("metaCoverFieldLabel");
       const metaCoverZone = document.getElementById("metaCoverZone");
       const metaCoverPreview = document.getElementById("metaCoverPreview");
+      const metaCoverHintText = document.getElementById("metaCoverHintText");
       const metaCoverInput = document.getElementById("metaCoverInput");
       let pendingCoverFile = null;
       const cloneModal = document.getElementById("cloneModal");
@@ -2813,6 +2817,9 @@
           rulesReplace: "既定を置換",
           metaTitle: "メタデータを編集",
           metaClose: "閉じる",
+          metaCoverField: "カバー画像",
+          metaCoverHint: "画像をドロップして差し替え",
+          metaCoverNone: "カバーなし",
           metaTitleField: "タイトル",
           metaAuthorsField: "著者",
           metaAuthorsPlaceholder: "カンマ区切り",
@@ -3138,6 +3145,9 @@
           rulesReplace: "Replace defaults",
           metaTitle: "Edit metadata",
           metaClose: "Close",
+          metaCoverField: "Cover",
+          metaCoverHint: "Drop image to replace",
+          metaCoverNone: "No cover",
           metaTitleField: "Title",
           metaAuthorsField: "Authors",
           metaAuthorsPlaceholder: "Comma-separated",
@@ -3457,6 +3467,12 @@
         if (rulesReplaceLabel) {
           rulesReplaceLabel.textContent = t("rulesReplace");
         }
+        if (metaCoverFieldLabel) {
+          metaCoverFieldLabel.textContent = t("metaCoverField");
+        }
+        if (metaCoverHintText) {
+          metaCoverHintText.textContent = t("metaCoverHint");
+        }
         if (metaTitleFieldLabel) {
           metaTitleFieldLabel.textContent = t("metaTitleField");
         }
@@ -3618,6 +3634,7 @@
           updateMergeUI(state.lastMergeStatus);
         }
         updateTtsToggleLabel();
+        rerenderVoiceList();
         updateLocalVoiceActionButton();
         updateAdvancedMode(false, false);
         updateLanguageToggle();
@@ -4847,6 +4864,22 @@
         return formatVoiceLabel(value);
       }
 
+      function rerenderVoiceList() {
+        voiceGroup.innerHTML = "";
+        localVoiceActionButton = null;
+        renderLocalVoiceGroups(state.localVoicesCache);
+        appendVoiceGroup(voiceGroup, t("builtinVoices"), state.builtinVoicesCache);
+        if (state.selectedVoice) {
+          const buttons = voiceGroup.querySelectorAll(".voice-button");
+          buttons.forEach((button) => {
+            button.classList.toggle(
+              "active",
+              button.dataset.voice === state.selectedVoice
+            );
+          });
+        }
+      }
+
       async function loadVoices() {
         try {
           const data = await fetchJson("/api/voices");
@@ -4871,10 +4904,9 @@
           state.voiceGenderMap = voiceGenderMap;
 
           state.voiceOptions = [...local, ...builtin];
-          voiceGroup.innerHTML = "";
-          localVoiceActionButton = null;
-          renderLocalVoiceGroups(local);
-          appendVoiceGroup(voiceGroup, t("builtinVoices"), builtin);
+          state.localVoicesCache = local;
+          state.builtinVoicesCache = builtin;
+          rerenderVoiceList();
 
           const available = state.voiceOptions.map((item) => item.value);
           if (!available.length) {
@@ -5622,6 +5654,8 @@
         state.voiceMap = { default: null, chapters: {} };
         state.selectedVoice = null;
         state.voiceOptions = [];
+        state.localVoicesCache = [];
+        state.builtinVoicesCache = [];
         state.advancedSelection = new Set();
         state.advancedLastIndex = null;
         state.advancedMode = false;
@@ -6978,9 +7012,9 @@
         pendingCoverFile = null;
         if (metaCoverPreview) {
           if (state.book.cover_url) {
-            metaCoverPreview.innerHTML = `<img src="${escapeHtml(state.book.cover_url)}" alt="Cover" />`;
+            metaCoverPreview.innerHTML = `<img src="${escapeHtml(state.book.cover_url)}" alt="${escapeHtml(t("metaCoverField"))}" />`;
           } else {
-            metaCoverPreview.innerHTML = `<span style="font-size:12px;color:var(--muted)">No cover</span>`;
+            metaCoverPreview.innerHTML = `<span style="font-size:12px;color:var(--muted)">${escapeHtml(t("metaCoverNone"))}</span>`;
           }
         }
         metaTitle.value = state.book.title || "";
@@ -8515,7 +8549,7 @@
         pendingCoverFile = file;
         if (metaCoverPreview) {
           const url = URL.createObjectURL(file);
-          metaCoverPreview.innerHTML = `<img src="${url}" alt="New cover" />`;
+          metaCoverPreview.innerHTML = `<img src="${url}" alt="${escapeHtml(t("metaCoverField"))}" />`;
         }
       }
       metaCoverZone.addEventListener("click", () => metaCoverInput.click());
