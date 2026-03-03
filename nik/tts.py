@@ -2216,6 +2216,13 @@ def _first_token_separator() -> str:
     return raw
 
 
+def _separator_to_space(text: str) -> str:
+    sep = _first_token_separator()
+    if not sep or sep == " ":
+        return text
+    return text.replace(sep, " ")
+
+
 def _normalize_kyujitai(text: str, *, debug_sources: Optional[List[str]] = None) -> str:
     if not text or not _has_kanji(text):
         return text
@@ -5487,6 +5494,7 @@ def _prepare_tts_pipeline(
     prepared = prepare_tts_text(after_kana, add_short_punct=add_short_punct)
     prepared = _strip_leading_chunk_separator(prepared)
     prepared = _append_chunk_tail_separator(prepared)
+    prepared = _separator_to_space(prepared)
     return TtsPipeline(
         ruby_text=text,
         after_overrides=after_overrides,
@@ -6760,8 +6768,15 @@ def _replace_isolated_kanji(text: str, base: str, reading: str) -> str:
         next_ch = text[idx + 1] if idx + 1 < length else ""
         if not _should_replace_isolated_single_kanji(prev, next_ch):
             out.append(cur)
-        else:
-            out.append(reading)
+            continue
+        # If next_ch is a particle-like hiragana followed by more hiragana,
+        # it's likely okurigana (e.g. 小さな, 少ない), not a standalone particle.
+        if next_ch in _ISOLATED_SINGLE_KANJI_PARTICLES:
+            next_next = text[idx + 2] if idx + 2 < length else ""
+            if next_next and _is_hiragana_char(next_next):
+                out.append(cur)
+                continue
+        out.append(reading)
     return "".join(out)
 
 

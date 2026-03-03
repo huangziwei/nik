@@ -46,6 +46,10 @@ def _summarize_ruby_pairs(
     for base, values in sorted(
         readings.items(), key=lambda item: (-len(item[0]), item[0])
     ):
+        # Skip single-kanji entries — their readings are context-dependent
+        # (e.g. 火=び only in 焚き火) and should not be propagated.
+        if len(base) == 1:
+            continue
         if len(values) == 1:
             replacements.append({"base": base, "reading": sorted(values)[0]})
         else:

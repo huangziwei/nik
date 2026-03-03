@@ -139,13 +139,12 @@ def test_prepare_tts_text_collapses_long_ellipsis_runs() -> None:
 
 
 def test_prepare_tts_pipeline_appends_chunk_tail_separator() -> None:
-    sep = _default_first_token_separator()
     pipeline = tts_util._prepare_tts_pipeline(
         "こんにちは",
         kana_normalize=False,
         add_short_punct=False,
     )
-    assert pipeline.prepared == f"こんにちは{sep}"
+    assert pipeline.prepared == "こんにちは "
 
 
 def test_prepare_tts_pipeline_does_not_duplicate_chunk_tail_separator() -> None:
@@ -155,7 +154,7 @@ def test_prepare_tts_pipeline_does_not_duplicate_chunk_tail_separator() -> None:
         kana_normalize=False,
         add_short_punct=False,
     )
-    assert pipeline.prepared == f"こんにちは{sep}"
+    assert pipeline.prepared == "こんにちは "
 
 
 def test_prepare_tts_pipeline_skips_chunk_tail_separator_when_disabled(
@@ -177,7 +176,7 @@ def test_prepare_tts_pipeline_strips_leading_chunk_separator() -> None:
         kana_normalize=False,
         add_short_punct=True,
     )
-    assert pipeline.prepared == f"ばんがいへん{sep}。{sep}"
+    assert pipeline.prepared == "ばんがいへん 。 "
 
 
 def test_prepare_tts_pipeline_keeps_ellipsis_without_short_tail_full_stop() -> None:
@@ -187,7 +186,7 @@ def test_prepare_tts_pipeline_keeps_ellipsis_without_short_tail_full_stop() -> N
         kana_normalize=False,
         add_short_punct=True,
     )
-    assert pipeline.prepared == f"⋯{sep}"
+    assert pipeline.prepared == "⋯ "
 
 
 def test_ellipsis_only_run_length_ignores_quotes_and_separator() -> None:
