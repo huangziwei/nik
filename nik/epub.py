@@ -1088,38 +1088,6 @@ def _extract_html_heading_entries(
             category = _merge_heading_category(category, marker_category)
         add_node_text(node, category)
 
-    block_nodes: List[tuple[object, str]] = []
-    for node in root.find_all(True):
-        name = str(getattr(node, "name", "") or "").lower()
-        if name not in _BLOCK_TEXT_TAGS:
-            continue
-        text = _normalized_node_text(node)
-        if not text:
-            continue
-        block_nodes.append((node, text))
-
-    for idx, (node, text) in enumerate(block_nodes):
-        if len(text) > 80:
-            continue
-        if not _looks_like_structural_title(text):
-            continue
-        if not _is_standalone_heading_node(node, text):
-            continue
-        has_following_body = False
-        upper = min(len(block_nodes), idx + 5)
-        for look_ahead in range(idx + 1, upper):
-            next_text = block_nodes[look_ahead][1]
-            if (
-                len(next_text) <= 80
-                and _looks_like_structural_title(next_text)
-            ):
-                continue
-            if _looks_like_body_text_block(next_text):
-                has_following_body = True
-            break
-        if not has_following_body:
-            continue
-        add_node_text(node, _HEADING_CATEGORY_SECTION)
     return out
 
 

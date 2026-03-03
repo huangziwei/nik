@@ -342,7 +342,8 @@ def test_extract_html_headings_supports_heading_tags_and_class_markers() -> None
     assert "- Intro -" in headings
 
 
-def test_extract_html_headings_detects_plain_structural_blocks() -> None:
+def test_extract_html_headings_ignores_plain_structural_blocks() -> None:
+    """Plain text with no heading markup should not be detected as headings."""
     html = """
     <html>
       <body>
@@ -356,9 +357,9 @@ def test_extract_html_headings_detects_plain_structural_blocks() -> None:
     </html>
     """.encode("utf-8")
     headings = epub_util._extract_html_headings(html)
-    assert "プロローグ" in headings
-    assert "１" in headings
-    assert "２" in headings
+    assert "プロローグ" not in headings
+    assert "１" not in headings
+    assert "２" not in headings
 
 
 def test_extract_chapters_detects_structural_numeric_heading_classes(
