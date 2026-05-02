@@ -1770,16 +1770,12 @@ class SynthRequest(BaseModel):
     chunk_mode: str = "japanese"
     rechunk: bool = False
     use_voice_map: bool = False
-    kana_normalize: bool = True
-    kana_style: str = "hiragana"
-    transform_mid_token_to_kana: bool = True
 
 
 class ChunkSynthRequest(BaseModel):
     book_id: str
     chapter_id: str
     chunk_index: int
-    kana_style: Optional[str] = None
     voice: Optional[str] = None
     use_voice_map: bool = False
 
@@ -3078,25 +3074,15 @@ def create_app(root_dir: Path) -> FastAPI:
             str(book_dir),
             "--voice",
             voice_value,
-            "--language",
-            "Japanese",
             "--max-chars",
             str(payload.max_chars),
             "--pad-ms",
             str(payload.pad_ms),
         ]
-        if payload.kana_style:
-            cmd += ["--kana-style", payload.kana_style]
         if use_voice_map and voice_map_path and voice_map_path.exists():
             cmd += ["--voice-map", str(voice_map_path)]
         if payload.rechunk:
             cmd.append("--rechunk")
-        if not payload.kana_normalize:
-            cmd.append("--no-kana-normalize")
-        if payload.transform_mid_token_to_kana:
-            cmd.append("--transform-mid-token-to-kana")
-        else:
-            cmd.append("--no-transform-mid-token-to-kana")
 
         env = os.environ.copy()
         process = subprocess.Popen(
@@ -3194,23 +3180,13 @@ def create_app(root_dir: Path) -> FastAPI:
             str(book_dir),
             "--voice",
             payload.voice,
-            "--language",
-            "Japanese",
             "--max-chars",
             str(payload.max_chars),
             "--pad-ms",
             str(payload.pad_ms),
         ]
-        if payload.kana_style:
-            cmd += ["--kana-style", payload.kana_style]
         if payload.rechunk:
             cmd.append("--rechunk")
-        if not payload.kana_normalize:
-            cmd.append("--no-kana-normalize")
-        if payload.transform_mid_token_to_kana:
-            cmd.append("--transform-mid-token-to-kana")
-        else:
-            cmd.append("--no-transform-mid-token-to-kana")
 
         env = os.environ.copy()
         process = subprocess.Popen(
@@ -3264,7 +3240,6 @@ def create_app(root_dir: Path) -> FastAPI:
                 voice=payload.voice,
                 voice_map_path=voice_map_path,
                 base_dir=repo_root,
-                kana_style=payload.kana_style,
             )
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

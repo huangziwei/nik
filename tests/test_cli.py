@@ -156,35 +156,6 @@ def test_build_global_ruby_entries_skips_single_kanji_even_with_context() -> Non
     assert entries == []
 
 
-def test_synth_parser_supports_backend() -> None:
-    parser = cli.build_parser()
-    args = parser.parse_args(["synth", "--book", "out", "--voice", "voice.json", "--backend", "mlx"])
-    assert args.backend == "mlx"
-
-
-@pytest.mark.parametrize(
-    "argv",
-    [
-        ["synth", "--book", "out", "--voice", "voice.json"],
-        ["sample", "--book", "out", "--voice", "voice.json"],
-        ["kana", "inline text"],
-    ],
-)
-def test_kana_defaults_are_hiragana_with_mid_sentence_enabled(argv: list[str]) -> None:
-    parser = cli.build_parser()
-    args = parser.parse_args(argv)
-    assert args.kana_style == "hiragana"
-    assert args.transform_mid_token_to_kana is True
-
-
-def test_legacy_partial_mid_kanji_flag_alias() -> None:
-    parser = cli.build_parser()
-    args = parser.parse_args(
-        ["kana", "inline text", "--no-partial-mid-kanji"]
-    )
-    assert args.transform_mid_token_to_kana is False
-
-
 def _entry(
     delta_ms: float,
     output_latency_ms: float | None = None,

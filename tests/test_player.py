@@ -264,12 +264,6 @@ def test_is_unidic_aligned_ruby_reading_accepts_alternate_surface_candidate(
     assert player_util._is_unidic_aligned_ruby_reading("雑魚", "ざこ", object()) is True
 
 
-def test_synth_request_defaults_use_hiragana_and_mid_sentence_conversion() -> None:
-    payload = player_util.SynthRequest(book_id="book")
-    assert payload.kana_style == "hiragana"
-    assert payload.transform_mid_token_to_kana is True
-
-
 def test_delete_m4b_outputs_removes_parts(tmp_path: Path) -> None:
     book_dir = tmp_path / "book"
     book_dir.mkdir()

@@ -790,34 +790,22 @@ def _synth(args: argparse.Namespace) -> int:
             base_dir=Path.cwd(),
             voice_text=args.voice_text,
             voice_text_path=voice_text_path,
-            language=args.language,
             x_vector_only_mode=bool(args.x_vector_only),
         )
     except (FileNotFoundError, ValueError) as exc:
         sys.stderr.write(f"{exc}\n")
         return 2
 
-    def _run() -> int:
-        return tts_util.synthesize_book(
-            book_dir=book_dir,
-            voice=voice_config,
-            out_dir=out_dir,
-            max_chars=args.max_chars,
-            pad_ms=args.pad_ms,
-            rechunk=args.rechunk,
-            voice_map_path=voice_map_path,
-            base_dir=Path.cwd(),
-            model_name=args.model,
-            device_map=args.device,
-            dtype=args.dtype,
-            attn_implementation=args.attn,
-            backend=args.backend,
-            kana_normalize=args.kana_normalize,
-            kana_style=args.kana_style,
-            transform_mid_token_to_kana=args.transform_mid_token_to_kana,
-        )
-
-    return int(_with_first_token_separator(args.first_token_separator, _run))
+    return int(tts_util.synthesize_book(
+        book_dir=book_dir,
+        voice=voice_config,
+        out_dir=out_dir,
+        max_chars=args.max_chars,
+        pad_ms=args.pad_ms,
+        rechunk=args.rechunk,
+        voice_map_path=voice_map_path,
+        base_dir=Path.cwd(),
+    ))
 
 
 def _sample(args: argparse.Namespace) -> int:
@@ -832,34 +820,22 @@ def _sample(args: argparse.Namespace) -> int:
             base_dir=Path.cwd(),
             voice_text=args.voice_text,
             voice_text_path=voice_text_path,
-            language=args.language,
             x_vector_only_mode=bool(args.x_vector_only),
         )
     except (FileNotFoundError, ValueError) as exc:
         sys.stderr.write(f"{exc}\n")
         return 2
 
-    def _run() -> int:
-        return tts_util.synthesize_book_sample(
-            book_dir=book_dir,
-            voice=voice_config,
-            out_dir=out_dir,
-            max_chars=args.max_chars,
-            pad_ms=args.pad_ms,
-            rechunk=args.rechunk,
-            voice_map_path=voice_map_path,
-            base_dir=Path.cwd(),
-            model_name=args.model,
-            device_map=args.device,
-            dtype=args.dtype,
-            attn_implementation=args.attn,
-            backend=args.backend,
-            kana_normalize=args.kana_normalize,
-            kana_style=args.kana_style,
-            transform_mid_token_to_kana=args.transform_mid_token_to_kana,
-        )
-
-    return int(_with_first_token_separator(args.first_token_separator, _run))
+    return int(tts_util.synthesize_book_sample(
+        book_dir=book_dir,
+        voice=voice_config,
+        out_dir=out_dir,
+        max_chars=args.max_chars,
+        pad_ms=args.pad_ms,
+        rechunk=args.rechunk,
+        voice_map_path=voice_map_path,
+        base_dir=Path.cwd(),
+    ))
 
 
 def _jsonl_entries(path: Path) -> list[dict]:
@@ -1036,224 +1012,6 @@ def _debug_dump(label: str, value: str) -> None:
     sys.stderr.write(f"{label}: {value}\n")
 
 
-def _with_first_token_separator(
-    separator: Optional[str], run: Callable[[], int] | Callable[[], tts_util.TtsPipeline]
-) -> int | tts_util.TtsPipeline:
-    if separator is None:
-        return run()
-    key = tts_util.FIRST_TOKEN_SEPARATOR_ENV
-    previous = os.environ.get(key)
-    os.environ[key] = separator
-    try:
-        return run()
-    finally:
-        if previous is None:
-            os.environ.pop(key, None)
-        else:
-            os.environ[key] = previous
-
-
-def _kana(args: argparse.Namespace) -> int:
-    raw_input = args.path
-    input_path = Path(raw_input)
-    using_file = input_path.exists()
-    if using_file:
-        text = input_path.read_text(encoding="utf-8")
-    else:
-        text = raw_input
-    book_dir = Path(args.book).resolve() if args.book else None
-    chapter_id = args.chapter
-    chunk_index = None
-    if using_file and (not book_dir or not chapter_id):
-        inferred_book, inferred_chapter = _infer_book_and_chapter(input_path)
-        if book_dir is None:
-            book_dir = inferred_book
-        if chapter_id is None:
-            chapter_id = inferred_chapter
-    if using_file:
-        stem = input_path.stem
-        if stem.isdigit():
-            chunk_index = int(stem) - 1
-
-    manifest: dict = {}
-    manifest_entry: Optional[dict] = None
-    if using_file and book_dir and chapter_id and chunk_index is not None:
-        manifest_path = book_dir / "tts" / "manifest.json"
-        if manifest_path.exists():
-            try:
-                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                manifest = {}
-            chapters_meta = manifest.get("chapters") if isinstance(manifest, dict) else []
-            if isinstance(chapters_meta, list):
-                for entry in chapters_meta:
-                    if isinstance(entry, dict) and (entry.get("id") or "") == chapter_id:
-                        manifest_entry = entry
-                        chunks = entry.get("chunks")
-                        if isinstance(chunks, list) and len(chunks) > chunk_index:
-                            text = str(chunks[chunk_index])
-                        break
-
-    global_overrides = []
-    merged_overrides = []
-    chapter_count = 0
-    ruby_data = {}
-    chapter_ruby_spans: list[dict] = []
-    chunk_span = None
-    ruby_propagated_readings: dict[str, set[str]] = {}
-    chapter_text_for_overrides: str | None = None
-    if book_dir and book_dir.exists():
-        global_overrides, chapter_overrides = tts_util._load_reading_overrides(book_dir)
-        ruby_data = tts_util._load_ruby_data(book_dir)
-        ruby_propagated_readings = tts_util._ruby_propagated_reading_map(
-            ruby_data,
-            chapter_id=chapter_id,
-        )
-        if ruby_data and chapter_id and chunk_index is not None:
-            entry = manifest_entry
-            if entry is None:
-                manifest_path = book_dir / "tts" / "manifest.json"
-                if manifest_path.exists():
-                    try:
-                        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                    except json.JSONDecodeError:
-                        manifest = {}
-                chapters_meta = manifest.get("chapters") if isinstance(manifest, dict) else []
-                if isinstance(chapters_meta, list):
-                    for candidate in chapters_meta:
-                        if isinstance(candidate, dict) and (candidate.get("id") or "") == chapter_id:
-                            entry = candidate
-                            break
-            if entry is not None:
-                rel_path = entry.get("path")
-                if rel_path:
-                    chapter_path = (book_dir / rel_path).resolve()
-                    if chapter_path.exists():
-                        chapter_text = tts_util._normalize_text(
-                            read_clean_text(chapter_path)
-                        )
-                        chapter_text_for_overrides = chapter_text
-                        chapter_ruby_spans = tts_util._select_ruby_spans(
-                            chapter_id, chapter_text, ruby_data
-                        )
-                span_list = entry.get("chunk_spans")
-                if isinstance(span_list, list) and len(span_list) > chunk_index:
-                    chunk_span = span_list[chunk_index]
-        if chapter_id:
-            chapter_entries = chapter_overrides.get(chapter_id, [])
-            chapter_entries = tts_util._augment_chapter_overrides_with_ruby_compounds(
-                chapter_entries,
-                ruby_data,
-                chapter_id=chapter_id,
-                chapter_text=chapter_text_for_overrides,
-            )
-            chapter_count = len(chapter_entries)
-            merged_overrides = tts_util._merge_reading_overrides(
-                global_overrides,
-                chapter_entries,
-                chapter_propagated_readings=ruby_propagated_readings,
-            )
-        else:
-            merged_overrides = global_overrides
-    else:
-        template_path = tts_util._template_reading_overrides_path()
-        if template_path.exists():
-            template_text = template_path.read_text(encoding="utf-8")
-            global_overrides = tts_util._parse_reading_overrides_text(template_text)
-        merged_overrides = global_overrides
-
-    if args.debug:
-        _debug_dump("Input", str(input_path) if using_file else "(inline)")
-        if not using_file:
-            _debug_dump("InputText", text)
-        _debug_dump("Book", str(book_dir) if book_dir else "(none)")
-        _debug_dump("Chapter", chapter_id or "(none)")
-        _debug_dump("Overrides", f"global={len(global_overrides)} chapter={chapter_count}")
-        if args.kana_normalize:
-            dict_dir = tts_util._resolve_unidic_dir()
-            dicrc = dict_dir / "dicrc"
-            _debug_dump("UniDic dir", str(dict_dir))
-            _debug_dump("UniDic dicrc", "found" if dicrc.exists() else "missing")
-
-    override_bases = {
-        str(item.get("base") or "").strip()
-        for item in merged_overrides
-        if isinstance(item, dict) and str(item.get("base") or "").strip()
-    }
-    kana_sources = [] if args.debug else None
-    def _run_pipeline() -> tts_util.TtsPipeline:
-        return tts_util._prepare_tts_pipeline(
-            text,
-            chapter_id=chapter_id,
-            chunk_span=chunk_span,
-            chapter_ruby_spans=chapter_ruby_spans,
-            ruby_data=ruby_data,
-            merged_overrides=merged_overrides,
-            skip_bases=override_bases,
-            allow_full_ruby=True,
-            kana_normalize=bool(args.kana_normalize),
-            allow_kana_failure=False,
-            kana_style=args.kana_style,
-            transform_mid_token_to_kana=args.transform_mid_token_to_kana,
-            add_short_punct=True,
-            debug_sources=kana_sources,
-        )
-    try:
-        pipeline = _with_first_token_separator(
-            args.first_token_separator,
-            _run_pipeline,
-        )
-    except RuntimeError as exc:
-        sys.stderr.write(f"{exc}\n")
-        return 2
-
-    if args.debug:
-        _debug_dump("After overrides", pipeline.after_overrides)
-        _debug_dump("After numbers", pipeline.after_numbers)
-
-    if args.tokens:
-        try:
-            tagger = tts_util._get_kana_tagger()
-        except RuntimeError as exc:
-            sys.stderr.write(f"{exc}\n")
-            return 2
-        sys.stderr.write("Tokens (kanji only):\n")
-        for token in tagger(pipeline.after_numbers):
-            surface = getattr(token, "surface", "")
-            if not surface or not tts_util._has_kanji(surface):
-                continue
-            feature = getattr(token, "feature", None)
-            kana = getattr(feature, "kana", None) if feature else None
-            pron = getattr(feature, "pron", None) if feature else None
-            reading = getattr(feature, "reading", None) if feature else None
-            sanitized = tts_util._extract_token_reading(token)
-            sys.stderr.write(
-                f"  {surface}\treading={sanitized or ''}\t"
-                f"kana={kana or ''}\tpron={pron or ''}\treading_raw={reading or ''}\n"
-            )
-
-    if args.debug:
-        try:
-            mode = tts_util._first_token_mode(pipeline.after_numbers)
-        except Exception:
-            mode = "unknown"
-        _debug_dump("First token (pre-kana)", mode)
-
-    if args.kana_normalize and args.debug:
-        _debug_dump("After kana", pipeline.after_kana)
-        if kana_sources:
-            sys.stderr.write("Kana sources:\n")
-            for line in kana_sources:
-                sys.stderr.write(f"  {line}\n")
-
-    tts_text = pipeline.prepared
-    if args.debug:
-        _debug_dump("Prepared", tts_text)
-
-    sys.stdout.write(tts_text + "\n")
-    return 0
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="nik")
     subparsers = parser.add_subparsers(dest="command")
@@ -1393,11 +1151,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reference transcript file when providing a raw audio file",
     )
     synth.add_argument(
-        "--language",
-        default=voice_util.DEFAULT_LANGUAGE,
-        help="Language label for qwen-tts (default: Japanese)",
-    )
-    synth.add_argument(
         "--x-vector-only",
         action="store_true",
         help="Skip text requirement and use x-vector only cloning",
@@ -1405,68 +1158,6 @@ def build_parser() -> argparse.ArgumentParser:
     synth.add_argument("--max-chars", type=int, default=220)
     synth.add_argument("--pad-ms", type=int, default=350)
     synth.add_argument("--rechunk", action="store_true")
-    synth.add_argument(
-        "--kana-normalize",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Normalize kanji to kana with UniDic (default: enabled)",
-    )
-    synth.add_argument(
-        "--kana-style",
-        choices=("partial", "hiragana", "katakana", "mixed", "off"),
-        default="hiragana",
-        help="Kana style when normalizing (default: hiragana; use off to keep kanji)",
-    )
-    synth.add_argument(
-        "--transform-mid-token-to-kana",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help=(
-            "Transform mid-token content to kana (English->katakana globally; "
-            "kanji->kana in partial mode) (default: enabled)"
-        ),
-    )
-    synth.add_argument(
-        "--partial-mid-kanji",
-        dest="transform_mid_token_to_kana",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help=argparse.SUPPRESS,
-    )
-    synth.add_argument(
-        "--first-token-separator",
-        default=None,
-        help=(
-            "Separator inserted after forced first-token kanji conversion in partial mode "
-            "(example: \"'\", \"・\", \"、\", \"none\")"
-        ),
-    )
-    synth.add_argument(
-        "--model",
-        default=None,
-        help="Model id/path (defaults depend on backend)",
-    )
-    synth.add_argument(
-        "--backend",
-        choices=("auto", "torch", "mlx"),
-        default="auto",
-        help="TTS backend (auto chooses MLX on Apple Silicon when available)",
-    )
-    synth.add_argument(
-        "--device",
-        default=None,
-        help="Device map (e.g., cuda:0, cpu, or auto)",
-    )
-    synth.add_argument(
-        "--dtype",
-        default=None,
-        help="Torch dtype (e.g., bfloat16, float16, float32)",
-    )
-    synth.add_argument(
-        "--attn",
-        default=None,
-        help="Attention implementation (e.g., flash_attention_2)",
-    )
     synth.set_defaults(func=_synth)
 
     sample = subparsers.add_parser(
@@ -1495,11 +1186,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reference transcript file when providing a raw audio file",
     )
     sample.add_argument(
-        "--language",
-        default=voice_util.DEFAULT_LANGUAGE,
-        help="Language label for qwen-tts (default: Japanese)",
-    )
-    sample.add_argument(
         "--x-vector-only",
         action="store_true",
         help="Skip text requirement and use x-vector only cloning",
@@ -1507,124 +1193,7 @@ def build_parser() -> argparse.ArgumentParser:
     sample.add_argument("--max-chars", type=int, default=220)
     sample.add_argument("--pad-ms", type=int, default=350)
     sample.add_argument("--rechunk", action="store_true")
-    sample.add_argument(
-        "--kana-normalize",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Normalize kanji to kana with UniDic (default: enabled)",
-    )
-    sample.add_argument(
-        "--kana-style",
-        choices=("partial", "hiragana", "katakana", "mixed", "off"),
-        default="hiragana",
-        help="Kana style when normalizing (default: hiragana; use off to keep kanji)",
-    )
-    sample.add_argument(
-        "--transform-mid-token-to-kana",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help=(
-            "Transform mid-token content to kana (English->katakana globally; "
-            "kanji->kana in partial mode) (default: enabled)"
-        ),
-    )
-    sample.add_argument(
-        "--partial-mid-kanji",
-        dest="transform_mid_token_to_kana",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help=argparse.SUPPRESS,
-    )
-    sample.add_argument(
-        "--first-token-separator",
-        default=None,
-        help=(
-            "Separator inserted after forced first-token kanji conversion in partial mode "
-            "(example: \"'\", \"・\", \"、\", \"none\")"
-        ),
-    )
-    sample.add_argument(
-        "--model",
-        default=None,
-        help="Model id/path (defaults depend on backend)",
-    )
-    sample.add_argument(
-        "--backend",
-        choices=("auto", "torch", "mlx"),
-        default="auto",
-        help="TTS backend (auto chooses MLX on Apple Silicon when available)",
-    )
-    sample.add_argument(
-        "--device",
-        default=None,
-        help="Device map (e.g., cuda:0, cpu, or auto)",
-    )
-    sample.add_argument(
-        "--dtype",
-        default=None,
-        help="Torch dtype (e.g., bfloat16, float16, float32)",
-    )
-    sample.add_argument(
-        "--attn",
-        default=None,
-        help="Attention implementation (e.g., flash_attention_2)",
-    )
     sample.set_defaults(func=_sample)
-
-    kana = subparsers.add_parser(
-        "kana",
-        help="Normalize kanji to kana for a chunk file and print TTS text",
-    )
-    kana.add_argument("path", help="Path to a chunk text file or inline text")
-    kana.add_argument("--book", help="Book directory (optional)")
-    kana.add_argument("--chapter", help="Chapter id (optional)")
-    kana.add_argument(
-        "--kana-normalize",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Apply UniDic kana normalization (default: enabled)",
-    )
-    kana.add_argument(
-        "--kana-style",
-        choices=("partial", "hiragana", "katakana", "mixed", "off"),
-        default="hiragana",
-        help="Kana style when normalizing (default: hiragana; use off to keep kanji)",
-    )
-    kana.add_argument(
-        "--transform-mid-token-to-kana",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help=(
-            "Transform mid-token content to kana (English->katakana globally; "
-            "kanji->kana in partial mode) (default: enabled)"
-        ),
-    )
-    kana.add_argument(
-        "--partial-mid-kanji",
-        dest="transform_mid_token_to_kana",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help=argparse.SUPPRESS,
-    )
-    kana.add_argument(
-        "--first-token-separator",
-        default=None,
-        help=(
-            "Separator inserted after forced first-token kanji conversion in partial mode "
-            "(example: \"'\", \"・\", \"、\", \"none\")"
-        ),
-    )
-    kana.add_argument(
-        "--debug",
-        action="store_true",
-        help="Print intermediate steps to stderr",
-    )
-    kana.add_argument(
-        "--tokens",
-        action="store_true",
-        help="Print kanji token readings to stderr",
-    )
-    kana.set_defaults(func=_kana)
 
     merge = subparsers.add_parser("merge", help="Merge audio into M4B")
     merge.add_argument("--book", required=True, help="Book output directory")
