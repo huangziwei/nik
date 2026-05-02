@@ -35,4 +35,6 @@ plans/
 *.epub
 *.wav
 
-.wireguard
+.claude
+books
+scripts
