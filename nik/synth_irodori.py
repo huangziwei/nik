@@ -86,7 +86,7 @@ def _default_num_steps() -> int:
             return max(1, int(raw))
         except ValueError:
             pass
-    return 40
+    return 10
 
 
 def generate_chunk(
@@ -101,9 +101,9 @@ def generate_chunk(
 ) -> Tuple[np.ndarray, int]:
     """Synthesize one chunk; returns (audio_float32_1d, sample_rate).
 
-    `num_steps` defaults to 40, overridable via `NIK_NUM_STEPS`. Halving to 20
-    roughly halves wallclock time at modest quality cost — try it first if
-    you need speed.
+    `num_steps` defaults to 10 (quality cliff is between 5 and 10 — see
+    `.claude/plans/refactor-qwen-to-irodori.md`). Override via `NIK_NUM_STEPS`
+    env var or the kwarg.
     """
     if num_steps is None:
         num_steps = _default_num_steps()

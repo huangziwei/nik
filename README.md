@@ -48,12 +48,15 @@ CPU inference is roughly 30-65× slower than realtime. Levers (env vars, no code
 
 | Env var | Default | Notes |
 |---|---|---|
-| `NIK_NUM_STEPS` | `40` | Diffusion steps. Halving to `20` ≈ 2× speedup, modest quality cost. Try this first. |
+| `NIK_NUM_STEPS` | `10` | Diffusion steps. 10 was empirically indistinguishable from 40 on a CPU sample; below 5 audibly degrades. Going higher (`20`, `40`) costs wallclock with no audible gain at this baseline. |
 | `NIK_MODEL_PRECISION` | `fp32` | `bf16` / `fp16` halve weight memory. On Apple Silicon MPS this is also faster; on Intel CPU compute is emulated, so memory only. |
 | `NIK_MODEL_DEVICE` | auto | `cpu` / `mps` / `cuda`. Auto-detects by default. |
 
-Example: faster preset on M4 Pro:
+CPU floor is ~67 s per chunk regardless of step count — the DACVAE codec
+encode/decode dominates, not sampling. M4 Pro on MPS should clear most of this.
+
+Example: half-precision preset on M4 Pro:
 
 ```bash
-NIK_NUM_STEPS=20 NIK_MODEL_PRECISION=bf16 uv run nik play --port 1912
+NIK_MODEL_PRECISION=bf16 uv run nik play --port 1912
 ```
