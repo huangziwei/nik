@@ -11,6 +11,7 @@ See .claude/plans/refactor-qwen-to-irodori.md for the full migration plan.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Optional, Tuple
@@ -18,6 +19,10 @@ from typing import Optional, Tuple
 import numpy as np
 
 from .voice import VoiceConfig
+
+ENV_MODEL_PRECISION = "NIK_MODEL_PRECISION"
+ENV_MODEL_DEVICE = "NIK_MODEL_DEVICE"
+ENV_NUM_STEPS = "NIK_NUM_STEPS"
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _VENDOR_PATH = _REPO_ROOT / ".cache" / "Irodori-TTS"
@@ -31,6 +36,7 @@ from irodori_tts.inference_runtime import (  # noqa: E402
     InferenceRuntime,
     RuntimeKey,
     SamplingRequest,
+    default_runtime_device,
     get_cached_runtime,
 )
 
@@ -44,12 +50,24 @@ def _checkpoint_path(repo_id: str) -> str:
 def get_runtime(
     *,
     hf_repo: str = DEFAULT_HF_REPO,
-    model_device: str = "cpu",
-    model_precision: str = "fp32",
+    model_device: Optional[str] = None,
+    model_precision: Optional[str] = None,
     codec_device: Optional[str] = None,
     codec_precision: str = "fp32",
 ) -> InferenceRuntime:
-    """Load (or fetch from cache) an InferenceRuntime for the given checkpoint."""
+    """Load (or fetch from cache) an InferenceRuntime for the given checkpoint.
+
+    `model_device` defaults to Irodori's auto-detect (mps on Apple Silicon,
+    cuda where available, cpu otherwise) and can be overridden via the
+    `NIK_MODEL_DEVICE` env var. `model_precision` defaults to fp32 and can be
+    overridden via `NIK_MODEL_PRECISION` (fp32 | bf16 | fp16). On Intel CPU,
+    bf16/fp16 saves memory but compute is emulated; on Apple Silicon MPS,
+    half-precision is a real speedup.
+    """
+    if model_device is None:
+        model_device = os.environ.get(ENV_MODEL_DEVICE) or default_runtime_device()
+    if model_precision is None:
+        model_precision = os.environ.get(ENV_MODEL_PRECISION) or "fp32"
     key = RuntimeKey(
         checkpoint=_checkpoint_path(hf_repo),
         model_device=model_device,
@@ -61,17 +79,34 @@ def get_runtime(
     return runtime
 
 
+def _default_num_steps() -> int:
+    raw = os.environ.get(ENV_NUM_STEPS)
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    return 40
+
+
 def generate_chunk(
     runtime: InferenceRuntime,
     text: str,
     voice: VoiceConfig,
     *,
-    num_steps: int = 40,
+    num_steps: Optional[int] = None,
     cfg_scale_text: float = 3.0,
     cfg_scale_speaker: float = 5.0,
     seed: Optional[int] = None,
 ) -> Tuple[np.ndarray, int]:
-    """Synthesize one chunk; returns (audio_float32_1d, sample_rate)."""
+    """Synthesize one chunk; returns (audio_float32_1d, sample_rate).
+
+    `num_steps` defaults to 40, overridable via `NIK_NUM_STEPS`. Halving to 20
+    roughly halves wallclock time at modest quality cost — try it first if
+    you need speed.
+    """
+    if num_steps is None:
+        num_steps = _default_num_steps()
     request = SamplingRequest(
         text=text,
         ref_wav=voice.ref_audio,
