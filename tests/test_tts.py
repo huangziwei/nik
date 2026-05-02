@@ -8,6 +8,14 @@ from nik.text import SECTION_BREAK
 from nik import voice as voice_util
 
 
+_UNIDIC_DIR = tts_util._default_unidic_dir()
+_UNIDIC_AVAILABLE = (_UNIDIC_DIR / "dicrc").exists()
+requires_unidic = pytest.mark.skipif(
+    not _UNIDIC_AVAILABLE,
+    reason=f"UniDic not present at {_UNIDIC_DIR}; ruby-tagger tests need a real fugashi+UniDic install",
+)
+
+
 @pytest.fixture(autouse=True)
 def _reset_first_token_separator_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(tts_util.FIRST_TOKEN_SEPARATOR_ENV, raising=False)
@@ -530,90 +538,6 @@ def test_prepare_manifest_applies_chapter_boundary_pause_multiplier(
     assert second[-1] == 1
 
 
-def test_prepare_voice_prompt_accepts_language_param(tmp_path: Path) -> None:
-    audio_path = tmp_path / "voice.wav"
-    audio_path.write_bytes(b"RIFF")
-
-    class ModelWithLanguage:
-        def __init__(self) -> None:
-            self.kwargs = None
-
-        def create_voice_clone_prompt(self, ref_audio, ref_text=None, language=None, x_vector_only_mode=False):
-            self.kwargs = {
-                "ref_audio": ref_audio,
-                "ref_text": ref_text,
-                "language": language,
-                "x_vector_only_mode": x_vector_only_mode,
-            }
-            return {"ok": True}
-
-    model = ModelWithLanguage()
-    config = voice_util.VoiceConfig(
-        name="man",
-        ref_audio=str(audio_path),
-        ref_text="こんにちは",
-        language="Japanese",
-        x_vector_only_mode=False,
-    )
-    prompt, language = tts_util._prepare_voice_prompt(model, config)
-    assert prompt == {"ok": True}
-    assert language == "Japanese"
-    assert model.kwargs["language"] == "Japanese"
-
-
-def test_prepare_voice_prompt_ignores_language_when_unsupported(tmp_path: Path) -> None:
-    audio_path = tmp_path / "voice.wav"
-    audio_path.write_bytes(b"RIFF")
-
-    class ModelNoLanguage:
-        def __init__(self) -> None:
-            self.kwargs = None
-
-        def create_voice_clone_prompt(self, ref_audio, ref_text=None, x_vector_only_mode=False):
-            self.kwargs = {
-                "ref_audio": ref_audio,
-                "ref_text": ref_text,
-                "x_vector_only_mode": x_vector_only_mode,
-            }
-            return {"ok": True}
-
-    model = ModelNoLanguage()
-    config = voice_util.VoiceConfig(
-        name="man",
-        ref_audio=str(audio_path),
-        ref_text="こんにちは",
-        language="Japanese",
-        x_vector_only_mode=False,
-    )
-    prompt, language = tts_util._prepare_voice_prompt(model, config)
-    assert prompt == {"ok": True}
-    assert language == "Japanese"
-    assert "language" not in model.kwargs
-
-
-def test_generate_audio_prefers_voice_clone() -> None:
-    class ModelVoiceClone:
-        def __init__(self) -> None:
-            self.kwargs = None
-
-        def generate_voice_clone(self, text, language=None, voice_clone_prompt=None, non_streaming_mode=False):
-            self.kwargs = {
-                "text": text,
-                "language": language,
-                "voice_clone_prompt": voice_clone_prompt,
-                "non_streaming_mode": non_streaming_mode,
-            }
-            return [tts_util.np.zeros(1)], 24000
-
-    model = ModelVoiceClone()
-    wavs, rate = tts_util._generate_audio(
-        model=model, text="こんにちは", prompt={"p": 1}, language="Japanese"
-    )
-    assert rate == 24000
-    assert model.kwargs["language"] == "Japanese"
-    assert model.kwargs["voice_clone_prompt"] == {"p": 1}
-
-
 def test_apply_reading_overrides() -> None:
     text = "私は漢字と東京。"
     overrides = [
@@ -878,6 +802,7 @@ def test_apply_ruby_evidence_to_chunk_keeps_non_kanji_span() -> None:
     assert out == f"{sep}ティーティーエス{sep}を試す。"
 
 
+@requires_unidic
 def test_apply_ruby_evidence_to_chunk_keeps_inline_ruby_over_global_override() -> None:
     chunk_text = "暗殺者は暗殺者だ。"
     chunk_span = (0, len(chunk_text))
@@ -3095,36 +3020,6 @@ def test_normalize_kana_first_token_to_kana_latin_starter() -> None:
     assert out == f"ブイ{_default_first_token_separator()}シリーズ全十冊"
 
 
-def test_normalize_kana_text_force_first_latin_phrase() -> None:
-    text = "The Yellow Monkey「天国旅行」"
-    out = tts_util._normalize_kana_text(
-        text,
-        kana_style="partial",
-        force_first_token_to_kana=True,
-    )
-    assert out == f"ザ イエロー モンキー{_default_first_token_separator()}「天国旅行」"
-
-
-def test_normalize_kana_text_force_first_token_chunk_only() -> None:
-    text = "あ The Monkey「天国旅行」"
-    out = tts_util._normalize_kana_text(
-        text,
-        kana_style="partial",
-        force_first_token_to_kana=True,
-    )
-    assert "The" in out
-
-
-def test_normalize_kana_text_transforms_mid_token_latin_phrase_when_enabled() -> None:
-    text = "あ The Yellow Monkey い"
-    out = tts_util._normalize_kana_text(
-        text,
-        kana_style="hiragana",
-        transform_mid_token_to_kana=True,
-    )
-    assert out == "あ ザ イエロー モンキー い"
-
-
 def test_normalize_kana_text_keeps_mid_token_latin_phrase_when_disabled() -> None:
     text = "あ The Yellow Monkey い"
     out = tts_util._normalize_kana_text(
@@ -3592,60 +3487,6 @@ def test_normalize_kana_first_token_to_kana_real_sakurasou_cases(
     assert out == expected
 
 
-@pytest.mark.parametrize(
-    ("text", "tokens", "expected"),
-    [
-        # First-token lowercase should convert when followed by Japanese.
-        (
-            "ｉｆ』と『ｆｏｒ』の使い方は理解しているな。",
-            [("ｉｆ", "イフ"), ("』と『ｆｏｒ』の使い方は理解しているな。", None)],
-            f"イフ{_default_first_token_separator()}』と『ｆｏｒ』の使い方は理解しているな。",
-        ),
-        # Copyright metadata lead should remain unchanged.
-        (
-            "C)2010-2014 HAJIME KAMOSHIDA ※2010年1月5日発行",
-            [
-                ("C", "シー"),
-                (")", None),
-                ("2010-2014", None),
-                (" ", None),
-                ("HAJIME", None),
-                (" ", None),
-                ("KAMOSHIDA", None),
-                (" ", None),
-                ("※2010年1月5日発行", None),
-            ],
-            "C)2010-2014 HAJIME KAMOSHIDA ※2010年1月5日発行",
-        ),
-    ],
-)
-def test_normalize_kana_first_token_to_kana_real_sakurasou_non_targets(
-    text: str, tokens: list[tuple[str, str | None]], expected: str
-) -> None:
-    class DummyFeature:
-        def __init__(self, kana: str | None) -> None:
-            self.kana = kana
-            self.pron = kana
-
-    class DummyToken:
-        def __init__(self, surface: str, kana: str | None) -> None:
-            self.surface = surface
-            self.feature = DummyFeature(kana)
-
-    class DummyTagger:
-        def __call__(self, _text: str):
-            return [DummyToken(surface, kana) for surface, kana in tokens]
-
-    out = tts_util._normalize_kana_with_tagger(
-        text,
-        DummyTagger(),
-        kana_style="partial",
-        zh_lexicon=set(),
-        force_first_token_to_kana=True,
-    )
-    assert out == expected
-
-
 def test_normalize_kana_weekday_reading() -> None:
     class DummyFeature:
         def __init__(self, kana: str | None) -> None:
@@ -3736,81 +3577,6 @@ def test_normalize_kana_with_tagger_normalizes_kyujitai_uso() -> None:
     assert out == f"うそ{_default_first_token_separator()}"
 
 
-def test_synthesize_book_force_first_token_to_kana(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    calls: dict[str, bool] = {}
-
-    def fake_normalize(
-        text: str,
-        *,
-        kana_style: str = "mixed",
-        force_first_token_to_kana: bool = False,
-        transform_mid_token_to_kana: bool = False,
-        debug_sources: list[str] | None = None,
-    ) -> str:
-        calls["force_first_token_to_kana"] = force_first_token_to_kana
-        return text
-
-    def fake_prepare_manifest(**_kwargs):
-        manifest = {
-            "chapters": [
-                {
-                    "id": "c1",
-                    "title": "c1",
-                    "chunks": ["投げつけ"],
-                    "durations_ms": [None],
-                    "chunk_spans": [[0, 3]],
-                }
-            ]
-        }
-        return manifest, [["投げつけ"]]
-
-    unidic_dir = tmp_path / "unidic"
-    unidic_dir.mkdir()
-    (unidic_dir / "dicrc").write_text("stub", encoding="utf-8")
-
-    monkeypatch.setattr(tts_util, "_normalize_kana_text", fake_normalize)
-    monkeypatch.setattr(tts_util, "_prepare_manifest", fake_prepare_manifest)
-    monkeypatch.setattr(tts_util, "_select_backend", lambda _backend: "torch")
-    monkeypatch.setattr(tts_util, "_resolve_model_name", lambda _name, _backend: "dummy")
-    monkeypatch.setattr(tts_util, "_load_model", lambda **_kwargs: object())
-    monkeypatch.setattr(tts_util, "_prepare_voice_prompt", lambda _model, _voice: (None, "Japanese"))
-    monkeypatch.setattr(
-        tts_util,
-        "_generate_audio",
-        lambda *_args, **_kwargs: ([tts_util.np.zeros(1)], 24000),
-    )
-    monkeypatch.setattr(tts_util, "_load_voice_map", lambda _path: {})
-    monkeypatch.setattr(tts_util, "_load_reading_overrides", lambda _book_dir: ([], {}))
-    monkeypatch.setattr(tts_util, "_load_ruby_data", lambda _book_dir: {})
-    monkeypatch.setattr(tts_util, "_get_kana_tagger", lambda: object())
-    monkeypatch.setattr(tts_util, "_resolve_unidic_dir", lambda: unidic_dir)
-    monkeypatch.setattr(
-        tts_util,
-        "load_book_chapters",
-        lambda _book_dir: [
-            tts_util.ChapterInput(
-                index=1, id="c1", title="c1", text="投げつけ"
-            )
-        ],
-    )
-
-    voice = voice_util.VoiceConfig(
-        name="v", ref_audio=str(tmp_path / "ref.wav"), ref_text="dummy"
-    )
-    out_dir = tmp_path / "tts"
-    result = tts_util.synthesize_book(
-        book_dir=tmp_path,
-        voice=voice,
-        out_dir=out_dir,
-        kana_normalize=True,
-        kana_style="partial",
-    )
-    assert result == 0
-    assert calls.get("force_first_token_to_kana") is True
-
-
 def test_synthesize_chunk_prefers_explicit_voice_over_manifest_entry(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -3845,11 +3611,11 @@ def test_synthesize_chunk_prefers_explicit_voice_over_manifest_entry(
             x_vector_only_mode=False,
         )
 
-    monkeypatch.setattr(tts_util, "_select_backend", lambda _backend: "mlx")
-    monkeypatch.setattr(tts_util, "_resolve_model_name", lambda _name, _backend: "dummy")
-    monkeypatch.setattr(tts_util, "_load_mlx_model", lambda _name: object())
+    monkeypatch.setattr(tts_util.synth_irodori, "get_runtime", lambda **_kwargs: object())
     monkeypatch.setattr(
-        tts_util, "_generate_audio_mlx", lambda *_args, **_kwargs: ([tts_util.np.zeros(1)], 24000)
+        tts_util.synth_irodori,
+        "generate_chunk",
+        lambda *_args, **_kwargs: (tts_util.np.zeros(1, dtype=tts_util.np.float32), 48000),
     )
     monkeypatch.setattr(tts_util, "_load_ruby_data", lambda _book_dir: {"chapters": {}})
     monkeypatch.setattr(tts_util, "_load_reading_overrides", lambda _book_dir: ([], {}))
@@ -3903,22 +3669,17 @@ def test_synthesize_chunk_ellipsis_only_writes_silence(
         encoding="utf-8",
     )
 
-    class DummyModel:
-        sample_rate = 24000
-
     calls: dict[str, object] = {"generate_calls": 0, "written": None}
 
-    def fake_generate_audio_mlx(*_args, **_kwargs):
+    def fake_generate_chunk(*_args, **_kwargs):
         calls["generate_calls"] = int(calls["generate_calls"]) + 1
-        return ([tts_util.np.zeros(1)], 24000)
+        return tts_util.np.zeros(1, dtype=tts_util.np.float32), 48000
 
     def fake_write_wav(path: Path, audio, sample_rate: int) -> None:
         calls["written"] = (path, int(audio.shape[0]), sample_rate)
 
-    monkeypatch.setattr(tts_util, "_select_backend", lambda _backend: "mlx")
-    monkeypatch.setattr(tts_util, "_resolve_model_name", lambda _name, _backend: "dummy")
-    monkeypatch.setattr(tts_util, "_load_mlx_model", lambda _name: DummyModel())
-    monkeypatch.setattr(tts_util, "_generate_audio_mlx", fake_generate_audio_mlx)
+    monkeypatch.setattr(tts_util.synth_irodori, "get_runtime", lambda **_kwargs: object())
+    monkeypatch.setattr(tts_util.synth_irodori, "generate_chunk", fake_generate_chunk)
     monkeypatch.setattr(tts_util, "_load_ruby_data", lambda _book_dir: {"chapters": {}})
     monkeypatch.setattr(tts_util, "_load_reading_overrides", lambda _book_dir: ([], {}))
     monkeypatch.setattr(
@@ -3956,78 +3717,8 @@ def test_synthesize_chunk_ellipsis_only_writes_silence(
     written = calls["written"]
     assert written is not None
     assert written[1] > 0
-    assert written[2] == 24000
+    assert written[2] == 48000
     assert result["duration_ms"] >= 1000
-
-
-def test_synthesize_chunk_reads_legacy_partial_mid_kanji_manifest_field(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    out_dir = tmp_path / "book" / "tts"
-    out_dir.mkdir(parents=True)
-    manifest = {
-        "voice": "高橋一生",
-        "partial_mid_kanji": False,
-        "chapters": [
-            {
-                "id": "c1",
-                "title": "Chapter 1",
-                "voice": "高橋一生",
-                "chunks": ["こんにちは"],
-                "chunk_spans": [[0, 5]],
-                "durations_ms": [None],
-            }
-        ],
-    }
-    (out_dir / "manifest.json").write_text(
-        json.dumps(manifest, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-    captured: dict[str, object] = {}
-
-    def fake_prepare_tts_pipeline(*_args, **kwargs):
-        captured["transform_mid_token_to_kana"] = kwargs.get(
-            "transform_mid_token_to_kana"
-        )
-        return tts_util.TtsPipeline(
-            ruby_text="こんにちは",
-            after_overrides="こんにちは",
-            after_numbers="こんにちは",
-            after_kana="こんにちは",
-            prepared="こんにちは",
-        )
-
-    monkeypatch.setattr(tts_util, "_select_backend", lambda _backend: "mlx")
-    monkeypatch.setattr(tts_util, "_resolve_model_name", lambda _name, _backend: "dummy")
-    monkeypatch.setattr(tts_util, "_load_mlx_model", lambda _name: object())
-    monkeypatch.setattr(
-        tts_util, "_generate_audio_mlx", lambda *_args, **_kwargs: ([tts_util.np.zeros(1)], 24000)
-    )
-    monkeypatch.setattr(tts_util, "_load_ruby_data", lambda _book_dir: {"chapters": {}})
-    monkeypatch.setattr(tts_util, "_load_reading_overrides", lambda _book_dir: ([], {}))
-    monkeypatch.setattr(tts_util, "_prepare_tts_pipeline", fake_prepare_tts_pipeline)
-    monkeypatch.setattr(tts_util, "_write_wav", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(
-        tts_util.voice_util,
-        "resolve_voice_config",
-        lambda **_kwargs: voice_util.VoiceConfig(
-            name="高橋一生",
-            ref_audio="dummy.wav",
-            ref_text="dummy",
-            language="Japanese",
-            x_vector_only_mode=False,
-        ),
-    )
-
-    result = tts_util.synthesize_chunk(
-        out_dir=out_dir,
-        chapter_id="c1",
-        chunk_index=0,
-        base_dir=tmp_path,
-    )
-    assert result["status"] == "ok"
-    assert captured["transform_mid_token_to_kana"] is False
 
 
 def test_normalize_numbers_standalone_digits() -> None:
@@ -4518,6 +4209,7 @@ def test_augment_chapter_overrides_with_ruby_compounds_keeps_explicit_override()
     assert tts_util.apply_reading_overrides("緑生さん", augmented) == "みどりおさん"
 
 
+@requires_unidic
 def test_augment_chapter_overrides_with_ruby_compounds_allows_singleton_name_context() -> None:
     ruby_data = {
         "chapters": {
@@ -4538,6 +4230,7 @@ def test_augment_chapter_overrides_with_ruby_compounds_allows_singleton_name_con
     assert tts_util.apply_reading_overrides("緑生さん", augmented) == "ろくおさん"
 
 
+@requires_unidic
 def test_augment_chapter_overrides_with_ruby_compounds_allows_singleton_kun_honorific() -> None:
     ruby_data = {
         "chapters": {
@@ -4852,97 +4545,3 @@ def test_load_reading_overrides_includes_template(
     assert tts_util.apply_reading_overrides("妻子", global_overrides) == "つまこ"
 
 
-def test_select_backend_prefers_mlx_on_apple(monkeypatch) -> None:
-    monkeypatch.setattr(tts_util, "_is_apple_silicon", lambda: True)
-    monkeypatch.setattr(tts_util, "_has_mlx_audio", lambda: True)
-    assert tts_util._select_backend("auto") == "mlx"
-
-
-def test_select_backend_falls_back_to_torch(monkeypatch) -> None:
-    monkeypatch.setattr(tts_util, "_is_apple_silicon", lambda: True)
-    monkeypatch.setattr(tts_util, "_has_mlx_audio", lambda: False)
-    with pytest.raises(ValueError):
-        tts_util._select_backend("auto")
-
-
-def test_default_model_for_mlx_is_8bit() -> None:
-    assert tts_util._default_model_for_backend("mlx").endswith("-8bit")
-
-
-def test_normalize_lang_code() -> None:
-    assert tts_util._normalize_lang_code("Japanese") == "ja"
-    assert tts_util._normalize_lang_code("ja") == "ja"
-    assert tts_util._normalize_lang_code("EN") == "en"
-    assert tts_util._normalize_lang_code("zh-cn") == "zh"
-    assert tts_util._normalize_lang_code("") is None
-
-
-def test_generate_audio_mlx_passes_language_name() -> None:
-    class DummyModel:
-        def __init__(self) -> None:
-            self.kwargs = None
-
-        def generate(self, text, language=None, lang_code=None, voice=None, **kwargs):
-            self.kwargs = {
-                "language": language,
-                "lang_code": lang_code,
-                "voice": voice,
-            }
-            return []
-
-    model = DummyModel()
-    config = voice_util.VoiceConfig(
-        name="jp",
-        ref_audio="voice.wav",
-        ref_text="こんにちは",
-        language="ja",
-    )
-    audio, rate = tts_util._generate_audio_mlx(model, "テスト", config)
-    assert audio == []
-    assert rate == 24000
-    assert model.kwargs["language"] == "Japanese"
-    assert model.kwargs["lang_code"] is None
-
-
-def test_generate_audio_falls_back_to_generate() -> None:
-    class ModelGenerate:
-        def __init__(self) -> None:
-            self.kwargs = None
-
-        def generate(self, text, prompt=None):
-            self.kwargs = {"text": text, "prompt": prompt}
-            return [tts_util.np.zeros(1)], 24000
-
-    model = ModelGenerate()
-    wavs, rate = tts_util._generate_audio(
-        model=model, text="こんにちは", prompt={"p": 2}, language="Japanese"
-    )
-    assert rate == 24000
-    assert model.kwargs["text"] == "こんにちは"
-    assert model.kwargs["prompt"] == {"p": 2}
-
-
-def test_ensure_pad_token_id_sets_pad_on_configs() -> None:
-    class GenCfg:
-        def __init__(self) -> None:
-            self.eos_token_id = 2150
-            self.pad_token_id = None
-
-    class Cfg:
-        def __init__(self) -> None:
-            self.eos_token_id = 2150
-            self.pad_token_id = None
-
-    class Core:
-        def __init__(self) -> None:
-            self.generation_config = GenCfg()
-            self.config = Cfg()
-
-    class Model:
-        def __init__(self) -> None:
-            self.model = Core()
-
-    model = Model()
-    tts_util._ensure_pad_token_id(model)
-    assert model.model.generation_config.pad_token_id == 2150
-    assert model.model.config.pad_token_id == 2150

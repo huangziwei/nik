@@ -22,17 +22,17 @@ podman --version # tested with 5.8.0
 podman machine init --cpus 6 --memory 8192 --disk-size 80 --now tts
 
 # Install project dependencies into .venv (required for `nik` CLI).
-# Port 1912 is the default for `nik play`.
-PMX_OPTS="-p 1912:1912" ./bin/pmx uv sync --prerelease=allow
+# Port 2999 is the default for `nik play`.
+PMX_OPTS="-p 2999:2999" ./bin/pmx uv sync --prerelease=allow
 ```
 
 ## Run the player
 
 ```bash
-./bin/pmx uv run nik play --host 0.0.0.0 --port 1912
+./bin/pmx uv run nik play --host 0.0.0.0 --port 2999
 ```
 
-Open `http://localhost:1912`.
+Open `http://localhost:2999`.
 
 > `--host 0.0.0.0` is required so Podman's port forwarding can reach the
 > process inside the container; binding to `127.0.0.1` would only listen on the

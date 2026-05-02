@@ -26,7 +26,7 @@ CUDA bloat. Half-precision on MPS is a real speedup.
 
 ```bash
 uv sync --prerelease=allow
-NIK_MODEL_PRECISION=bf16 uv run nik play --port 1912
+NIK_MODEL_PRECISION=bf16 uv run nik play --port 2999
 ```
 
 ### Intel Mac (or anywhere without GPU)
@@ -37,10 +37,10 @@ unused CUDA libs.
 
 ```bash
 ./bin/pmx uv sync --prerelease=allow
-./bin/pmx uv run nik play --host 0.0.0.0 --port 1912
+./bin/pmx uv run nik play --host 0.0.0.0 --port 2999
 ```
 
-Open http://localhost:1912.
+Open http://localhost:2999.
 
 ## Speed knobs
 
@@ -58,5 +58,5 @@ encode/decode dominates, not sampling. M4 Pro on MPS should clear most of this.
 Example: half-precision preset on M4 Pro:
 
 ```bash
-NIK_MODEL_PRECISION=bf16 uv run nik play --port 1912
+NIK_MODEL_PRECISION=bf16 uv run nik play --port 2999
 ```

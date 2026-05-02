@@ -4,6 +4,17 @@ set -euo pipefail
 image="ghcr.io/astral-sh/uv:python3.12-bookworm-slim"
 prefix="${PMX_NAMESPACE:+${PMX_NAMESPACE}-}"
 
+# Podman reads ~/.docker/config.json on every container-create call. In
+# sandboxed contexts (like agent-safehouse) that path may be unreadable,
+# producing "Operation not permitted" before any container work happens.
+# Point DOCKER_CONFIG at an empty tmpdir as a fallback when the real config
+# isn't available; harmless for public images.
+if [ -z "${DOCKER_CONFIG:-}" ] && [ ! -r "$HOME/.docker/config.json" ]; then
+  DOCKER_CONFIG="${TMPDIR:-/tmp}/pmx-no-docker"
+  mkdir -p "$DOCKER_CONFIG"
+  export DOCKER_CONFIG
+fi
+
 container="${PMX_NAME:-}"
 if [ -z "$container" ]; then
   base="$(basename "$PWD" | tr -cs 'a-zA-Z0-9_.-' '-')"

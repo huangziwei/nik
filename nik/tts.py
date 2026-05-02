@@ -6043,7 +6043,10 @@ def _ruby_chapter_compound_overrides(
     if chapter_id is not None and chapter_text:
         try:
             tagger = _get_kana_tagger()
-        except RuntimeError:
+        except Exception:
+            # UniDic download/install can fail many ways (network, BadZipFile,
+            # missing fugashi). Ruby compound inference is best-effort, so
+            # degrade silently rather than crash the caller.
             tagger = None
         if tagger is not None:
             person_name_surfaces = _chapter_person_name_surfaces(

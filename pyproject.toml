@@ -23,6 +23,7 @@ dependencies = [
     "soundfile>=0.12",
     "uvicorn>=0.27",
     "pytest",
+    "httpx<1",
     "ipadic>=1.0.0",
     "kyujipy>=0.6.8",
     # Irodori-TTS itself is not pip-installable upstream (broken setuptools
