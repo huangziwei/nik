@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "nik"
 version = "0.1.0"
-description = "Japanese EPUB to M4B pipeline using Qwen TTS voice cloning"
+description = "Japanese EPUB to M4B pipeline using Irodori-TTS voice cloning"
 authors = []
 requires-python = "==3.12.*"
 dependencies = [
@@ -16,24 +16,37 @@ dependencies = [
     "jinja2>=3.1",
     "lxml>=5.0",
     "mecab-python3>=1.0.6",
-    "mlx-audio>=0.3.1; sys_platform == 'darwin' and platform_machine == 'arm64'",
     "openai-whisper>=20231117",
     "numpy>=1.24",
-    "g2p_en>=2.1.0",
-    "kyujipy>=0.6.8",
     "python-multipart>=0.0.9",
     "rich>=13.7",
     "soundfile>=0.12",
     "uvicorn>=0.27",
-    "wordfreq>=3.1",
     "pytest",
     "ipadic>=1.0.0",
+    "kyujipy>=0.6.8",
+    # Irodori-TTS itself is not pip-installable upstream (broken setuptools
+    # discovery); we vendor a clone into .cache/Irodori-TTS and import via
+    # sys.path. Its transitive deps go here:
+    "dacvae",
+    "huggingface-hub>=0.34,<1",
+    "llvmlite>=0.40",
+    "numba>=0.57",
+    "peft>=0.18",
+    "pyyaml>=6",
+    "safetensors>=0.7",
+    "sentencepiece>=0.2",
+    "torchaudio>=2.10",
+    "torchcodec>=0.10",
+    "transformers<5",
 ]
 readme = {file = "README.md", content-type = "text/markdown"}
 
 [project.scripts]
 nik = "nik.cli:main"
 
+[tool.uv.sources]
+dacvae = { git = "https://github.com/facebookresearch/dacvae" }
 
 [tool.setuptools]
 packages = {find = {}}

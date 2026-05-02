@@ -33,6 +33,7 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
+from . import synth_irodori
 from . import voice as voice_util
 from .text import (
     SECTION_BREAK,
@@ -42,10 +43,6 @@ from .text import (
 )
 from .voice import VoiceConfig
 
-torch = None
-Qwen3TTSModel = None
-mlx_audio = None
-mlx_load_model = None
 fugashi = None
 wordfreq = None
 g2p_en = None
@@ -107,7 +104,7 @@ _HEADING_CATEGORY_TO_PAUSE_MULTIPLIER = {
     _HEADING_CATEGORY_SECTION: _SECTION_BREAK_PAUSE_MULTIPLIER,
     _HEADING_CATEGORY_TITLE: _TITLE_BREAK_PAUSE_MULTIPLIER,
 }
-_DEFAULT_OUTPUT_SAMPLE_RATE = 24000
+_DEFAULT_OUTPUT_SAMPLE_RATE = 48000
 _ELLIPSIS_ONLY_RE = re.compile(r"[…⋯]+")
 _ELLIPSIS_PAUSE_BASE_MS = 380
 _ELLIPSIS_PAUSE_STEP_MS = 120
@@ -7237,8 +7234,6 @@ def synthesize_book(
 ) -> int:
     chapters = load_book_chapters(book_dir)
     chapter_text_by_id = {chapter.id: chapter.text for chapter in chapters}
-    backend_name = _select_backend(backend)
-    model_name = _resolve_model_name(model_name, backend_name)
     global_overrides, reading_overrides = _load_reading_overrides(book_dir)
     ruby_data = _load_ruby_data(book_dir)
     ruby_propagated_readings_by_chapter: Dict[str, Dict[str, set[str]]] = {}
@@ -7339,27 +7334,9 @@ def synthesize_book(
         sys.stderr.write(f"{exc}\n")
         return 2
 
-    write_status(out_dir, "cloning", "Preparing voice")
+    write_status(out_dir, "loading_model", "Loading TTS model")
 
-    voice_prompts: Dict[str, Any] = {}
-    voice_languages: Dict[str, str] = {}
-    if backend_name == "torch":
-        model = _load_model(
-            model_name=model_name,
-            device_map=device_map,
-            dtype=dtype,
-            attn_implementation=attn_implementation,
-        )
-        for voice_id, config in voice_configs.items():
-            prompt, language = _prepare_voice_prompt(model, config)
-            voice_prompts[voice_id] = prompt
-            voice_languages[voice_id] = language
-    else:
-        try:
-            model = _load_mlx_model(model_name)
-        except RuntimeError as exc:
-            sys.stderr.write(f"{exc}\n")
-            return 2
+    model = synth_irodori.get_runtime()
 
     write_status(out_dir, "synthesizing")
 
@@ -7428,8 +7405,6 @@ def synthesize_book(
 
             chapter_seg_dir = seg_dir / chapter_id
             voice_id = chapter_voice_map.get(chapter_id, default_voice)
-            prompt = voice_prompts.get(voice_id)
-            language = voice_languages.get(voice_id)
             voice_config = voice_configs.get(voice_id)
             chapter_overrides = reading_overrides.get(chapter_id, [])
             chapter_overrides = _augment_chapter_overrides_with_ruby_compounds(
@@ -7553,20 +7528,19 @@ def synthesize_book(
                     progress.advance(overall_task, 1)
                     continue
 
-                if backend_name == "torch":
-                    wavs, sample_rate = _generate_audio(
-                        model=model,
-                        text=tts_text,
-                        prompt=prompt,
-                        language=language,
+                if voice_config is None:
+                    sys.stderr.write(
+                        f"Missing voice config for {chapter_id} ({chunk_idx}/{chapter_total}).\n"
                     )
-                else:
-                    wavs, sample_rate = _generate_audio_mlx(
-                        model=model,
-                        text=tts_text,
-                        voice_config=voice_config,
-                    )
-                if not wavs:
+                    ch_entry["durations_ms"][chunk_idx - 1] = 0
+                    atomic_write_json(manifest_path, manifest)
+                    progress.advance(chapter_task, 1)
+                    progress.advance(overall_task, 1)
+                    continue
+                audio, sample_rate = synth_irodori.generate_chunk(
+                    model, tts_text, voice_config
+                )
+                if audio.size == 0:
                     sys.stderr.write(
                         f"Skipping empty audio {chapter_id} ({chunk_idx}/{chapter_total}).\n"
                     )
@@ -7576,10 +7550,7 @@ def synthesize_book(
                     progress.advance(overall_task, 1)
                     continue
 
-                if isinstance(wavs, np.ndarray):
-                    audio = wavs.flatten()
-                else:
-                    audio = np.concatenate([np.asarray(w).flatten() for w in wavs])
+                audio = audio.flatten()
                 if pad_ms_total > 0:
                     pad_samples = int(round(sample_rate * (pad_ms_total / 1000.0)))
                     if pad_samples > 0:
@@ -7697,8 +7668,6 @@ def synthesize_chunk(
 ) -> dict:
     if base_dir is None:
         base_dir = Path.cwd()
-    backend_name = _select_backend(backend)
-    model_name = _resolve_model_name(model_name, backend_name)
     if chunk_index < 0:
         raise ValueError("chunk_index must be >= 0")
 
@@ -7829,22 +7798,7 @@ def synthesize_chunk(
             voice_id = _normalize_voice_id(entry.get("voice"), default_voice)
 
     config = voice_util.resolve_voice_config(voice=voice_id, base_dir=base_dir)
-    if backend_name == "torch":
-        _require_tts()
-        model = _load_model(
-            model_name=model_name,
-            device_map=device_map,
-            dtype=dtype,
-            attn_implementation=attn_implementation,
-        )
-        prompt, language = _prepare_voice_prompt(model, config)
-    else:
-        try:
-            model = _load_mlx_model(model_name)
-        except RuntimeError as exc:
-            raise ValueError(str(exc)) from exc
-        prompt = None
-        language = None
+    model = synth_irodori.get_runtime()
 
     book_dir = out_dir.parent
     override_dir = book_dir
@@ -7953,20 +7907,8 @@ def synthesize_chunk(
             "duration_ms": dms,
         }
 
-    if backend_name == "torch":
-        wavs, sample_rate = _generate_audio(
-            model=model,
-            text=tts_text,
-            prompt=prompt,
-            language=language,
-        )
-    else:
-        wavs, sample_rate = _generate_audio_mlx(
-            model=model,
-            text=tts_text,
-            voice_config=config,
-        )
-    if not wavs:
+    audio, sample_rate = synth_irodori.generate_chunk(model, tts_text, config)
+    if audio.size == 0:
         durations[chunk_index] = 0
         atomic_write_json(manifest_path, manifest)
         return {
@@ -7975,11 +7917,7 @@ def synthesize_chunk(
             "chunk_index": chunk_index,
             "duration_ms": 0,
         }
-
-    if isinstance(wavs, np.ndarray):
-        audio = wavs.flatten()
-    else:
-        audio = np.concatenate([np.asarray(w).flatten() for w in wavs])
+    audio = audio.flatten()
 
     if pad_ms_total > 0:
         pad_samples = int(round(sample_rate * (pad_ms_total / 1000.0)))
