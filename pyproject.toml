@@ -30,7 +30,9 @@ dependencies = [
     # discovery); we vendor a clone into .cache/Irodori-TTS and import via
     # sys.path. Its transitive deps go here:
     "dacvae",
-    "huggingface-hub>=0.34,<1",
+    # mlx-audio 0.4.3 needs hub>=1.0; both nik and upstream Irodori only call
+    # hf_hub_download, which is stable across the 0.x→1.0 boundary.
+    "huggingface-hub>=1.0,<2",
     "llvmlite>=0.40",
     "numba>=0.57",
     "peft>=0.18",
@@ -40,7 +42,13 @@ dependencies = [
     "torch>=2.10",
     "torchaudio>=2.10",
     "torchcodec>=0.10",
-    "transformers<5",
+    # mlx-audio>=0.4.3 (used as the optional NIK_BACKEND=mlx path) pins
+    # transformers>=5.5; upstream Irodori only calls AutoTokenizer.from_pretrained,
+    # which is API-stable across 4.x and 5.x, so we bump in lockstep.
+    "transformers>=5.5,<6",
+    # MLX backend (optional via NIK_BACKEND=mlx). Bundles the Irodori port at
+    # mlx_audio.tts.models.irodori_tts; weights pulled from mlx-community.
+    "mlx-audio>=0.4.3",
 ]
 readme = {file = "README.md", content-type = "text/markdown"}
 

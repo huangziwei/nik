@@ -1,16 +1,17 @@
-"""Adapter for Irodori-TTS as the synthesis backend.
+"""Adapter for Irodori-TTS via the upstream PyTorch path (fallback backend).
+
+This is the original adapter; the default backend is now MLX
+(see `synth_irodori_mlx.py`). Use `NIK_BACKEND=torch` to opt in.
 
 Irodori-TTS upstream is not pip-installable (its setuptools flat-layout discovers
 both `configs/` and `irodori_tts/` as top-level packages and fails to build).
 We vendor a clone at `.cache/Irodori-TTS` (gitignored, pinned by the user via
-`git checkout <sha>`) and import via `sys.path`. Its transitive deps are listed
-directly in `pyproject.toml`.
+`git checkout <sha>`) and import via `sys.path`. The vendor clone is only
+required when this backend is selected — see `_ensure_vendor_on_path`.
 
 Apple Silicon only: device auto-picks `mps` when available (CPU otherwise),
 and precision is fixed at `fp32` — Irodori rejects `bf16`/`fp16` outside CUDA
 and we don't ship any other platforms.
-
-See .claude/plans/refactor-qwen-to-irodori.md for the full migration plan.
 """
 
 from __future__ import annotations
@@ -29,28 +30,40 @@ ENV_NUM_STEPS = "NIK_NUM_STEPS"
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _VENDOR_PATH = _REPO_ROOT / ".cache" / "Irodori-TTS"
 
-if str(_VENDOR_PATH) not in sys.path:
-    sys.path.insert(0, str(_VENDOR_PATH))
-
-# These imports require the sys.path tweak above.
-from huggingface_hub import hf_hub_download  # noqa: E402
-from irodori_tts.inference_runtime import (  # noqa: E402
-    InferenceRuntime,
-    RuntimeKey,
-    SamplingRequest,
-    default_runtime_device,
-    get_cached_runtime,
-)
-
 DEFAULT_HF_REPO = "Aratako/Irodori-TTS-500M-v2"
 
 
+def _ensure_vendor_on_path() -> None:
+    """Lazy: only attach the vendored Irodori-TTS clone when this backend runs.
+
+    MLX is the default backend, so most installs don't need the vendor clone.
+    Importing this module must not fail in that case.
+    """
+    if str(_VENDOR_PATH) not in sys.path:
+        sys.path.insert(0, str(_VENDOR_PATH))
+    if not _VENDOR_PATH.exists():
+        raise RuntimeError(
+            f"NIK_BACKEND=torch requires the upstream Irodori-TTS clone at "
+            f"{_VENDOR_PATH}. See README.md for the `git clone` step, or use "
+            f"the default MLX backend."
+        )
+
+
 def _checkpoint_path(repo_id: str) -> str:
+    from huggingface_hub import hf_hub_download
+
     return hf_hub_download(repo_id=repo_id, filename="model.safetensors")
 
 
-def get_runtime(*, hf_repo: str = DEFAULT_HF_REPO) -> InferenceRuntime:
+def get_runtime(*, hf_repo: str = DEFAULT_HF_REPO):
     """Load (or fetch from cache) an InferenceRuntime for the given checkpoint."""
+    _ensure_vendor_on_path()
+    from irodori_tts.inference_runtime import (
+        RuntimeKey,
+        default_runtime_device,
+        get_cached_runtime,
+    )
+
     device = default_runtime_device()
     key = RuntimeKey(
         checkpoint=_checkpoint_path(hf_repo),
@@ -74,7 +87,7 @@ def _default_num_steps() -> int:
 
 
 def generate_chunk(
-    runtime: InferenceRuntime,
+    runtime,
     text: str,
     voice: VoiceConfig,
     *,
@@ -89,6 +102,9 @@ def generate_chunk(
     safer default for long inputs — see `.claude/plans/refactor-qwen-to-irodori.md`).
     Override via `NIK_NUM_STEPS` env var or the kwarg.
     """
+    _ensure_vendor_on_path()
+    from irodori_tts.inference_runtime import SamplingRequest
+
     if num_steps is None:
         num_steps = _default_num_steps()
     request = SamplingRequest(

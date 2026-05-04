@@ -28,8 +28,30 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-from . import synth_irodori
+from . import synth_irodori as _synth_torch
+from . import synth_irodori_mlx as _synth_mlx
 from . import voice as voice_util
+
+
+def _tts_backend():
+    """Return the active synthesis adapter module (NIK_BACKEND=mlx|torch).
+
+    MLX is the default — ~2.2× faster wall-clock with audible parity on the
+    A/B test (see `bench_mlx.py`). `torch` remains as a fallback that requires
+    the upstream Irodori-TTS clone at `.cache/Irodori-TTS`.
+    """
+    name = (os.environ.get("NIK_BACKEND") or "mlx").strip().lower()
+    return _synth_torch if name == "torch" else _synth_mlx
+
+
+# Existing call sites use `synth_irodori.<fn>`. Keep that name pointing at a
+# thin proxy that resolves the backend per attribute access.
+class _BackendProxy:
+    def __getattr__(self, name):
+        return getattr(_tts_backend(), name)
+
+
+synth_irodori = _BackendProxy()
 from .text import (
     SECTION_BREAK,
     normalize_section_breaks,
