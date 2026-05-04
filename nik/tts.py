@@ -1282,7 +1282,7 @@ def _pack_chunk_units(
 
 
 def _merge_short_chunks(
-    spans: Sequence[Tuple[int, int]], min_chars: int
+    spans: Sequence[Tuple[int, int]], min_chars: int, max_chars: int = 0
 ) -> List[Tuple[int, int]]:
     if min_chars <= 0 or not spans:
         return list(spans)
@@ -1290,6 +1290,9 @@ def _merge_short_chunks(
     pending: Optional[Tuple[int, int]] = None
     for start, end in spans:
         if pending is None:
+            pending = (start, end)
+        elif max_chars > 0 and end - pending[0] > max_chars:
+            result.append(pending)
             pending = (start, end)
         else:
             pending = (pending[0], end)
@@ -1299,7 +1302,10 @@ def _merge_short_chunks(
     if pending is not None:
         if result:
             last_start, _last_end = result[-1]
-            result[-1] = (last_start, pending[1])
+            if max_chars > 0 and pending[1] - last_start > max_chars:
+                result.append(pending)
+            else:
+                result[-1] = (last_start, pending[1])
         else:
             result.append(pending)
     return result
@@ -1322,7 +1328,7 @@ def make_chunk_spans(
             sentence_spans.append((sent_start, sent_end))
     units = _build_chunk_units(text, sentence_spans, max_chars)
     spans = _pack_chunk_units(text, units, max_chars)
-    return _merge_short_chunks(spans, min_chars)
+    return _merge_short_chunks(spans, min_chars, max_chars)
 
 
 def make_chunks(
