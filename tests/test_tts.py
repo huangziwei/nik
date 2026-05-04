@@ -1429,12 +1429,44 @@ def test_prepare_tts_text_quote_boundary_preserves_question() -> None:
     assert tts_util.prepare_tts_text("「え？」と") == "え?と"
 
 
-def test_prepare_tts_text_adds_short_tail_punct() -> None:
+def test_prepare_tts_text_adds_tail_punct_when_missing() -> None:
     assert tts_util.prepare_tts_text("まえがき", add_short_punct=True) == "まえがき。"
     assert tts_util.prepare_tts_text("前書き。", add_short_punct=True) == "前書き。"
     assert tts_util.prepare_tts_text("Prologue", add_short_punct=True) == "Prologue"
-    long_text = "あ" * (tts_util._SHORT_TAIL_MAX_CHARS + 1)
-    assert tts_util.prepare_tts_text(long_text, add_short_punct=True) == long_text
+    # Long Japanese text without trailing punct still gets a period appended.
+    long_text = "あ" * 50
+    assert (
+        tts_util.prepare_tts_text(long_text, add_short_punct=True) == long_text + "。"
+    )
+
+
+def test_prepare_tts_text_appends_period_per_line() -> None:
+    # Multi-line title page: each non-empty line gets `。`, then quotes/whitespace
+    # are normalized.
+    assert (
+        tts_util.prepare_tts_text("放課後\n\n東野圭吾\n", add_short_punct=True)
+        == "放課後。 東野圭吾。"
+    )
+    # Line ending with `」` (no preceding end-punct) gets `。` appended; the
+    # quote stripper then drops `」` adjacent to `。`.
+    assert (
+        tts_util.prepare_tts_text(
+            "「青砥だよ、青砥」\n\nあのときの自分の声が耳の奥で鳴った。\n",
+            add_short_punct=True,
+        )
+        == "青砥だよ、青砥。 あのときの自分の声が耳の奥で鳴った。"
+    )
+    # If the close quote already follows an end-punct, leave it alone.
+    assert (
+        tts_util.prepare_tts_text("「ありがとう。」", add_short_punct=True)
+        == "ありがとう。"
+    )
+    # All-sentence-terminated lines stay untouched.
+    src = "みたいな。\n\n深く呼吸した。\n"
+    assert (
+        tts_util.prepare_tts_text(src, add_short_punct=True)
+        == "みたいな。 深く呼吸した。"
+    )
 
 
 def test_load_reading_overrides(tmp_path: Path) -> None:

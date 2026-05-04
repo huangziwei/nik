@@ -192,7 +192,6 @@ _RUBY_SUTEGANA_KATA_LARGE_TO_SMALL = dict(
 )
 _RUBY_SUTEGANA_TRIGGER_LARGE = set("つやゆよわかけツヤユヨワカケ")
 _SHORT_TAIL_PUNCT = "。"
-_SHORT_TAIL_MAX_CHARS = 12
 try:
     _JP_COMMON_ZIPF = float(os.environ.get("NIK_JP_COMMON_ZIPF", "4.0") or 4.0)
 except ValueError:
@@ -1882,29 +1881,59 @@ def _strip_jp_quotes(text: str) -> str:
     return "".join(out)
 
 
-def _append_short_tail_punct(text: str) -> str:
-    if not text:
+def _line_needs_tail_punct(line: str) -> bool:
+    """True if `line` (already trimmed of trailing spaces) lacks pause punct.
+
+    A line ending in `」』` etc. counts as needing punct unless an end/mid-punct
+    sits immediately before the closing quote(s).
+    """
+    if not line:
+        return False
+    last = line[-1]
+    if last == "・":
+        return False
+    if last in _END_PUNCT or last in _MID_PUNCT:
+        return False
+    if last in _CLOSE_PUNCT:
+        j = len(line) - 2
+        while j >= 0 and line[j] in _CLOSE_PUNCT:
+            j -= 1
+        if j >= 0 and (line[j] in _END_PUNCT or line[j] in _MID_PUNCT):
+            return False
+    return True
+
+
+def _ensure_line_tail_punct(text: str) -> str:
+    """Per-line: append `。` to non-empty Japanese lines lacking pause punct.
+
+    Runs BEFORE `_strip_jp_quotes` so that lines ending in `」』` get a trailing
+    `。` injected (which the quote stripper then leaves in place when the close
+    quote is dropped). Idempotent.
+    """
+    if not text or not _has_japanese(text):
         return text
-    if len(text) > _SHORT_TAIL_MAX_CHARS:
-        return text
-    if not _has_japanese(text):
+    lines = text.split("\n")
+    out: List[str] = []
+    for line in lines:
+        stripped_right = line.rstrip()
+        trailing = line[len(stripped_right):]
+        if not stripped_right or not _line_needs_tail_punct(stripped_right):
+            out.append(line)
+            continue
+        out.append(stripped_right + _SHORT_TAIL_PUNCT + trailing)
+    return "\n".join(out)
+
+
+def _append_tail_punct_if_missing(text: str) -> str:
+    if not text or not _has_japanese(text):
         return text
     idx = len(text) - 1
     while idx >= 0 and text[idx].isspace():
         idx -= 1
     if idx < 0:
         return text
-    last = text[idx]
-    if last == "・":
+    if not _line_needs_tail_punct(text[: idx + 1]):
         return text
-    if last in _END_PUNCT or last in _MID_PUNCT:
-        return text
-    if last in _CLOSE_PUNCT:
-        j = idx - 1
-        while j >= 0 and text[j] in _CLOSE_PUNCT:
-            j -= 1
-        if j >= 0 and (text[j] in _END_PUNCT or text[j] in _MID_PUNCT):
-            return text
     return text + _SHORT_TAIL_PUNCT
 
 
@@ -3537,6 +3566,8 @@ def prepare_tts_text(text: str, *, add_short_punct: bool = False) -> str:
     has_dash_run = bool(_DASH_RUN_RE.search(text))
     text = _DASH_RUN_RE.sub(" ", text)
     text = _strip_format_chars(text)
+    if add_short_punct:
+        text = _ensure_line_tail_punct(text)
     text = _strip_jp_quotes(text)
     text = _strip_double_quotes(text)
     text = _strip_single_quotes(text)
@@ -3545,7 +3576,7 @@ def prepare_tts_text(text: str, *, add_short_punct: bool = False) -> str:
     text = re.sub(r"\s+", " ", text).strip()
     text = _japanese_space_to_pause(text, allow_full_stop=not has_dash_run)
     if add_short_punct:
-        text = _append_short_tail_punct(text)
+        text = _append_tail_punct_if_missing(text)
     return text
 
 
