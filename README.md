@@ -8,7 +8,7 @@ Only works and tested on Apple Silicon.
 git clone https://github.com/Aratako/Irodori-TTS.git .cache/Irodori-TTS
 (cd .cache/Irodori-TTS && git checkout 2708d3cadf726d4389d25eb4bb7a0344517a9a40)
 
-uv sync --prerelease=allow
+uv sync
 uv run nik play --port 2999
 ```
 
