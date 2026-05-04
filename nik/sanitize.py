@@ -1320,7 +1320,7 @@ def sanitize_book(
 
 def refresh_chunks(
     book_dir: Path,
-    max_chars: int = 0,
+    max_chars: int = 80,
     pad_ms: int = 350,
     chunk_mode: str = "japanese",
     min_chars: int = 15,

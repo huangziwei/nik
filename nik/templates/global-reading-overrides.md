@@ -5,7 +5,6 @@
 # Regex (Python) lines are supported with "re:" prefix:
 
 # re:御(存知|迷惑)=ご\1
-
 我々＝ワレワレ
 私生活＝シセイカツ
 独り=ひとり
