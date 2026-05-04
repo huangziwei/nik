@@ -1260,8 +1260,35 @@ def _pack_chunk_units(
     return packed
 
 
+def _merge_short_chunks(
+    spans: Sequence[Tuple[int, int]], min_chars: int
+) -> List[Tuple[int, int]]:
+    if min_chars <= 0 or not spans:
+        return list(spans)
+    result: List[Tuple[int, int]] = []
+    pending: Optional[Tuple[int, int]] = None
+    for start, end in spans:
+        if pending is None:
+            pending = (start, end)
+        else:
+            pending = (pending[0], end)
+        if pending[1] - pending[0] >= min_chars:
+            result.append(pending)
+            pending = None
+    if pending is not None:
+        if result:
+            last_start, _last_end = result[-1]
+            result[-1] = (last_start, pending[1])
+        else:
+            result.append(pending)
+    return result
+
+
 def make_chunk_spans(
-    text: str, max_chars: int, chunk_mode: str = "japanese"
+    text: str,
+    max_chars: int,
+    chunk_mode: str = "japanese",
+    min_chars: int = 0,
 ) -> List[Tuple[int, int]]:
     _ = chunk_mode
     sentence_spans: List[Tuple[int, int]] = []
@@ -1273,11 +1300,19 @@ def make_chunk_spans(
         else:
             sentence_spans.append((sent_start, sent_end))
     units = _build_chunk_units(text, sentence_spans, max_chars)
-    return _pack_chunk_units(text, units, max_chars)
+    spans = _pack_chunk_units(text, units, max_chars)
+    return _merge_short_chunks(spans, min_chars)
 
 
-def make_chunks(text: str, max_chars: int, chunk_mode: str = "japanese") -> List[str]:
-    spans = make_chunk_spans(text, max_chars=max_chars, chunk_mode=chunk_mode)
+def make_chunks(
+    text: str,
+    max_chars: int,
+    chunk_mode: str = "japanese",
+    min_chars: int = 0,
+) -> List[str]:
+    spans = make_chunk_spans(
+        text, max_chars=max_chars, chunk_mode=chunk_mode, min_chars=min_chars
+    )
     return [text[start:end] for start, end in spans]
 
 
@@ -5030,6 +5065,7 @@ def _prepare_manifest(
     max_chars: int,
     pad_ms: int,
     rechunk: bool,
+    min_chars: int = 0,
 ) -> Tuple[dict, List[List[str]]]:
     out_dir.mkdir(parents=True, exist_ok=True)
     chunk_root = out_dir / "chunks"
@@ -5048,6 +5084,11 @@ def _prepare_manifest(
         if int(manifest.get("max_chars") or 0) != int(max_chars):
             raise ValueError(
                 "manifest.json max_chars differs from requested. "
+                "Run with --rechunk to regenerate."
+            )
+        if int(manifest.get("min_chars") or 0) != int(min_chars):
+            raise ValueError(
+                "manifest.json min_chars differs from requested. "
                 "Run with --rechunk to regenerate."
             )
         manifest_chapters = manifest.get("chapters", [])
@@ -5107,7 +5148,12 @@ def _prepare_manifest(
     chapter_chunks: List[List[str]] = []
     manifest_chapters: List[dict] = []
     for ch in chapters:
-        spans = make_chunk_spans(ch.text, max_chars=max_chars, chunk_mode="japanese")
+        spans = make_chunk_spans(
+            ch.text,
+            max_chars=max_chars,
+            chunk_mode="japanese",
+            min_chars=min_chars,
+        )
         pause_multipliers = compute_chunk_pause_multipliers(
             ch.text,
             spans,
@@ -5157,6 +5203,7 @@ def _prepare_manifest(
         "created_unix": int(time.time()),
         "voice": voice,
         "max_chars": int(max_chars),
+        "min_chars": int(min_chars),
         "pad_ms": int(pad_ms),
         "section_pad_ms": int(pad_ms) * _SECTION_PAD_MULT,
         "chapter_pad_ms": int(pad_ms) * _CHAPTER_PAD_MULT,
@@ -5239,6 +5286,7 @@ def chunk_book(
     pad_ms: int = 350,
     chunk_mode: str = "japanese",
     rechunk: bool = True,
+    min_chars: int = 0,
 ) -> dict:
     _ = chunk_mode
     if out_dir is None:
@@ -5251,6 +5299,7 @@ def chunk_book(
         max_chars=max_chars,
         pad_ms=pad_ms,
         rechunk=rechunk,
+        min_chars=min_chars,
     )
     return manifest
 
@@ -5265,6 +5314,7 @@ def synthesize_book(
     voice_map_path: Optional[Path] = None,
     base_dir: Optional[Path] = None,
     only_chapter_ids: Optional[set[str]] = None,
+    min_chars: int = 0,
 ) -> int:
     chapters = load_book_chapters(book_dir)
     chapter_text_by_id = {chapter.id: chapter.text for chapter in chapters}
@@ -5297,6 +5347,7 @@ def synthesize_book(
             max_chars=max_chars,
             pad_ms=pad_ms,
             rechunk=rechunk,
+            min_chars=min_chars,
         )
     except ValueError as exc:
         sys.stderr.write(f"{exc}\n")
@@ -5602,6 +5653,7 @@ def synthesize_book_sample(
     rechunk: bool = False,
     voice_map_path: Optional[Path] = None,
     base_dir: Optional[Path] = None,
+    min_chars: int = 0,
 ) -> int:
     chapters = load_book_chapters(book_dir)
     if not chapters:
@@ -5641,6 +5693,7 @@ def synthesize_book_sample(
         voice_map_path=voice_map_path,
         base_dir=base_dir,
         only_chapter_ids={sample_id},
+        min_chars=min_chars,
     )
 
 

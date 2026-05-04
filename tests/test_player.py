@@ -671,11 +671,13 @@ def test_clear_tts_forces_rechunk_with_manifest_settings(
         max_chars: int = 220,
         pad_ms: int = 350,
         chunk_mode: str = "japanese",
+        min_chars: int = 0,
     ) -> bool:
         captured["book_dir"] = book_dir
         captured["max_chars"] = max_chars
         captured["pad_ms"] = pad_ms
         captured["chunk_mode"] = chunk_mode
+        captured["min_chars"] = min_chars
         return True
 
     monkeypatch.setattr(player_util.sanitize, "refresh_chunks", fake_refresh_chunks)

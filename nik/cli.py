@@ -714,6 +714,7 @@ def _rechunk(args: argparse.Namespace) -> int:
     book_dir = Path(args.book)
     manifest_path = book_dir / "tts" / "manifest.json"
     max_chars = args.max_chars
+    min_chars = args.min_chars
     pad_ms = args.pad_ms
     chunk_mode = args.chunk_mode
 
@@ -724,6 +725,8 @@ def _rechunk(args: argparse.Namespace) -> int:
             manifest = {}
         if max_chars is None:
             max_chars = manifest.get("max_chars")
+        if min_chars is None:
+            min_chars = manifest.get("min_chars")
         if pad_ms is None:
             pad_ms = manifest.get("pad_ms")
         if chunk_mode is None:
@@ -731,6 +734,8 @@ def _rechunk(args: argparse.Namespace) -> int:
 
     if max_chars is None:
         max_chars = 0
+    if min_chars is None:
+        min_chars = 15
     if pad_ms is None:
         pad_ms = 300
     if chunk_mode is None:
@@ -742,6 +747,7 @@ def _rechunk(args: argparse.Namespace) -> int:
             max_chars=int(max_chars),
             pad_ms=int(pad_ms),
             chunk_mode=str(chunk_mode),
+            min_chars=int(min_chars),
         )
     except Exception as exc:
         sys.stderr.write(f"Rechunk failed: {exc}\n")
@@ -805,6 +811,7 @@ def _synth(args: argparse.Namespace) -> int:
         rechunk=args.rechunk,
         voice_map_path=voice_map_path,
         base_dir=Path.cwd(),
+        min_chars=args.min_chars,
     ))
 
 
@@ -835,6 +842,7 @@ def _sample(args: argparse.Namespace) -> int:
         rechunk=args.rechunk,
         voice_map_path=voice_map_path,
         base_dir=Path.cwd(),
+        min_chars=args.min_chars,
     ))
 
 
@@ -1058,6 +1066,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Max characters per chunk (default: reuse manifest or 0 = chunk at punctuation)",
     )
     rechunk.add_argument(
+        "--min-chars",
+        type=int,
+        default=None,
+        help="Min characters per chunk; short chunks merge with neighbors (default: reuse manifest or 15)",
+    )
+    rechunk.add_argument(
         "--pad-ms",
         type=int,
         default=None,
@@ -1156,6 +1170,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip text requirement and use x-vector only cloning",
     )
     synth.add_argument("--max-chars", type=int, default=0)
+    synth.add_argument("--min-chars", type=int, default=15)
     synth.add_argument("--pad-ms", type=int, default=350)
     synth.add_argument("--rechunk", action="store_true")
     synth.set_defaults(func=_synth)
@@ -1191,6 +1206,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip text requirement and use x-vector only cloning",
     )
     sample.add_argument("--max-chars", type=int, default=0)
+    sample.add_argument("--min-chars", type=int, default=15)
     sample.add_argument("--pad-ms", type=int, default=350)
     sample.add_argument("--rechunk", action="store_true")
     sample.set_defaults(func=_sample)

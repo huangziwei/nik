@@ -1715,6 +1715,7 @@ class SynthJob:
     log_handle: Optional[IO[str]] = None
     exit_code: Optional[int] = None
     ended_at: Optional[float] = None
+    min_chars: int = 0
 
 
 @dataclass
@@ -1754,6 +1755,7 @@ class SynthRequest(BaseModel):
     book_id: str
     voice: Optional[str] = None
     max_chars: int = 0
+    min_chars: int = 15
     pad_ms: int = 350
     chunk_mode: str = "japanese"
     rechunk: bool = False
@@ -3064,6 +3066,8 @@ def create_app(root_dir: Path) -> FastAPI:
             voice_value,
             "--max-chars",
             str(payload.max_chars),
+            "--min-chars",
+            str(payload.min_chars),
             "--pad-ms",
             str(payload.pad_ms),
         ]
@@ -3094,6 +3098,7 @@ def create_app(root_dir: Path) -> FastAPI:
             rechunk=payload.rechunk,
             mode="tts",
             log_handle=log_handle,
+            min_chars=payload.min_chars,
         )
 
         return _no_store({"status": "started", "book_id": payload.book_id})
@@ -3170,6 +3175,8 @@ def create_app(root_dir: Path) -> FastAPI:
             payload.voice,
             "--max-chars",
             str(payload.max_chars),
+            "--min-chars",
+            str(payload.min_chars),
             "--pad-ms",
             str(payload.pad_ms),
         ]
@@ -3200,6 +3207,7 @@ def create_app(root_dir: Path) -> FastAPI:
             sample_chapter_id=sample_id,
             sample_chapter_title=sample_title or None,
             log_handle=log_handle,
+            min_chars=payload.min_chars,
         )
 
         return _no_store({"status": "started", "book_id": payload.book_id})
@@ -3271,6 +3279,7 @@ def create_app(root_dir: Path) -> FastAPI:
         tts_dir = book_dir / "tts"
         manifest_path = tts_dir / "manifest.json"
         max_chars = 0
+        min_chars = 15
         pad_ms = 350
         chunk_mode = "japanese"
         if manifest_path.exists():
@@ -3279,6 +3288,10 @@ def create_app(root_dir: Path) -> FastAPI:
                 max_chars = int(manifest.get("max_chars") or max_chars)
             except (TypeError, ValueError):
                 max_chars = 0
+            try:
+                min_chars = int(manifest.get("min_chars") or min_chars)
+            except (TypeError, ValueError):
+                min_chars = 15
             try:
                 pad_ms = int(manifest.get("pad_ms") or pad_ms)
             except (TypeError, ValueError):
@@ -3292,6 +3305,7 @@ def create_app(root_dir: Path) -> FastAPI:
                 max_chars=max_chars,
                 pad_ms=pad_ms,
                 chunk_mode=chunk_mode,
+                min_chars=min_chars,
             )
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Rechunk failed: {exc}") from exc

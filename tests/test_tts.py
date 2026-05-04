@@ -66,6 +66,27 @@ def test_chunking_packs_sentences_toward_max_chars() -> None:
     assert chunks == ["一。二。", "三。四。"]
 
 
+def test_chunking_min_chars_merges_short_neighbors_across_linebreaks() -> None:
+    text = "第一章\n\n1\n\n九月十日、火曜日の放課後。\n\nコトリと頭上で音がした。"
+    spans = tts_util.make_chunk_spans(
+        text, max_chars=0, chunk_mode="japanese", min_chars=12
+    )
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == [
+        "第一章\n\n1\n\n九月十日、火曜日の放課後。",
+        "コトリと頭上で音がした。",
+    ]
+
+
+def test_chunking_min_chars_merges_trailing_short_chunk_with_previous() -> None:
+    text = "九月十日、火曜日の放課後。\nコトリ"
+    spans = tts_util.make_chunk_spans(
+        text, max_chars=0, chunk_mode="japanese", min_chars=12
+    )
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["九月十日、火曜日の放課後。\nコトリ"]
+
+
 def test_chunking_keeps_balanced_quote_as_own_chunk() -> None:
     text = "彼は「いいえ。ありがとうございます」と言った。"
     spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")

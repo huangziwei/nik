@@ -1323,6 +1323,7 @@ def refresh_chunks(
     max_chars: int = 0,
     pad_ms: int = 350,
     chunk_mode: str = "japanese",
+    min_chars: int = 15,
 ) -> bool:
     tts_dir = book_dir / "tts"
     tts_cleared = tts_dir.exists()
@@ -1335,6 +1336,7 @@ def refresh_chunks(
         pad_ms=pad_ms,
         chunk_mode=chunk_mode,
         rechunk=True,
+        min_chars=min_chars,
     )
     return tts_cleared
 
@@ -1626,10 +1628,14 @@ def restore_chapter(
                 clean_rel,
             )
             max_chars = int(manifest.get("max_chars") or 0)
+            min_chars = int(manifest.get("min_chars") or 0)
             pad_ms = int(manifest.get("pad_ms") or 350)
             chunk_mode = str(manifest.get("chunk_mode") or "sentence")
             spans = tts_util.make_chunk_spans(
-                tts_text, max_chars=max_chars, chunk_mode=chunk_mode
+                tts_text,
+                max_chars=max_chars,
+                chunk_mode=chunk_mode,
+                min_chars=min_chars,
             )
             chunks = [tts_text[start:end] for start, end in spans]
             if not chunks:
