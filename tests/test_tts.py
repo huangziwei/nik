@@ -16,15 +16,6 @@ requires_unidic = pytest.mark.skipif(
 )
 
 
-@pytest.fixture(autouse=True)
-def _reset_first_token_separator_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(tts_util.FIRST_TOKEN_SEPARATOR_ENV, raising=False)
-
-
-def _default_first_token_separator() -> str:
-    return tts_util._first_token_separator()
-
-
 def test_make_chunk_spans_splits_japanese_sentences() -> None:
     text = "今日は良い天気です。明日も晴れるでしょう。"
     spans = tts_util.make_chunk_spans(text, max_chars=10, chunk_mode="japanese")
@@ -175,37 +166,8 @@ def test_prepare_tts_pipeline_appends_chunk_tail_separator() -> None:
     assert pipeline.prepared == "こんにちは "
 
 
-def test_prepare_tts_pipeline_does_not_duplicate_chunk_tail_separator() -> None:
-    sep = _default_first_token_separator()
-    pipeline = tts_util._prepare_tts_pipeline(
-        f"こんにちは{sep}",
-        add_short_punct=False,
-    )
-    assert pipeline.prepared == "こんにちは "
-
-
-def test_prepare_tts_pipeline_skips_chunk_tail_separator_when_disabled(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv(tts_util.FIRST_TOKEN_SEPARATOR_ENV, "none")
-    pipeline = tts_util._prepare_tts_pipeline(
-        "こんにちは",
-        add_short_punct=False,
-    )
-    assert pipeline.prepared == "こんにちは"
-
-
-def test_prepare_tts_pipeline_strips_leading_chunk_separator() -> None:
-    sep = _default_first_token_separator()
-    pipeline = tts_util._prepare_tts_pipeline(
-        f"『{sep}ばんがいへん{sep}』",
-        add_short_punct=True,
-    )
-    assert pipeline.prepared == "ばんがいへん 。 "
-
-
 def test_prepare_tts_pipeline_keeps_ellipsis_without_short_tail_full_stop() -> None:
-    sep = _default_first_token_separator()
+    sep = ""
     pipeline = tts_util._prepare_tts_pipeline(
         "…………",
         add_short_punct=True,
@@ -214,7 +176,7 @@ def test_prepare_tts_pipeline_keeps_ellipsis_without_short_tail_full_stop() -> N
 
 
 def test_ellipsis_only_run_length_ignores_quotes_and_separator() -> None:
-    sep = _default_first_token_separator()
+    sep = ""
     assert tts_util._ellipsis_only_run_length(f"「{sep}……{sep}」") == 2
     assert tts_util._ellipsis_only_run_length("……三ケ月前") == 0
 
@@ -685,7 +647,7 @@ def test_apply_reading_overrides_for_tts_formats_readings() -> None:
         {"base": "漢字", "reading": "かんじ"},
         {"base": "東京", "reading": "とうきょう"},
     ]
-    sep = _default_first_token_separator()
+    sep = ""
     assert (
         tts_util._apply_reading_overrides_for_tts(text, overrides)
         == f"私は{sep}かんじ{sep}と{sep}とうきょう{sep}。"
@@ -695,7 +657,7 @@ def test_apply_reading_overrides_for_tts_formats_readings() -> None:
 def test_apply_reading_overrides_for_tts_preserves_mixed_script_readings() -> None:
     text = "母は"
     overrides = [{"base": "母は", "reading": "ハハは"}]
-    sep = _default_first_token_separator()
+    sep = ""
     assert tts_util._apply_reading_overrides_for_tts(text, overrides) == f"{sep}ハハは{sep}"
 
 
@@ -716,7 +678,7 @@ def test_apply_ruby_evidence_to_chunk_formats_readings() -> None:
         chapter_spans,
         ruby_data,
     )
-    sep = _default_first_token_separator()
+    sep = ""
     assert out == f"前{sep}にほん{sep}。{sep}こうはん{sep}。"
 
 
@@ -770,7 +732,7 @@ def test_apply_ruby_evidence_to_chunk_coalesces_adjacent_single_kanji_spans() ->
         chapter_spans,
         {},
     )
-    sep = _default_first_token_separator()
+    sep = ""
     assert out.startswith(f"{sep}ろくお")
     assert "\\ろく\\お" not in out
     assert "さん" in out
@@ -794,7 +756,7 @@ def test_apply_ruby_evidence_to_chunk_drops_suspicious_span() -> None:
         chapter_spans,
         {},
     )
-    sep = _default_first_token_separator()
+    sep = ""
     assert out == f"{sep}ほんちょう{sep}に西田医院という耳鼻科があったのを覚えているか。"
 
 
@@ -814,7 +776,7 @@ def test_apply_ruby_evidence_to_chunk_keeps_non_kanji_span() -> None:
         chapter_spans,
         {},
     )
-    sep = _default_first_token_separator()
+    sep = ""
     assert out == f"{sep}ティーティーエス{sep}を試す。"
 
 
@@ -832,7 +794,7 @@ def test_apply_ruby_evidence_to_chunk_keeps_inline_ruby_over_global_override() -
         chapter_spans,
         ruby_data,
     )
-    sep = _default_first_token_separator()
+    sep = ""
     assert out.startswith(f"{sep}おれ{sep}は")
     assert f"{sep}あんさつしゃ{sep}だ。" in out
     assert "暗殺者" not in out
@@ -848,7 +810,7 @@ def test_apply_ruby_evidence_to_chunk_keeps_explicit_katakana_ruby() -> None:
         chapter_spans,
         {},
     )
-    sep = _default_first_token_separator()
+    sep = ""
     assert out == f"前{sep}モリノ{sep}後"
 
 
@@ -862,7 +824,7 @@ def test_apply_ruby_evidence_to_chunk_drops_separator_before_okurigana() -> None
         chapter_spans,
         {},
     )
-    sep = _default_first_token_separator()
+    sep = ""
     assert out == f"{sep}くおう。"
 
 

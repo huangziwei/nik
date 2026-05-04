@@ -224,7 +224,6 @@ UNIDIC_URL = "https://clrd.ninjal.ac.jp/unidic_archive/2512/unidic-cwj-202512_fu
 UNIDIC_DIR_ENV = "NIK_UNIDIC_DIR"
 UNIDIC_URL_ENV = "NIK_UNIDIC_URL"
 UNIDIC_DIRNAME = "unidic-cwj-202512_full"
-FIRST_TOKEN_SEPARATOR_ENV = "NIK_FIRST_TOKEN_SEPARATOR"
 
 _DIGIT_KANA = {
     "0": "ゼロ",
@@ -243,7 +242,6 @@ _ROMAN_NUMERAL_CHARS = "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫⅬⅭⅮⅯⅰⅱ�
 _ASCII_ROMAN_NUMERAL_CHARS = "IVXLCDM"
 _ASCII_ROMAN_MAX_VALUE = 50
 _KANJI_NUMERAL_RANGE_CHARS = "〇零一二三四五六七八九十百千万億兆京"
-_FORCE_FIRST_TOKEN_NOISE_RE = re.compile(r"^[cC][0-9A-Za-z]{2,12}$")
 _LATIN_PHRASE_RE = re.compile(r"[A-Za-z]+(?:[ \t]+[A-Za-z]+)*")
 _STYLIZED_KANJI_SEPARATORS = "、，,・"
 _STYLIZED_KANJI_SEP_RE = re.compile(rf"[{re.escape(_STYLIZED_KANJI_SEPARATORS)}]")
@@ -2056,25 +2054,6 @@ def _has_japanese(text: str) -> bool:
     return _has_kanji(text)
 
 
-def _first_token_separator() -> str:
-    raw = os.environ.get(FIRST_TOKEN_SEPARATOR_ENV)
-    if raw is None:
-        return "\\"
-    lowered = raw.strip().lower()
-    if lowered in {"none", "off", "disable", "disabled", "no", "empty", "null"}:
-        return ""
-    if lowered == "space":
-        return " "
-    return raw
-
-
-def _separator_to_space(text: str) -> str:
-    sep = _first_token_separator()
-    if not sep or sep == " ":
-        return text
-    return text.replace(sep, " ")
-
-
 def _normalize_kyujitai(text: str, *, debug_sources: Optional[List[str]] = None) -> str:
     if not text or not _has_kanji(text):
         return text
@@ -2305,19 +2284,11 @@ def _is_explicit_katakana_reading(reading: str) -> bool:
 def _katakanize_reading_entries(
     entries: Sequence[dict],
     *,
-    append_separator: bool = False,
-    prepend_separator: bool = False,
-    separator: Optional[str] = None,
     prefer_hiragana: bool = False,
     preserve_explicit_katakana: bool = False,
     preserve_original_script: bool = False,
 ) -> List[dict]:
     out: List[dict] = []
-    sep = (
-        separator
-        if separator is not None
-        else (_first_token_separator() if append_separator or prepend_separator else "")
-    )
     for item in entries:
         if not isinstance(item, dict):
             continue
@@ -2333,11 +2304,6 @@ def _katakanize_reading_entries(
                 rendered = _katakana_to_hiragana(normalized)
             else:
                 rendered = _to_katakana_reading(normalized)
-            if sep:
-                if prepend_separator:
-                    rendered = f"{sep}{rendered}"
-                if append_separator:
-                    rendered = f"{rendered}{sep}"
             updated["reading"] = rendered
         out.append(updated)
     return out
@@ -3614,26 +3580,10 @@ def prepare_tts_text(text: str, *, add_short_punct: bool = False) -> str:
     return text
 
 
-def _append_chunk_tail_separator(text: str) -> str:
-    if not text:
-        return text
-    sep = _first_token_separator()
-    if not sep:
-        return text
-    if text.endswith(sep):
-        return text
-    return f"{text}{sep}"
-
-
 def _compact_ellipsis_candidate(text: str) -> str:
     if not text:
         return ""
     compact = re.sub(r"\s+", "", text)
-    if not compact:
-        return ""
-    sep = _first_token_separator()
-    if sep:
-        compact = compact.replace(sep, "")
     if not compact:
         return ""
     quote_chars = _JP_QUOTE_CHARS | _DOUBLE_QUOTE_CHARS | _SINGLE_QUOTE_CHARS
@@ -3688,17 +3638,6 @@ def _silence_audio(duration_ms: int, sample_rate: int) -> np.ndarray:
     return np.zeros(sample_count, dtype=np.float32)
 
 
-def _strip_leading_chunk_separator(text: str) -> str:
-    if not text:
-        return text
-    sep = _first_token_separator()
-    if not sep:
-        return text
-    while text.startswith(sep):
-        text = text[len(sep) :]
-    return text
-
-
 def _prepare_tts_pipeline(
     chunk_text: str,
     *,
@@ -3733,9 +3672,6 @@ def _prepare_tts_pipeline(
     after_overrides = _apply_reading_overrides_for_tts(text, overrides)
     after_numbers = _normalize_numbers(after_overrides)
     prepared = prepare_tts_text(after_numbers, add_short_punct=add_short_punct)
-    prepared = _strip_leading_chunk_separator(prepared)
-    prepared = _append_chunk_tail_separator(prepared)
-    prepared = _separator_to_space(prepared)
     return TtsPipeline(
         ruby_text=text,
         after_overrides=after_overrides,
@@ -3780,7 +3716,6 @@ def _apply_ruby_evidence(
 ) -> str:
     if not ruby_data:
         return text
-    first_token_separator = _first_token_separator()
     spans = _select_ruby_spans(chapter_id, text, ruby_data)
     if spans:
         spans = _filter_ruby_spans(spans)
@@ -3788,9 +3723,6 @@ def _apply_ruby_evidence(
             spans = _maybe_normalize_ruby_entries(spans)
             spans = _katakanize_reading_entries(
                 spans,
-                append_separator=True,
-                prepend_separator=True,
-                separator=first_token_separator,
                 prefer_hiragana=True,
                 preserve_explicit_katakana=True,
             )
@@ -3800,9 +3732,6 @@ def _apply_ruby_evidence(
         ruby_global = _maybe_normalize_ruby_entries(ruby_global)
         ruby_global = _katakanize_reading_entries(
             ruby_global,
-            append_separator=True,
-            prepend_separator=True,
-            separator=first_token_separator,
             prefer_hiragana=True,
             preserve_explicit_katakana=True,
         )
@@ -3941,7 +3870,6 @@ def _apply_ruby_evidence_to_chunk(
     skip_bases: Optional[set[str]] = None,
 ) -> str:
     text = chunk_text
-    first_token_separator = _first_token_separator()
     spans = _chunk_ruby_spans(chunk_span, chapter_spans)
     if spans:
         spans = _filter_ruby_spans(spans)
@@ -3949,9 +3877,6 @@ def _apply_ruby_evidence_to_chunk(
             spans = _maybe_normalize_ruby_entries(spans)
             spans = _katakanize_reading_entries(
                 spans,
-                append_separator=True,
-                prepend_separator=True,
-                separator=first_token_separator,
                 prefer_hiragana=True,
                 preserve_explicit_katakana=True,
             )
@@ -3961,9 +3886,6 @@ def _apply_ruby_evidence_to_chunk(
         ruby_global = _maybe_normalize_ruby_entries(ruby_global)
         ruby_global = _katakanize_reading_entries(
             ruby_global,
-            append_separator=True,
-            prepend_separator=True,
-            separator=first_token_separator,
             prefer_hiragana=True,
             preserve_explicit_katakana=True,
         )
@@ -4853,13 +4775,7 @@ def _apply_reading_overrides_for_tts(
         return text
     return apply_reading_overrides(
         text,
-        _katakanize_reading_entries(
-            overrides,
-            append_separator=True,
-            prepend_separator=True,
-            separator=_first_token_separator(),
-            preserve_original_script=True,
-        ),
+        _katakanize_reading_entries(overrides, preserve_original_script=True),
     )
 
 
@@ -5048,22 +4964,6 @@ def _replace_kanji_boundary(text: str, base: str, reading: str) -> str:
 def apply_ruby_spans(text: str, spans: Sequence[dict]) -> str:
     if not spans:
         return text
-    token_separator = _first_token_separator()
-    particle_like_hiragana = {"は", "へ", "を", "に", "で", "と", "が", "の", "も", "や", "か"}
-
-    def _adjust_reading_for_kana_continuation(
-        reading: str, next_ch: str
-    ) -> str:
-        if not reading or not token_separator:
-            return reading
-        if not reading.endswith(token_separator):
-            return reading
-        if not next_ch or not _is_kana_char(next_ch):
-            return reading
-        if next_ch in particle_like_hiragana:
-            return reading
-        return reading[: -len(token_separator)]
-
     out = text
     ordered = sorted(
         (span for span in spans if isinstance(span, dict)),
@@ -5086,8 +4986,6 @@ def apply_ruby_spans(text: str, spans: Sequence[dict]) -> str:
             continue
         if base and out[start:end] != base:
             continue
-        next_ch = out[end] if end < len(out) else ""
-        reading = _adjust_reading_for_kana_continuation(reading, next_ch)
         out = out[:start] + reading + out[end:]
     return out
 
