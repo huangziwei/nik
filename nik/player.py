@@ -8,7 +8,6 @@ import re
 import shlex
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 import unicodedata
@@ -1350,24 +1349,13 @@ def _merge_ready(book_dir: Path) -> bool:
 
 
 def _ffmpeg_install_command() -> str:
-    if sys.platform == "darwin":
-        installer = shutil.which("brew")
-        if installer is None:
-            raise RuntimeError(
-                "ffmpeg not found on PATH. Install Homebrew (https://brew.sh/) "
-                "or install ffmpeg manually, then retry."
-            )
-        install_cmd = f"{installer} install ffmpeg"
-    else:
-        installer = shutil.which("apt-get") or shutil.which("apt")
-        if installer is None:
-            raise RuntimeError(
-                "ffmpeg not found on PATH and apt-get is unavailable. "
-                "Install ffmpeg manually, then retry."
-            )
-        install_cmd = f"{installer} update && {installer} install -y ffmpeg"
-
-    return f"export DEBIAN_FRONTEND=noninteractive; {install_cmd}"
+    installer = shutil.which("brew")
+    if installer is None:
+        raise RuntimeError(
+            "ffmpeg not found on PATH. Install Homebrew (https://brew.sh/) "
+            "or install ffmpeg manually, then retry."
+        )
+    return f"{installer} install ffmpeg"
 
 
 def _build_merge_command(
@@ -1906,8 +1894,8 @@ def create_app(root_dir: Path) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request) -> HTMLResponse:
-        context = {"request": request, "root_dir": str(root_dir)}
-        return templates.TemplateResponse("player.html", context)
+        context = {"root_dir": str(root_dir)}
+        return templates.TemplateResponse(request, "player.html", context)
 
     @app.get("/api/books")
     def list_books() -> JSONResponse:

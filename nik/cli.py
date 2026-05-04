@@ -1109,7 +1109,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     clone.add_argument(
         "--whisper-device",
-        help="Whisper device (e.g., cpu, cuda, mps)",
+        help="Whisper device (e.g., cpu, mps)",
     )
     clone.add_argument(
         "--whisper-prompt",

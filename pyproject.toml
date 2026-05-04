@@ -47,19 +47,14 @@ readme = {file = "README.md", content-type = "text/markdown"}
 [project.scripts]
 nik = "nik.cli:main"
 
+[tool.uv]
+# Apple Silicon (macOS arm64) is the only supported platform — torch's default
+# PyPI wheel here already includes MPS. Constrain resolution so the lockfile
+# doesn't carry Linux/CUDA variants.
+environments = ["sys_platform == 'darwin' and platform_machine == 'arm64'"]
+
 [tool.uv.sources]
 dacvae = { git = "https://github.com/facebookresearch/dacvae" }
-# On Linux x86_64 (the podman-on-Intel-Mac path), the default PyPI torch
-# wheel ships ~5 GB of CUDA libs we can't use. Force the CPU-only index
-# there. On macOS arm64 (Apple Silicon native install), the default PyPI
-# wheel is already CPU+MPS — leave it alone so MPS stays available.
-torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
-torchaudio = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
 
 [tool.setuptools]
 packages = {find = {}}

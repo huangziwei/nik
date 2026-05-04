@@ -56,18 +56,7 @@ def transcribe_audio(
     if initial_prompt:
         kwargs["initial_prompt"] = initial_prompt
 
-    fp16 = False
-    try:  # pragma: no cover - torch/device logic
-        import torch
-
-        if device:
-            if "cuda" in device or "mps" in device:
-                fp16 = True
-        elif torch.cuda.is_available():
-            fp16 = True
-    except Exception:
-        fp16 = False
-    kwargs["fp16"] = fp16
+    kwargs["fp16"] = bool(device and "mps" in device)
 
     model = whisper.load_model(model_name, device=device)
     result = model.transcribe(str(audio_path), **kwargs)

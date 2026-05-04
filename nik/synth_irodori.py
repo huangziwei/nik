@@ -58,16 +58,14 @@ def get_runtime(
     """Load (or fetch from cache) an InferenceRuntime for the given checkpoint.
 
     `model_device` defaults to Irodori's auto-detect (mps on Apple Silicon,
-    cuda where available, cpu otherwise) and can be overridden via the
-    `NIK_MODEL_DEVICE` env var. `model_precision` defaults to fp32 and can be
-    overridden via `NIK_MODEL_PRECISION` (fp32 | bf16 | fp16). On Intel CPU,
-    bf16/fp16 saves memory but compute is emulated; on Apple Silicon MPS,
-    half-precision is a real speedup.
+    cpu otherwise) and can be overridden via `NIK_MODEL_DEVICE`.
+    `model_precision` defaults to bf16 (real speedup on MPS) and can be
+    overridden via `NIK_MODEL_PRECISION` (fp32 | bf16 | fp16).
     """
     if model_device is None:
         model_device = os.environ.get(ENV_MODEL_DEVICE) or default_runtime_device()
     if model_precision is None:
-        model_precision = os.environ.get(ENV_MODEL_PRECISION) or "fp32"
+        model_precision = os.environ.get(ENV_MODEL_PRECISION) or "bf16"
     key = RuntimeKey(
         checkpoint=_checkpoint_path(hf_repo),
         model_device=model_device,

@@ -9,54 +9,30 @@ the kanji-to-kana priming hacks the previous Qwen3-TTS backend needed are gone.
 
 ## Setup
 
+Apple Silicon (M-series) only. The default torch wheel for macOS arm64 already
+includes MPS; half-precision on MPS is a real speedup.
+
 Irodori-TTS is vendored as a gitignored clone (its upstream `pyproject.toml` is not
 pip-installable due to a setuptools flat-layout discovery bug); its model code is
 loaded via `sys.path` at runtime, while its transitive deps live in nik's own
-`pyproject.toml`. Same setup on every host:
+`pyproject.toml`.
 
 ```bash
 git clone https://github.com/Aratako/Irodori-TTS.git .cache/Irodori-TTS
 (cd .cache/Irodori-TTS && git checkout 2708d3cadf726d4389d25eb4bb7a0344517a9a40)
-```
 
-### Apple Silicon (M-series)
-
-Native install. The default torch wheel for macOS arm64 already includes MPS, no
-CUDA bloat. Half-precision on MPS is a real speedup.
-
-```bash
 uv sync --prerelease=allow
-NIK_MODEL_PRECISION=bf16 uv run nik play --port 2999
-```
-
-### Intel Mac (or anywhere without GPU)
-
-Run inside Podman via the `bin/pmx` wrapper — see [bin/README.md](bin/README.md).
-nik's `pyproject.toml` pins torch to the CPU-only index for Linux to drop ~5 GB of
-unused CUDA libs.
-
-```bash
-./bin/pmx uv sync --prerelease=allow
-./bin/pmx uv run nik play --host 0.0.0.0 --port 2999
+uv run nik play --port 2999
 ```
 
 Open http://localhost:2999.
 
 ## Speed knobs
 
-CPU inference is roughly 30-65× slower than realtime. Levers (env vars, no code edits):
+Levers (env vars, no code edits):
 
 | Env var | Default | Notes |
 |---|---|---|
-| `NIK_NUM_STEPS` | `10` | Diffusion steps. 10 was empirically indistinguishable from 40 on a CPU sample; below 5 audibly degrades. Going higher (`20`, `40`) costs wallclock with no audible gain at this baseline. |
-| `NIK_MODEL_PRECISION` | `fp32` | `bf16` / `fp16` halve weight memory. On Apple Silicon MPS this is also faster; on Intel CPU compute is emulated, so memory only. |
-| `NIK_MODEL_DEVICE` | auto | `cpu` / `mps` / `cuda`. Auto-detects by default. |
-
-CPU floor is ~67 s per chunk regardless of step count — the DACVAE codec
-encode/decode dominates, not sampling. M4 Pro on MPS should clear most of this.
-
-Example: half-precision preset on M4 Pro:
-
-```bash
-NIK_MODEL_PRECISION=bf16 uv run nik play --port 2999
-```
+| `NIK_NUM_STEPS` | `10` | Diffusion steps. 10 was empirically indistinguishable from 40; below 5 audibly degrades. Higher (`20`, `40`) costs wallclock with no audible gain. |
+| `NIK_MODEL_PRECISION` | `bf16` | `bf16` / `fp16` halve weight memory and run faster on MPS. `fp32` is the slow fallback. |
+| `NIK_MODEL_DEVICE` | auto | `cpu` / `mps`. Auto-detects MPS on Apple Silicon. |
