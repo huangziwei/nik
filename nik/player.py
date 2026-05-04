@@ -1754,7 +1754,7 @@ class VoiceClonePreview:
 class SynthRequest(BaseModel):
     book_id: str
     voice: Optional[str] = None
-    max_chars: int = 80
+    max_chars: int = 50
     min_chars: int = 15
     pad_ms: int = 350
     chunk_mode: str = "japanese"
