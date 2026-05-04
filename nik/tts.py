@@ -1142,10 +1142,16 @@ def _split_spans_on_cut_points(
                 points.append(cut)
         points.append(end)
         points = sorted(set(points))
+        local: List[Tuple[int, int]] = []
         for idx in range(len(points) - 1):
             span = _trim_span(text, points[idx], points[idx + 1])
             if span:
-                segmented.append(span)
+                if local and not _span_has_content(text, span[0], span[1]):
+                    prev_start, _ = local[-1]
+                    local[-1] = (prev_start, span[1])
+                else:
+                    local.append(span)
+        segmented.extend(local)
     return segmented
 
 
