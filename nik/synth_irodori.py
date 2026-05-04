@@ -6,6 +6,10 @@ We vendor a clone at `.cache/Irodori-TTS` (gitignored, pinned by the user via
 `git checkout <sha>`) and import via `sys.path`. Its transitive deps are listed
 directly in `pyproject.toml`.
 
+Apple Silicon only: device auto-picks `mps` when available (CPU otherwise),
+and precision is fixed at `fp32` — Irodori rejects `bf16`/`fp16` outside CUDA
+and we don't ship any other platforms.
+
 See .claude/plans/refactor-qwen-to-irodori.md for the full migration plan.
 """
 
@@ -20,8 +24,6 @@ import numpy as np
 
 from .voice import VoiceConfig
 
-ENV_MODEL_PRECISION = "NIK_MODEL_PRECISION"
-ENV_MODEL_DEVICE = "NIK_MODEL_DEVICE"
 ENV_NUM_STEPS = "NIK_NUM_STEPS"
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -47,31 +49,15 @@ def _checkpoint_path(repo_id: str) -> str:
     return hf_hub_download(repo_id=repo_id, filename="model.safetensors")
 
 
-def get_runtime(
-    *,
-    hf_repo: str = DEFAULT_HF_REPO,
-    model_device: Optional[str] = None,
-    model_precision: Optional[str] = None,
-    codec_device: Optional[str] = None,
-    codec_precision: str = "fp32",
-) -> InferenceRuntime:
-    """Load (or fetch from cache) an InferenceRuntime for the given checkpoint.
-
-    `model_device` defaults to Irodori's auto-detect (mps on Apple Silicon,
-    cpu otherwise) and can be overridden via `NIK_MODEL_DEVICE`.
-    `model_precision` defaults to bf16 (real speedup on MPS) and can be
-    overridden via `NIK_MODEL_PRECISION` (fp32 | bf16 | fp16).
-    """
-    if model_device is None:
-        model_device = os.environ.get(ENV_MODEL_DEVICE) or default_runtime_device()
-    if model_precision is None:
-        model_precision = os.environ.get(ENV_MODEL_PRECISION) or "bf16"
+def get_runtime(*, hf_repo: str = DEFAULT_HF_REPO) -> InferenceRuntime:
+    """Load (or fetch from cache) an InferenceRuntime for the given checkpoint."""
+    device = default_runtime_device()
     key = RuntimeKey(
         checkpoint=_checkpoint_path(hf_repo),
-        model_device=model_device,
-        model_precision=model_precision,
-        codec_device=codec_device or model_device,
-        codec_precision=codec_precision,
+        model_device=device,
+        model_precision="fp32",
+        codec_device=device,
+        codec_precision="fp32",
     )
     runtime, _was_cached = get_cached_runtime(key)
     return runtime
@@ -84,7 +70,7 @@ def _default_num_steps() -> int:
             return max(1, int(raw))
         except ValueError:
             pass
-    return 10
+    return 20
 
 
 def generate_chunk(
@@ -99,9 +85,9 @@ def generate_chunk(
 ) -> Tuple[np.ndarray, int]:
     """Synthesize one chunk; returns (audio_float32_1d, sample_rate).
 
-    `num_steps` defaults to 10 (quality cliff is between 5 and 10 — see
-    `.claude/plans/refactor-qwen-to-irodori.md`). Override via `NIK_NUM_STEPS`
-    env var or the kwarg.
+    `num_steps` defaults to 20 (quality cliff is between 5 and 10; 20 is the
+    safer default for long inputs — see `.claude/plans/refactor-qwen-to-irodori.md`).
+    Override via `NIK_NUM_STEPS` env var or the kwarg.
     """
     if num_steps is None:
         num_steps = _default_num_steps()

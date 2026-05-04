@@ -33,6 +33,6 @@ Levers (env vars, no code edits):
 
 | Env var | Default | Notes |
 |---|---|---|
-| `NIK_NUM_STEPS` | `10` | Diffusion steps. 10 was empirically indistinguishable from 40; below 5 audibly degrades. Higher (`20`, `40`) costs wallclock with no audible gain. |
-| `NIK_MODEL_PRECISION` | `bf16` | `bf16` / `fp16` halve weight memory and run faster on MPS. `fp32` is the slow fallback. |
-| `NIK_MODEL_DEVICE` | auto | `cpu` / `mps`. Auto-detects MPS on Apple Silicon. |
+| `NIK_NUM_STEPS` | `20` | Diffusion steps. Below 5 audibly degrades; 10 is fine on short utterances but long inputs benefit from 20. Higher (`40`) costs wallclock with no audible gain. |
+
+Device auto-picks `mps` when available (`cpu` fallback); precision is fixed at `fp32` (Apple Silicon only — Irodori rejects `bf16`/`fp16` outside CUDA).
