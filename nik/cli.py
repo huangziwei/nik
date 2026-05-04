@@ -730,7 +730,7 @@ def _rechunk(args: argparse.Namespace) -> int:
             chunk_mode = manifest.get("chunk_mode")
 
     if max_chars is None:
-        max_chars = 220
+        max_chars = 0
     if pad_ms is None:
         pad_ms = 300
     if chunk_mode is None:
@@ -1055,7 +1055,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-chars",
         type=int,
         default=None,
-        help="Max characters per chunk (default: reuse manifest or 220)",
+        help="Max characters per chunk (default: reuse manifest or 0 = chunk at punctuation)",
     )
     rechunk.add_argument(
         "--pad-ms",
@@ -1155,7 +1155,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip text requirement and use x-vector only cloning",
     )
-    synth.add_argument("--max-chars", type=int, default=220)
+    synth.add_argument("--max-chars", type=int, default=0)
     synth.add_argument("--pad-ms", type=int, default=350)
     synth.add_argument("--rechunk", action="store_true")
     synth.set_defaults(func=_synth)
@@ -1190,7 +1190,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip text requirement and use x-vector only cloning",
     )
-    sample.add_argument("--max-chars", type=int, default=220)
+    sample.add_argument("--max-chars", type=int, default=0)
     sample.add_argument("--pad-ms", type=int, default=350)
     sample.add_argument("--rechunk", action="store_true")
     sample.set_defaults(func=_sample)

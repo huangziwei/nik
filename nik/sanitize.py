@@ -1320,7 +1320,7 @@ def sanitize_book(
 
 def refresh_chunks(
     book_dir: Path,
-    max_chars: int = 220,
+    max_chars: int = 0,
     pad_ms: int = 350,
     chunk_mode: str = "japanese",
 ) -> bool:
@@ -1625,7 +1625,7 @@ def restore_chapter(
                 raw_title,
                 clean_rel,
             )
-            max_chars = int(manifest.get("max_chars") or 400)
+            max_chars = int(manifest.get("max_chars") or 0)
             pad_ms = int(manifest.get("pad_ms") or 350)
             chunk_mode = str(manifest.get("chunk_mode") or "sentence")
             spans = tts_util.make_chunk_spans(

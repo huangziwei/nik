@@ -1753,7 +1753,7 @@ class VoiceClonePreview:
 class SynthRequest(BaseModel):
     book_id: str
     voice: Optional[str] = None
-    max_chars: int = 220
+    max_chars: int = 0
     pad_ms: int = 350
     chunk_mode: str = "japanese"
     rechunk: bool = False
@@ -3270,7 +3270,7 @@ def create_app(root_dir: Path) -> FastAPI:
             raise HTTPException(status_code=409, detail="Stop merge before clearing cache.")
         tts_dir = book_dir / "tts"
         manifest_path = tts_dir / "manifest.json"
-        max_chars = 220
+        max_chars = 0
         pad_ms = 350
         chunk_mode = "japanese"
         if manifest_path.exists():
@@ -3278,7 +3278,7 @@ def create_app(root_dir: Path) -> FastAPI:
             try:
                 max_chars = int(manifest.get("max_chars") or max_chars)
             except (TypeError, ValueError):
-                max_chars = 220
+                max_chars = 0
             try:
                 pad_ms = int(manifest.get("pad_ms") or pad_ms)
             except (TypeError, ValueError):
