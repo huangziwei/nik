@@ -711,4 +711,4 @@ def merge_book(
         if code != 0:
             return code
     return 0
-AUTO_SPLIT_HOURS = 8.0
+AUTO_SPLIT_HOURS = 10.0
