@@ -7,8 +7,8 @@ Mirrors the surface of `synth_irodori`:
     `(np.ndarray float32 1d, sample_rate)`.
 
 Selected via `NIK_BACKEND=mlx`. Quantization is picked via the HF repo:
-default `mlx-community/Irodori-TTS-500M-v2-fp16`; override with
-`NIK_MLX_HF_REPO=mlx-community/Irodori-TTS-500M-v2-{8bit,4bit}`.
+default `mlx-community/Irodori-TTS-500M-v2-4bit`; override with
+`NIK_MLX_HF_REPO=mlx-community/Irodori-TTS-500M-v2-{8bit,fp16}`.
 
 Memory budget on 24 GB unified memory: the upstream MLX port reports
 `sequence_length=750` + `cfg_guidance_mode=independent` ≈ 24 GB. We default
@@ -31,7 +31,7 @@ ENV_HF_REPO = "NIK_MLX_HF_REPO"
 ENV_SEQUENCE_LENGTH = "NIK_MLX_SEQUENCE_LENGTH"
 ENV_CFG_MODE = "NIK_MLX_CFG_MODE"
 
-DEFAULT_HF_REPO = "mlx-community/Irodori-TTS-500M-v2-fp16"
+DEFAULT_HF_REPO = "mlx-community/Irodori-TTS-500M-v2-4bit"
 DEFAULT_SEQUENCE_LENGTH = 400
 DEFAULT_CFG_MODE = "independent"
 

@@ -13,7 +13,7 @@ Open http://localhost:2999.
 
 ## Backends
 
-Synthesis runs through the [mlx-audio](https://github.com/Blaizzy/mlx-audio) port of Irodori-TTS by default (~2× faster than the upstream PyTorch path on Apple Silicon, audible parity confirmed). Weights are pulled on first run from `mlx-community/Irodori-TTS-500M-v2-fp16`.
+Synthesis runs through the [mlx-audio](https://github.com/Blaizzy/mlx-audio) port of Irodori-TTS by default (~2× faster than the upstream PyTorch path on Apple Silicon, audible parity confirmed). Weights are pulled on first run from `mlx-community/Irodori-TTS-500M-v2-4bit`.
 
 To fall back to the upstream PyTorch path:
 
