@@ -39,3 +39,4 @@ plans/
 books
 scripts
 .cache
+tests/data

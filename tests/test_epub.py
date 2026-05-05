@@ -497,3 +497,129 @@ def test_html_to_text_inserts_section_break_for_rare_class() -> None:
     html += "<p class='main'>続き</p>"
     text = epub_util.html_to_text(html.encode("utf-8"))
     assert f"\n\n{SECTION_BREAK}\n\n" in text
+
+
+def test_html_to_text_renders_image_alt_text() -> None:
+    html = (
+        "<html><body>"
+        "<p id='toc-1'><img src='ch01.jpg' alt='第一章 はじまり'/></p>"
+        "<p>本文の最初の段落です。</p>"
+        "</body></html>"
+    ).encode("utf-8")
+    text = epub_util.html_to_text(html)
+    assert text.startswith("第一章 はじまり")
+    assert "本文の最初の段落です。" in text
+
+
+def test_html_to_text_skips_empty_alt_image() -> None:
+    html = (
+        "<html><body>"
+        "<p><img src='deco.jpg' alt=''/></p>"
+        "<p>本文です。</p>"
+        "</body></html>"
+    ).encode("utf-8")
+    text = epub_util.html_to_text(html)
+    assert text == "本文です。"
+
+
+def _write_image_title_epub(epub_path: Path) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("image-title-book")
+    book.set_title("Image Title Book")
+    book.set_language("ja")
+
+    chapter = epub.EpubHtml(
+        title="プロローグ",
+        file_name="prologue.xhtml",
+        lang="ja",
+    )
+    chapter.content = (
+        "<html><body>"
+        "<p id='toc-1'><img src='img.jpg' alt='プロローグ'/></p>"
+        "<p>クリスマスイブの夜の話。</p>"
+        + "".join("<p>本文です。</p>" for _ in range(20))
+        + "</body></html>"
+    )
+    book.add_item(chapter)
+    book.toc = (chapter,)
+    book.spine = ["nav", chapter]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
+def test_extract_chapters_renders_image_alt_as_chapter_heading_text(
+    tmp_path: Path,
+) -> None:
+    epub_path = tmp_path / "image-title.epub"
+    _write_image_title_epub(epub_path)
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=True)
+    assert len(chapters) == 1
+    assert chapters[0].title == "プロローグ"
+    assert chapters[0].text.startswith("プロローグ")
+    assert "クリスマスイブの夜の話。" in chapters[0].text
+
+
+def _write_toc_chapter_with_intro_followup_epub(epub_path: Path) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("toc-followup-book")
+    book.set_title("TOC Chapter Followup Book")
+    book.set_language("ja")
+
+    chapter_title_page = epub.EpubHtml(
+        title="第一章 幼い頃の話",
+        file_name="ch1-title.xhtml",
+        lang="ja",
+    )
+    chapter_title_page.content = (
+        "<html><body><p>第一章 幼い頃の話</p></body></html>"
+    )
+
+    chapter_intro = epub.EpubHtml(
+        title="ch1-intro.xhtml",
+        file_name="ch1-intro.xhtml",
+        lang="ja",
+    )
+    chapter_intro.content = (
+        "<html><body>"
+        "<p>ある友人からこんな話を聞いたことがある。</p>"
+        "<p>幼い頃、いつも天井の隅っこに天使が飛んでいたんだ。</p>"
+        "</body></html>"
+    )
+
+    first_story = epub.EpubHtml(
+        title="第一話 白蛇の夢",
+        file_name="story-1.xhtml",
+        lang="ja",
+    )
+    first_story.content = (
+        "<html><body>"
+        "<p>第一話 白蛇の夢</p>"
+        "<p>私が小学生の頃、不思議な話を聞いたことがある。</p>"
+        + "".join("<p>本文です。</p>" for _ in range(40))
+        + "</body></html>"
+    )
+
+    for item in (chapter_title_page, chapter_intro, first_story):
+        book.add_item(item)
+    book.toc = (chapter_title_page, first_story)
+    book.spine = ["nav", chapter_title_page, chapter_intro, first_story]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
+def test_extract_chapters_folds_non_toc_intro_into_chapter(tmp_path: Path) -> None:
+    epub_path = tmp_path / "toc-followup.epub"
+    _write_toc_chapter_with_intro_followup_epub(epub_path)
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=True)
+    titles = [ch.title for ch in chapters]
+    assert "第一章 幼い頃の話" in titles
+    assert "第一話 白蛇の夢" in titles
+    chapter_one = next(ch for ch in chapters if ch.title == "第一章 幼い頃の話")
+    assert "ある友人からこんな話を聞いたことがある。" in chapter_one.text
+    assert "幼い頃、いつも天井の隅っこに天使が飛んでいたんだ。" in chapter_one.text
+    first_story = next(ch for ch in chapters if ch.title == "第一話 白蛇の夢")
+    assert "ある友人" not in first_story.text

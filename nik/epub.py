@@ -413,12 +413,21 @@ def _ruby_base_reading(ruby: object) -> tuple[str, str]:
     return base, reading
 
 
+def _render_image_alt_text(soup: BeautifulSoup) -> None:
+    for img in soup.find_all("img"):
+        alt = (img.get("alt") or "").strip()
+        if not alt:
+            continue
+        img.replace_with(alt)
+
+
 def _soup_to_text(
     soup: BeautifulSoup,
     footnote_index: dict[str, set[str]] | None = None,
     source_href: str = "",
 ) -> str:
     _ = source_href
+    _render_image_alt_text(soup)
     for tag in soup.find_all(["rt", "rp"]):
         tag.decompose()
     for tag in soup(["script", "style", "nav", "header", "footer", "aside", "noscript"]):
@@ -1037,6 +1046,7 @@ def _extract_html_heading_entries(
     id_markers = {marker.strip().lower() for marker in (heading_id_markers or set())}
 
     soup = _parse_html_soup(html)
+    _render_image_alt_text(soup)
     for tag in soup.find_all(["rt", "rp", "script", "style"]):
         tag.decompose()
     root = soup.body if soup.body else soup
@@ -1389,6 +1399,139 @@ def _chapter_start_hrefs_from_title_overrides(title_overrides: dict[str, str]) -
     return starts
 
 
+def _is_continuation_followup_item(
+    item: object,
+    footnote_index: dict[str, set[str]] | None,
+    heading_class_markers: Optional[set[str]],
+    heading_id_markers: Optional[set[str]],
+) -> bool:
+    content = item.get_content()
+    if not content:
+        return True
+    headings, _ = _extract_html_headings_and_categories(
+        content,
+        heading_class_markers=heading_class_markers,
+        heading_id_markers=heading_id_markers,
+    )
+    for heading in headings:
+        if _looks_like_structural_title(heading):
+            return False
+    text = html_to_text(
+        content,
+        footnote_index=footnote_index,
+        source_href=_item_name(item),
+    )
+    if not text.strip():
+        return True
+    first_line = _chapter_first_nonempty_line(text)
+    if _looks_like_structural_title(first_line):
+        return False
+    return True
+
+
+def _augment_toc_chapters_with_followups(
+    chapters: List[Chapter],
+    book: epub.EpubBook,
+    toc_entries: Iterable[TocEntry],
+    footnote_index: dict[str, set[str]] | None,
+    heading_class_markers: Optional[set[str]],
+    heading_id_markers: Optional[set[str]],
+    extra_boundary_hrefs: Optional[set[str]] = None,
+) -> List[Chapter]:
+    spine_items = _build_spine_items(book)
+    spine_index = {href: idx for idx, (href, _item) in enumerate(spine_items)}
+    boundary_positions: set[int] = set()
+    for entry in toc_entries:
+        h = normalize_href(entry.href)
+        spine_pos = spine_index.get(h)
+        if spine_pos is not None:
+            boundary_positions.add(spine_pos)
+    for href in extra_boundary_hrefs or ():
+        spine_pos = spine_index.get(href)
+        if spine_pos is not None:
+            boundary_positions.add(spine_pos)
+    sorted_boundaries = sorted(boundary_positions)
+
+    augmented: List[Chapter] = []
+    for chapter in chapters:
+        source = normalize_href(chapter.source)
+        pos = spine_index.get(source)
+        if pos is None:
+            augmented.append(chapter)
+            continue
+        chapter_title = chapter.title or ""
+        if (
+            _is_non_content_toc_title(chapter_title)
+            or _looks_like_filename(chapter_title, source)
+        ):
+            augmented.append(chapter)
+            continue
+
+        next_pos = next(
+            (p for p in sorted_boundaries if p > pos), len(spine_items)
+        )
+
+        followup_items: List[object] = []
+        for p in range(pos + 1, next_pos):
+            _href, item = spine_items[p]
+            if not _is_continuation_followup_item(
+                item,
+                footnote_index,
+                heading_class_markers,
+                heading_id_markers,
+            ):
+                break
+            followup_items.append(item)
+
+        if not followup_items:
+            augmented.append(chapter)
+            continue
+
+        ftext, fruby_pairs, fruby_spans = _join_item_text_and_ruby(
+            followup_items, footnote_index=footnote_index
+        )
+        if not ftext:
+            augmented.append(chapter)
+            continue
+
+        cur_text = chapter.text
+        glue = "\n\n" if cur_text and ftext else ""
+        new_text = cur_text + glue + ftext
+        offset = len(cur_text) + len(glue)
+        new_ruby_spans = list(chapter.ruby_spans) + _shift_ruby_spans(
+            fruby_spans, offset
+        )
+        new_ruby_pairs = list(chapter.ruby_pairs) + list(fruby_pairs)
+
+        new_headings = list(chapter.headings)
+        new_categories = dict(chapter.heading_categories)
+        for fitem in followup_items:
+            f_content = fitem.get_content()
+            f_headings, f_categories = _extract_html_headings_and_categories(
+                f_content,
+                heading_class_markers=heading_class_markers,
+                heading_id_markers=heading_id_markers,
+            )
+            new_headings, new_categories = _merge_headings_with_categories(
+                new_headings, new_categories, f_headings, f_categories
+            )
+
+        augmented.append(
+            Chapter(
+                title=chapter.title,
+                href=chapter.href,
+                source=chapter.source,
+                text=new_text,
+                ruby_pairs=new_ruby_pairs,
+                ruby_spans=new_ruby_spans,
+                headings=new_headings,
+                heading_categories=new_categories,
+            )
+        )
+
+    return augmented
+
+
 def _is_spine_continuation_fragment(chapter: Chapter) -> bool:
     if _looks_like_filename(chapter.title, chapter.source):
         return True
@@ -1639,6 +1782,7 @@ def _chapters_from_toc_entries(
     footnote_index: dict[str, set[str]] | None = None,
     heading_class_markers: Optional[set[str]] = None,
     heading_id_markers: Optional[set[str]] = None,
+    apply_title_only_merge: bool = True,
 ) -> List[Chapter]:
     spine_items = _build_spine_items(book)
     spine_index = {href: idx for idx, (href, _item) in enumerate(spine_items)}
@@ -1676,13 +1820,13 @@ def _chapters_from_toc_entries(
                 and key != prev_key
                 and split_series_counts.get(key, 0) == 1
             ):
-                idx = start_idx
-                while idx < len(spine_items):
-                    href, item = spine_items[idx]
+                cur = start_idx
+                while cur < len(spine_items):
+                    href, item = spine_items[cur]
                     if _split_series_key(href) != key:
                         break
                     merged_items.append(item)
-                    idx += 1
+                    cur += 1
 
         if merged_items:
             text, ruby_pairs, ruby_spans = _join_item_text_and_ruby(
@@ -1767,7 +1911,9 @@ def _chapters_from_toc_entries(
             )
         )
 
-    return _merge_title_only_chapters(chapters)
+    if apply_title_only_merge:
+        return _merge_title_only_chapters(chapters)
+    return chapters
 
 
 def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> List[Chapter]:
@@ -1811,6 +1957,7 @@ def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> List[Chapt
             footnote_index,
             heading_class_markers=heading_class_markers,
             heading_id_markers=heading_id_markers,
+            apply_title_only_merge=False,
         )
         if entries
         else []
@@ -1823,6 +1970,7 @@ def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> List[Chapt
             heading_class_markers=heading_class_markers,
             heading_id_markers=heading_id_markers,
         )
+    used_spine = False
     if chapters and prefer_toc:
         spine_chapters = build_spine_chapters()
         if spine_chapters:
@@ -1832,6 +1980,19 @@ def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> List[Chapt
                 ratio = toc_chars / spine_chars
                 if ratio < _TOC_SPINE_COVERAGE_MIN_RATIO:
                     chapters = spine_chapters
+                    used_spine = True
     if not chapters:
         chapters = build_spine_chapters()
+        used_spine = True
+    if entries and prefer_toc and not used_spine:
+        chapters = _augment_toc_chapters_with_followups(
+            chapters,
+            book,
+            entries,
+            footnote_index,
+            heading_class_markers,
+            heading_id_markers,
+            extra_boundary_hrefs=spine_start_hrefs,
+        )
+        chapters = _merge_title_only_chapters(chapters)
     return chapters
