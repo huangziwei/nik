@@ -158,26 +158,16 @@ def test_prepare_tts_text_collapses_long_ellipsis_runs() -> None:
     assert tts_util.prepare_tts_text("あ……い") == "あ……い"
 
 
-def test_prepare_tts_pipeline_appends_chunk_tail_separator() -> None:
-    pipeline = tts_util._prepare_tts_pipeline(
-        "こんにちは",
-        add_short_punct=False,
-    )
-    assert pipeline.prepared == "こんにちは "
-
-
 def test_prepare_tts_pipeline_keeps_ellipsis_without_short_tail_full_stop() -> None:
-    sep = ""
     pipeline = tts_util._prepare_tts_pipeline(
         "…………",
         add_short_punct=True,
     )
-    assert pipeline.prepared == "⋯ "
+    assert pipeline.prepared == "⋯"
 
 
-def test_ellipsis_only_run_length_ignores_quotes_and_separator() -> None:
-    sep = ""
-    assert tts_util._ellipsis_only_run_length(f"「{sep}……{sep}」") == 2
+def test_ellipsis_only_run_length_ignores_quotes() -> None:
+    assert tts_util._ellipsis_only_run_length("「……」") == 2
     assert tts_util._ellipsis_only_run_length("……三ケ月前") == 0
 
 
