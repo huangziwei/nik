@@ -3653,18 +3653,23 @@ def _prepare_tts_pipeline(
     text = chunk_text
     if ruby_data:
         spans = chapter_ruby_spans or []
-        if chunk_span is not None and spans:
+        if allow_full_ruby and chunk_span is None and not spans:
+            text = _apply_ruby_evidence(
+                text,
+                chapter_id,
+                ruby_data,
+                skip_bases=skip_bases,
+            )
+        else:
+            # Run unconditionally — `_apply_ruby_evidence_to_chunk` applies
+            # both per-chunk ruby spans *and* the global ruby overrides.
+            # Previously this was gated on `spans` being non-empty, which
+            # silently dropped globals for chapters with no per-chapter
+            # ruby evidence (e.g. when `clean_sha256` is missing).
             text = _apply_ruby_evidence_to_chunk(
                 text,
                 chunk_span,
                 spans,
-                ruby_data,
-                skip_bases=skip_bases,
-            )
-        elif allow_full_ruby:
-            text = _apply_ruby_evidence(
-                text,
-                chapter_id,
                 ruby_data,
                 skip_bases=skip_bases,
             )
@@ -5828,14 +5833,6 @@ def synthesize_chunk(
         for item in merged_overrides
         if isinstance(item, dict) and str(item.get("base") or "").strip()
     }
-    if ruby_data:
-        chunk_text = _apply_ruby_evidence_to_chunk(
-            chunk_text,
-            chunk_span,
-            ruby_spans,
-            ruby_data,
-            skip_bases=override_bases,
-        )
     raw_ellipsis_run = _ellipsis_only_run_length(chunk_text)
     try:
         pipeline = _prepare_tts_pipeline(
