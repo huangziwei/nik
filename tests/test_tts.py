@@ -227,6 +227,21 @@ def test_compute_chunk_pause_multipliers_does_not_infer_heading_without_epub_dat
     assert multipliers == [1, 1]
 
 
+def test_compute_chunk_pause_multipliers_drops_mid_sentence_split_pause() -> None:
+    # A long sentence forced to split by max_chars. The intermediate chunks
+    # end mid-sentence (no terminal punct) with no \n in the gap, so the
+    # normal inter-sentence pad would create an unnatural beat. Those gaps
+    # should get pause=0; only the final chunk ending in 。keeps pause=1.
+    text = "あいうえお、かきくけこ、さしすせそ、たちつてと、なにぬねの、はひふへほ。"
+    spans = tts_util.make_chunk_spans(text, max_chars=12, chunk_mode="japanese")
+    chunks = [text[start:end] for start, end in spans]
+    assert len(chunks) >= 3
+    multipliers = tts_util.compute_chunk_pause_multipliers(text, spans)
+    for idx in range(len(chunks) - 1):
+        assert multipliers[idx] == 0, (idx, chunks[idx], multipliers)
+    assert multipliers[-1] == 1
+
+
 @pytest.mark.parametrize(
     "dialogue",
     [

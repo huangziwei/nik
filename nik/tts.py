@@ -1757,6 +1757,12 @@ def compute_chunk_pause_multipliers(
                 if heading_pause_by_chunk[idx + 1] is not None:
                     heading_pause = max(heading_pause, heading_pause_by_chunk[idx + 1])
                 pause = max(pause, heading_pause)
+        elif not _ends_with_sentence_punct(chunk_texts[idx]):
+            # Forced mid-sentence split (long sentence cut to fit the model).
+            # The next chunk continues the same sentence with no paragraph
+            # boundary between them — adding the normal inter-sentence pad
+            # produces an unnatural beat. Drop the pause entirely.
+            pause = 0
         multipliers[idx] = pause
     return multipliers
 
@@ -1794,14 +1800,14 @@ def _normalize_pause_multipliers(
                 parsed = int(fallback[idx])
             except (TypeError, ValueError):
                 parsed = 1
-            normalized[idx] = parsed if parsed > 0 else 1
+            normalized[idx] = parsed if parsed >= 0 else 1
     if isinstance(pause_multipliers, list) and len(pause_multipliers) == chunk_count:
         for idx, value in enumerate(pause_multipliers):
             try:
                 parsed = int(value)
             except (TypeError, ValueError):
                 continue
-            if parsed > 0:
+            if parsed >= 0:
                 normalized[idx] = parsed
     return normalized
 
@@ -5080,6 +5086,7 @@ def _prepare_manifest(
             if not isinstance(chunks, list) or not chunks:
                 raise ValueError("manifest.json missing chunks. Run with --rechunk.")
             chunk_spans = _coerce_span_pairs(ch_manifest.get("chunk_spans") or [])
+            computed_authoritative = len(chunk_spans) == len(chunks)
             computed_pause = (
                 compute_chunk_pause_multipliers(
                     chapter.text,
@@ -5087,7 +5094,7 @@ def _prepare_manifest(
                     heading_lines=chapter.headings,
                     heading_categories=chapter.heading_categories,
                 )
-                if len(chunk_spans) == len(chunks)
+                if computed_authoritative
                 else [1] * len(chunks)
             )
             ch_manifest["headings"] = list(chapter.headings)
@@ -5097,10 +5104,17 @@ def _prepare_manifest(
                 len(chunks),
                 add_chapter_boundary=chapter_idx < len(chapters) - 1,
             )
-            fallback_pause = [
-                max(computed_pause[idx], legacy_pause[idx])
-                for idx in range(len(chunks))
-            ]
+            # When computed_pause comes from authoritative chunk spans, trust
+            # it directly — otherwise max() with the legacy default of 1 would
+            # silently re-pad mid-sentence chunks that we want set to 0.
+            fallback_pause = (
+                list(computed_pause)
+                if computed_authoritative
+                else [
+                    max(computed_pause[idx], legacy_pause[idx])
+                    for idx in range(len(chunks))
+                ]
+            )
             ch_manifest["pause_multipliers"] = _normalize_pause_multipliers(
                 fallback_pause,
                 len(chunks),
@@ -5471,7 +5485,7 @@ def synthesize_book(
                 if chunk_idx - 1 < len(chapter_pause_multipliers):
                     try:
                         pause_multiplier = max(
-                            1, int(chapter_pause_multipliers[chunk_idx - 1])
+                            0, int(chapter_pause_multipliers[chunk_idx - 1])
                         )
                     except (TypeError, ValueError):
                         pause_multiplier = 1
@@ -5853,7 +5867,7 @@ def synthesize_chunk(
     pad_ms = int(manifest.get("pad_ms") or 0)
     pause_multiplier = 1
     try:
-        pause_multiplier = max(1, int(pause_multipliers[chunk_index]))
+        pause_multiplier = max(0, int(pause_multipliers[chunk_index]))
     except (TypeError, ValueError, IndexError):
         pause_multiplier = 1
     pad_ms_total = pad_ms * pause_multiplier
