@@ -833,7 +833,7 @@ wheels = [
 [[package]]
 name = "mlx-audio"
 version = "0.4.3"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/Blaizzy/mlx-audio?rev=1ded4f4#1ded4f4954c3fcf30dbd174eb014d46b4bfd5d1c" }
 dependencies = [
     { name = "huggingface-hub", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "miniaudio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
@@ -844,10 +844,6 @@ dependencies = [
     { name = "sounddevice", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "tqdm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "transformers", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/95/db/a9f95e3794eca373d681220c8b9f8f84451a0d14959f85cc341ca592394c/mlx_audio-0.4.3.tar.gz", hash = "sha256:8e87badf56a0f73bf91e3797b1195c01440a181cf0b64a2a08dc1bda4b037f54", size = 1144947, upload-time = "2026-04-28T20:18:12.09Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/25/0a89073ed7b7cdf34299042bd03d867c12c0c8b43f597be61bea7f146793/mlx_audio-0.4.3-py3-none-any.whl", hash = "sha256:6b87bf42d79d9ceb6b9310a77656b9b76429c2d6ddd89f634b2786c58a2e4721", size = 1373582, upload-time = "2026-04-28T20:18:10.512Z" },
 ]
 
 [[package]]
@@ -977,7 +973,7 @@ requires-dist = [
     { name = "lxml", specifier = ">=5.0" },
     { name = "maneko", git = "https://github.com/huangziwei/maneko?subdirectory=crates%2Finterfaces%2Fpython&rev=c4b603972e42b5e3a9e3a2cbed925fe0488c6bfd" },
     { name = "mecab-python3", specifier = ">=1.0.6" },
-    { name = "mlx-audio", specifier = ">=0.4.3" },
+    { name = "mlx-audio", git = "https://github.com/Blaizzy/mlx-audio?rev=1ded4f4" },
     { name = "numba", specifier = ">=0.57" },
     { name = "numpy", specifier = ">=1.24" },
     { name = "openai-whisper", specifier = ">=20231117" },

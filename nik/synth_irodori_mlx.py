@@ -6,15 +6,17 @@ Mirrors the surface of `synth_irodori`:
   - `generate_chunk(runtime, text, voice, ...)` returns
     `(np.ndarray float32 1d, sample_rate)`.
 
-Selected via `NIK_BACKEND=mlx`. Quantization is picked via the HF repo:
-default `mlx-community/Irodori-TTS-500M-v2-4bit`; override with
-`NIK_MLX_HF_REPO=mlx-community/Irodori-TTS-500M-v2-{8bit,fp16}`.
+Selected via `NIK_BACKEND=mlx`. Default model is now **v3** (integrated duration
+predictor → auto-lengths each clip) at 8-bit, to match maneko's q8 for A/B:
+`mlx-community/Irodori-TTS-500M-v3-8bit`; override with `NIK_MLX_HF_REPO`
+(e.g. `…-v3-{fp16,4bit}` or a v2 repo). Requires the v3-capable mlx-audio
+(git `Blaizzy/mlx-audio@1ded4f4`; the PyPI 0.4.3 is v2-only).
 
-Memory budget on 24 GB unified memory: the upstream MLX port reports
-`sequence_length=750` + `cfg_guidance_mode=independent` ≈ 24 GB. We default
-to `sequence_length=400` (plenty for nik's chunk lengths — 400 × 1920 / 48000
-= 16 s of audio max) which is ~9 GB on `independent`. Tune with
-`NIK_MLX_SEQUENCE_LENGTH` and `NIK_MLX_CFG_MODE`.
+Duration: on v3 the model auto-predicts each chunk's length (we pass no
+`seconds`) and the port **ignores `sequence_length`**, so the old MLX memory cap
+is moot. `DEFAULT_SEQUENCE_LENGTH=400` / `NIK_MLX_SEQUENCE_LENGTH` only bite when
+`NIK_MLX_HF_REPO` points at a **v2** repo (there 750≈24 GB on `independent`,
+400≈9 GB / 16 s). `NIK_MLX_CFG_MODE` still applies on both.
 """
 
 from __future__ import annotations
@@ -31,7 +33,7 @@ ENV_HF_REPO = "NIK_MLX_HF_REPO"
 ENV_SEQUENCE_LENGTH = "NIK_MLX_SEQUENCE_LENGTH"
 ENV_CFG_MODE = "NIK_MLX_CFG_MODE"
 
-DEFAULT_HF_REPO = "mlx-community/Irodori-TTS-500M-v2-4bit"
+DEFAULT_HF_REPO = "mlx-community/Irodori-TTS-500M-v3-8bit"
 DEFAULT_SEQUENCE_LENGTH = 400
 DEFAULT_CFG_MODE = "independent"
 
