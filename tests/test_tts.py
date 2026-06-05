@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from nik import tts as tts_util
-from nik.text import SECTION_BREAK
+from nik.text import SECTION_BREAK, strip_section_breaks
 from nik import voice as voice_util
 
 
@@ -58,6 +58,8 @@ def test_chunking_packs_sentences_toward_max_chars() -> None:
 
 
 def test_chunking_min_chars_merges_short_neighbors_across_linebreaks() -> None:
+    # min_chars is a hard floor: short structural lines must merge until a chunk
+    # reaches it, even across blank lines and onto the following full sentence.
     text = "第一章\n\n1\n\n九月十日、火曜日の放課後。\n\nコトリと頭上で音がした。"
     spans = tts_util.make_chunk_spans(
         text, max_chars=0, chunk_mode="japanese", min_chars=12
@@ -70,12 +72,71 @@ def test_chunking_min_chars_merges_short_neighbors_across_linebreaks() -> None:
 
 
 def test_chunking_min_chars_merges_trailing_short_chunk_with_previous() -> None:
+    # A trailing below-min chunk folds back into the previous chunk rather than
+    # being emitted on its own (which the TTS model cannot synthesize).
     text = "九月十日、火曜日の放課後。\nコトリ"
     spans = tts_util.make_chunk_spans(
         text, max_chars=0, chunk_mode="japanese", min_chars=12
     )
     chunks = [text[start:end] for start, end in spans]
     assert chunks == ["九月十日、火曜日の放課後。\nコトリ"]
+
+
+def test_chunking_min_chars_splits_paragraph_at_sentence_level() -> None:
+    # A multi-sentence paragraph is split at the sentence level (chunks flush
+    # once they reach min_chars) instead of being packed toward max_chars. The
+    # short leading dialogue line is below the floor, so it merges forward into
+    # the first sentence chunk rather than being emitted on its own.
+    text = (
+        "「プレゼントですか？」\n\n"
+        "花屋の店員が話しかけてきた。そんなに若くなかった。"
+        "顔のわりに髪が黒い。海苔のような長い髪を後ろでひとつに括っている。"
+        "青砥は腕を組み、首をかしげた。"
+    )
+    spans = tts_util.make_chunk_spans(
+        text, max_chars=100, chunk_mode="japanese", min_chars=15
+    )
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == [
+        "「プレゼントですか？」\n\n花屋の店員が話しかけてきた。そんなに若くなかった。",
+        "顔のわりに髪が黒い。海苔のような長い髪を後ろでひとつに括っている。",
+        "青砥は腕を組み、首をかしげた。",
+    ]
+    assert all(len(c) >= 15 for c in chunks)
+
+
+def test_chunking_min_chars_joins_adjacent_short_dialogue_lines() -> None:
+    # Two below-min dialogue lines separated only by a blank line join into one
+    # chunk that clears the floor.
+    text = "「いや、供える的なやつ」\n\n「ご供花ですね」"
+    spans = tts_util.make_chunk_spans(
+        text, max_chars=100, chunk_mode="japanese", min_chars=15
+    )
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["「いや、供える的なやつ」\n\n「ご供花ですね」"]
+
+
+def test_chunking_min_chars_folds_trailing_fragment_within_paragraph() -> None:
+    # A trailing fragment too short to stand on its own folds back into the
+    # previous chunk of the same paragraph (no blank line between them).
+    text = "一二三四五六七八九十。十一。"
+    spans = tts_util.make_chunk_spans(
+        text, max_chars=100, chunk_mode="japanese", min_chars=10
+    )
+    chunks = [text[start:end] for start, end in spans]
+    assert chunks == ["一二三四五六七八九十。十一。"]
+
+
+def test_chunking_min_chars_never_emits_below_min_chunk() -> None:
+    # A 1-char heading line followed by a dialogue line must not be emitted on
+    # its own: the floor is a hard guarantee the TTS model relies on.
+    text = "一\n\n「夢みたいなことをね。ちょっと」\n\n病院だったんだ。昼過ぎだったんだ。"
+    spans = tts_util.make_chunk_spans(
+        text, max_chars=100, chunk_mode="japanese", min_chars=15
+    )
+    chunks = [strip_section_breaks(text[start:end]).strip() for start, end in spans]
+    assert chunks[0] == "一\n\n「夢みたいなことをね。ちょっと」"
+    assert all(len(c) >= 15 for c in chunks)
 
 
 def test_chunking_keeps_balanced_quote_as_own_chunk() -> None:

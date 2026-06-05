@@ -1236,21 +1236,48 @@ def _pack_chunk_units(
     text: str,
     units: Sequence[Tuple[int, int, bool, bool]],
     max_chars: int,
+    min_chars: int = 0,
 ) -> List[Tuple[int, int]]:
     if not units:
         return []
     if max_chars <= 0:
+        # No length cap: keep every unit as its own span. Any min_chars merging
+        # is left to _merge_short_chunks.
         return [(start, end) for start, end, _is_quote, _adj in units]
+
+    # With a minimum set we chunk at the sentence level: a chunk is emitted as
+    # soon as it reaches min_chars, so a sentence already in [min, max] stays on
+    # its own instead of being packed toward max_chars. With min_chars <= 0 we
+    # keep the historical behavior of filling each chunk toward max_chars.
+    flush_threshold = min_chars if min_chars > 0 else max_chars
 
     packed: List[Tuple[int, int]] = []
     current_start: Optional[int] = None
     current_end: Optional[int] = None
+
+    def flush() -> None:
+        nonlocal current_start, current_end
+        if current_start is None or current_end is None:
+            return
+        # A trailing run that is too short to stand on its own folds back into
+        # the previous chunk, but only within the same paragraph (never across a
+        # blank line or section break) and only while it stays under max_chars.
+        if (
+            min_chars > 0
+            and current_end - current_start < min_chars
+            and packed
+            and _is_same_paragraph_gap(text, packed[-1][1], current_start)
+            and current_end - packed[-1][0] <= max_chars
+        ):
+            packed[-1] = (packed[-1][0], current_end)
+        else:
+            packed.append((current_start, current_end))
+        current_start = None
+        current_end = None
+
     for idx, (start, end, is_quote, adjacent_quote) in enumerate(units):
         if is_quote or adjacent_quote:
-            if current_start is not None and current_end is not None:
-                packed.append((current_start, current_end))
-                current_start = None
-                current_end = None
+            flush()
             packed.append((start, end))
             continue
 
@@ -1263,56 +1290,66 @@ def _pack_chunk_units(
                 hard_boundary = _is_hard_chunk_boundary(
                     text, (prev_start, prev_end), (start, end)
                 )
-        if hard_boundary and current_start is not None and current_end is not None:
-            packed.append((current_start, current_end))
-            current_start = None
-            current_end = None
+        if hard_boundary:
+            flush()
 
         if current_start is None or current_end is None:
             current_start = start
             current_end = end
-            continue
-
-        if end - current_start <= max_chars:
+        elif end - current_start <= max_chars:
             current_end = end
         else:
-            packed.append((current_start, current_end))
+            flush()
             current_start = start
             current_end = end
 
-    if current_start is not None and current_end is not None:
-        packed.append((current_start, current_end))
+        if current_end - current_start >= flush_threshold:
+            flush()
+
+    flush()
     return packed
 
 
 def _merge_short_chunks(
-    spans: Sequence[Tuple[int, int]], min_chars: int, max_chars: int = 0
+    spans: Sequence[Tuple[int, int]],
+    min_chars: int,
+    max_chars: int = 0,
 ) -> List[Tuple[int, int]]:
-    if min_chars <= 0 or not spans:
+    # min_chars is a hard floor: the TTS model cannot synthesize a chunk shorter
+    # than this, so every below-min chunk must be merged into a neighbor. A chunk
+    # that already reaches min_chars is left at the sentence level (it is never
+    # grown toward max_chars); only short chunks accumulate, and they flush as
+    # soon as they reach the floor. Reaching min_chars takes priority over
+    # max_chars in the rare case the two conflict.
+    if min_chars <= 0:
         return list(spans)
-    result: List[Tuple[int, int]] = []
+    merged: List[Tuple[int, int]] = []
     pending: Optional[Tuple[int, int]] = None
     for start, end in spans:
         if pending is None:
             pending = (start, end)
-        elif max_chars > 0 and end - pending[0] > max_chars:
-            result.append(pending)
+        elif pending[1] - pending[0] >= min_chars:
+            merged.append(pending)
+            pending = (start, end)
+        elif (
+            max_chars > 0
+            and end - pending[0] > max_chars
+            and end - start >= min_chars
+            and merged
+        ):
+            # Absorbing this span would overflow max_chars and it is long enough
+            # to stand on its own, so fold the short pending back into the
+            # previous chunk instead of bloating this one.
+            merged[-1] = (merged[-1][0], pending[1])
             pending = (start, end)
         else:
             pending = (pending[0], end)
-        if pending[1] - pending[0] >= min_chars:
-            result.append(pending)
-            pending = None
     if pending is not None:
-        if result:
-            last_start, _last_end = result[-1]
-            if max_chars > 0 and pending[1] - last_start > max_chars:
-                result.append(pending)
-            else:
-                result[-1] = (last_start, pending[1])
+        if pending[1] - pending[0] >= min_chars or not merged:
+            merged.append(pending)
         else:
-            result.append(pending)
-    return result
+            merged[-1] = (merged[-1][0], pending[1])
+    return merged
 
 
 def make_chunk_spans(
@@ -1331,7 +1368,7 @@ def make_chunk_spans(
         else:
             sentence_spans.append((sent_start, sent_end))
     units = _build_chunk_units(text, sentence_spans, max_chars)
-    spans = _pack_chunk_units(text, units, max_chars)
+    spans = _pack_chunk_units(text, units, max_chars, min_chars)
     return _merge_short_chunks(spans, min_chars, max_chars)
 
 

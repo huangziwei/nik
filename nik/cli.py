@@ -1069,7 +1069,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--min-chars",
         type=int,
         default=None,
-        help="Min characters per chunk; short chunks merge with neighbors (default: reuse manifest or 15)",
+        help="Min characters per chunk (hard floor the TTS model needs); chunks flush at the sentence level once they reach it, and any shorter chunk merges into a neighbor (default: reuse manifest or 15)",
     )
     rechunk.add_argument(
         "--pad-ms",
