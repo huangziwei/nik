@@ -40,3 +40,4 @@ books
 scripts
 .cache
 tests/data
+artifacts/

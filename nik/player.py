@@ -1754,7 +1754,7 @@ class VoiceClonePreview:
 class SynthRequest(BaseModel):
     book_id: str
     voice: Optional[str] = None
-    max_chars: int = 50
+    max_chars: int = 150
     min_chars: int = 15
     pad_ms: int = 350
     chunk_mode: str = "japanese"
@@ -3462,6 +3462,12 @@ def create_app(root_dir: Path) -> FastAPI:
 
 def run(root_dir: Path, host: str, port: int) -> None:
     import uvicorn
+
+    # Default the player to the maneko native Rust/Candle Irodori backend. This
+    # covers both the in-process chunk synth (which reads NIK_BACKEND via
+    # `_tts_backend`) and the `uv run nik synth/sample` subprocesses (which
+    # inherit this env). An explicit NIK_BACKEND in the launch environment wins.
+    os.environ.setdefault("NIK_BACKEND", "maneko")
 
     app = create_app(root_dir=root_dir)
     uvicorn.run(app, host=host, port=port)
