@@ -7,7 +7,7 @@ Mirrors the surface of `synth_irodori`:
     `(np.ndarray float32 1d, sample_rate)`.
 
 Selected via `NIK_BACKEND=mlx`. Default model is now **v3** (integrated duration
-predictor → auto-lengths each clip) at 8-bit, to match maneko's q8 for A/B:
+predictor → auto-lengths each clip) at 8-bit:
 `mlx-community/Irodori-TTS-500M-v3-8bit`; override with `NIK_MLX_HF_REPO`
 (e.g. `…-v3-{fp16,4bit}` or a v2 repo). Requires the v3-capable mlx-audio
 (git `Blaizzy/mlx-audio@1ded4f4`; the PyPI 0.4.3 is v2-only).

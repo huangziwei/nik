@@ -3463,7 +3463,5 @@ def create_app(root_dir: Path) -> FastAPI:
 def run(root_dir: Path, host: str, port: int) -> None:
     import uvicorn
 
-    # Backend defaults to mlx (now v3-8bit) — ~5x faster than maneko on Metal in
-    # the v3 A/B (artifacts/bench_v3). maneko stays available via NIK_BACKEND=maneko.
     app = create_app(root_dir=root_dir)
     uvicorn.run(app, host=host, port=port)
