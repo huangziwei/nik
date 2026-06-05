@@ -29,25 +29,19 @@ from rich.progress import (
 )
 
 from . import synth_irodori as _synth_torch
-from . import synth_irodori_maneko as _synth_maneko
 from . import synth_irodori_mlx as _synth_mlx
 from . import voice as voice_util
 
 
 def _tts_backend():
-    """Return the active synthesis adapter module (NIK_BACKEND=mlx|maneko|torch).
+    """Return the active synthesis adapter module (NIK_BACKEND=mlx|torch).
 
-    MLX is the default today (~2.2× faster wall-clock with audible parity on the
-    A/B test — see `bench_mlx.py`). `maneko` selects the native Rust/Candle
-    Irodori wheel (no MLX/torch runtime — see `.claude/plans/nik-migration.md`).
-    `torch` is the upstream Irodori-TTS clone fallback at `.cache/Irodori-TTS`.
+    MLX is the default (now Irodori v3-8bit) — ~2.2× faster wall-clock with
+    audible parity on the A/B test (see `bench_mlx.py`). `torch` remains as a
+    fallback that requires the upstream Irodori-TTS clone at `.cache/Irodori-TTS`.
     """
     name = (os.environ.get("NIK_BACKEND") or "mlx").strip().lower()
-    if name == "torch":
-        return _synth_torch
-    if name == "maneko":
-        return _synth_maneko
-    return _synth_mlx
+    return _synth_torch if name == "torch" else _synth_mlx
 
 
 # Existing call sites use `synth_irodori.<fn>`. Keep that name pointing at a

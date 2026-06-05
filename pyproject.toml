@@ -49,7 +49,6 @@ dependencies = [
     # MLX backend (optional via NIK_BACKEND=mlx). Bundles the Irodori port at
     # mlx_audio.tts.models.irodori_tts; weights pulled from mlx-community.
     "mlx-audio>=0.4.3",
-    "maneko",
 ]
 readme = {file = "README.md", content-type = "text/markdown"}
 
@@ -64,7 +63,6 @@ environments = ["sys_platform == 'darwin' and platform_machine == 'arm64'"]
 
 [tool.uv.sources]
 dacvae = { git = "https://github.com/facebookresearch/dacvae" }
-maneko = { git = "https://github.com/huangziwei/maneko", subdirectory = "crates/interfaces/python", rev = "c4b603972e42b5e3a9e3a2cbed925fe0488c6bfd" }
 mlx-audio = { git = "https://github.com/Blaizzy/mlx-audio", rev = "1ded4f4" }
 
 [tool.setuptools]

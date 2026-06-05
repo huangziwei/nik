@@ -708,14 +708,6 @@ wheels = [
 ]
 
 [[package]]
-name = "maneko"
-version = "0.1.0"
-source = { git = "https://github.com/huangziwei/maneko?subdirectory=crates%2Finterfaces%2Fpython&rev=c4b603972e42b5e3a9e3a2cbed925fe0488c6bfd#c4b603972e42b5e3a9e3a2cbed925fe0488c6bfd" }
-dependencies = [
-    { name = "huggingface-hub", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-]
-
-[[package]]
 name = "markdown"
 version = "3.10.2"
 source = { registry = "https://pypi.org/simple" }
@@ -936,7 +928,6 @@ dependencies = [
     { name = "kyujipy", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "llvmlite", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "lxml", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "maneko", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "mecab-python3", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "numba", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
@@ -971,7 +962,6 @@ requires-dist = [
     { name = "kyujipy", specifier = ">=0.6.8" },
     { name = "llvmlite", specifier = ">=0.40" },
     { name = "lxml", specifier = ">=5.0" },
-    { name = "maneko", git = "https://github.com/huangziwei/maneko?subdirectory=crates%2Finterfaces%2Fpython&rev=c4b603972e42b5e3a9e3a2cbed925fe0488c6bfd" },
     { name = "mecab-python3", specifier = ">=1.0.6" },
     { name = "mlx-audio", git = "https://github.com/Blaizzy/mlx-audio?rev=1ded4f4" },
     { name = "numba", specifier = ">=0.57" },
