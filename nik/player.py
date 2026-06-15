@@ -1751,6 +1751,42 @@ class VoiceClonePreview:
     path: Path
 
 
+# Curated Irodori emotion annotations. Irodori is an emoji-driven style-control
+# model: inserting one of these into a chunk's text steers its delivery. Only
+# this allowlisted set is accepted (mirrored in templates/player.html EMOTIONS)
+# so arbitrary text can't be injected into synth input. Empty = neutral.
+STYLE_EMOJI_ALLOWED = {
+    "😌", "🫶", "😊", "😆", "😎", "😏", "🤔", "😲", "😮", "😟", "😰", "🥺", "🥹", "🙏",
+    "😭", "😖", "😠", "😱", "💥", "💪", "🙄", "🫣", "😒", "🥴", "😴", "😪", "🥱", "👂",
+    "🐢", "⏩", "📖", "🎵", "🤭", "🤐", "📢", "📞", "⏱️", "⏸️", "🌬️", "🍭", "🎛️",
+    "🎭", "🐱", "👃", "👅", "👌", "👏", "💋", "💦", "📄", "📣", "😮‍💨", "🤢", "🤧",
+    "🥤", "🥵",
+}
+
+
+def _resolve_style_emoji(value: object) -> str:
+    """Resolve a UI emotion choice to the prefix injected at synth time.
+
+    A SINGLE emoji is inaudible with this model — repetition is what lands (the
+    model's EMOJI_ANNOTATIONS doc: repeating intensifies; verified in
+    artifacts/emo_*_x3.wav). So the validated emoji is repeated
+    NIK_STYLE_EMOJI_REPEAT times (default 3, clamped 1-8).
+    """
+    if not isinstance(value, str):
+        return ""
+    candidate = value.strip()
+    if candidate not in STYLE_EMOJI_ALLOWED:
+        return ""
+    repeat = 3
+    raw = os.environ.get("NIK_STYLE_EMOJI_REPEAT")
+    if raw:
+        try:
+            repeat = max(1, min(8, int(raw)))
+        except ValueError:
+            repeat = 3
+    return candidate * repeat
+
+
 class SynthRequest(BaseModel):
     book_id: str
     voice: Optional[str] = None
@@ -1760,6 +1796,7 @@ class SynthRequest(BaseModel):
     chunk_mode: str = "japanese"
     rechunk: bool = False
     use_voice_map: bool = False
+    emotion: Optional[str] = None
 
 
 class ChunkSynthRequest(BaseModel):
@@ -1768,6 +1805,7 @@ class ChunkSynthRequest(BaseModel):
     chunk_index: int
     voice: Optional[str] = None
     use_voice_map: bool = False
+    emotion: Optional[str] = None
 
 
 class MergeRequest(BaseModel):
@@ -3077,6 +3115,9 @@ def create_app(root_dir: Path) -> FastAPI:
             cmd.append("--rechunk")
 
         env = os.environ.copy()
+        style_emoji = _resolve_style_emoji(payload.emotion)
+        if style_emoji:
+            env["NIK_STYLE_EMOJI"] = style_emoji
         process = subprocess.Popen(
             cmd,
             cwd=str(repo_root),
@@ -3184,6 +3225,9 @@ def create_app(root_dir: Path) -> FastAPI:
             cmd.append("--rechunk")
 
         env = os.environ.copy()
+        style_emoji = _resolve_style_emoji(payload.emotion)
+        if style_emoji:
+            env["NIK_STYLE_EMOJI"] = style_emoji
         process = subprocess.Popen(
             cmd,
             cwd=str(repo_root),
@@ -3236,6 +3280,7 @@ def create_app(root_dir: Path) -> FastAPI:
                 voice=payload.voice,
                 voice_map_path=voice_map_path,
                 base_dir=repo_root,
+                style_emoji=_resolve_style_emoji(payload.emotion),
             )
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

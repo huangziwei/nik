@@ -587,7 +587,8 @@
 
       .tts-panel.collapsed .tts-grid,
       .tts-panel.collapsed .tts-actions,
-      .tts-panel.collapsed .advanced-panel {
+      .tts-panel.collapsed .advanced-panel,
+      .tts-panel.collapsed .emotion-panel {
         display: none;
       }
 
@@ -728,6 +729,40 @@
 
       .advanced-panel.open {
         display: block;
+      }
+
+      .emotion-panel {
+        margin: 12px 0;
+        padding: 10px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        display: none;
+      }
+
+      .emotion-panel.open {
+        display: block;
+      }
+
+      .emotion-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .emotion-pill {
+        border: 1px solid var(--line-strong);
+        background: var(--surface-2);
+        border-radius: 999px;
+        padding: 4px 9px;
+        font-size: 18px;
+        line-height: 1.2;
+        cursor: pointer;
+      }
+
+      .emotion-pill.active {
+        background: var(--accent);
+        border-color: var(--accent);
       }
 
       .advanced-header {
@@ -2057,6 +2092,7 @@
             <h3 id="ttsTitle">テキスト読み上げ</h3>
             <div class="tts-header-actions">
               <button class="tts-toggle" id="advancedToggle" type="button">マルチボイス</button>
+              <button class="tts-toggle" id="emotionToggle" type="button">感情</button>
               <button class="tts-toggle" id="ttsToggle">折りたたむ</button>
             </div>
           </div>
@@ -2066,6 +2102,9 @@
                 <div class="voice-empty">ボイスを読み込み中...</div>
               </div>
             </div>
+          </div>
+          <div class="emotion-panel" id="emotionPanel">
+            <div class="emotion-pills" id="emotionPills"></div>
           </div>
           <div class="advanced-panel" id="advancedPanel">
             <div class="advanced-header">
@@ -2426,6 +2465,8 @@
         },
         voicePreference: null,
         selectedVoice: null,
+        selectedEmotion: "",
+        emotionMode: false,
         kanaStyle: "hiragana",
         advancedMode: false,
         voiceMap: { default: null, chapters: {} },
@@ -2629,6 +2670,9 @@
       const advancedToggle = document.getElementById("advancedToggle");
       const advancedTitle = document.getElementById("advancedTitle");
       const advancedPanel = document.getElementById("advancedPanel");
+      const emotionToggle = document.getElementById("emotionToggle");
+      const emotionPanel = document.getElementById("emotionPanel");
+      const emotionPills = document.getElementById("emotionPills");
       const advancedList = document.getElementById("advancedList");
       const advancedSelectAll = document.getElementById("advancedSelectAll");
       const advancedSelectAllLabel = document.getElementById(
@@ -2696,6 +2740,7 @@
           waitingForBook: "本を待っています...",
           pickBookHint: "左の本棚から本を選択してください。",
           ttsTitle: "テキスト読み上げ",
+          emotionTitle: "感情",
           multiVoices: "マルチボイス",
           collapse: "折りたたむ",
           expand: "展開",
@@ -3023,6 +3068,7 @@
           waitingForBook: "Waiting for a book...",
           pickBookHint: "Pick a book on the left to start.",
           ttsTitle: "Text To Speech",
+          emotionTitle: "Emotion",
           multiVoices: "Multi-Voices",
           collapse: "Collapse",
           expand: "Expand",
@@ -3394,6 +3440,9 @@
         }
         if (ttsTitle) {
           ttsTitle.textContent = t("ttsTitle");
+        }
+        if (emotionToggle) {
+          emotionToggle.textContent = t("emotionTitle");
         }
         if (advancedTitle) {
           advancedTitle.textContent = t("perChapterVoices");
@@ -4864,6 +4913,124 @@
         return formatVoiceLabel(value);
       }
 
+      // Style annotations the model recognizes (mirrors STYLE_EMOJI_ALLOWED in
+      // player.py; both come from the model's ALLOWED_ANNOTATION_EMOJIS). Pills
+      // show the emoji only; hover shows the meaning. The backend repeats the
+      // chosen emoji ×3 at synth time (a single emoji is inaudible). Effect text
+      // is from the official EMOJI_ANNOTATIONS.md.
+      const EMOTIONS = [
+        { value: "😌", label: "relieved, contented" },
+        { value: "🫶", label: "gently, tenderly" },
+        { value: "😊", label: "cheerful, glad" },
+        { value: "😆", label: "joyful, happy" },
+        { value: "😎", label: "confident, proud" },
+        { value: "😏", label: "teasing, coaxing" },
+        { value: "🤔", label: "questioning, wondering" },
+        { value: "😲", label: "surprised, awed" },
+        { value: "😮", label: "gasp" },
+        { value: "😟", label: "anxious, worried" },
+        { value: "😰", label: "panicked, nervous" },
+        { value: "🥺", label: "trembling, timid" },
+        { value: "🥹", label: "holding back tears" },
+        { value: "🙏", label: "pleading, begging" },
+        { value: "😭", label: "sobbing, crying" },
+        { value: "😖", label: "pained, agonized" },
+        { value: "😠", label: "angry, sulking" },
+        { value: "😱", label: "scream, shout" },
+        { value: "💥", label: "forceful, momentum" },
+        { value: "💪", label: "effortful, strong" },
+        { value: "🙄", label: "exasperated" },
+        { value: "🫣", label: "shy, bashful" },
+        { value: "😒", label: "tongue click, tutting" },
+        { value: "🥴", label: "drunken" },
+        { value: "😴", label: "sleep talk, snoring" },
+        { value: "😪", label: "sleepy, sluggish" },
+        { value: "🥱", label: "yawn" },
+        { value: "👂", label: "whisper, close to ear" },
+        { value: "🐢", label: "slow delivery" },
+        { value: "⏩", label: "fast-speaking" },
+        { value: "📖", label: "narration, monologue" },
+        { value: "🎵", label: "humming" },
+        { value: "🤭", label: "chuckle, giggle" },
+        { value: "🤐", label: "muffled" },
+        { value: "📢", label: "echo, reverb" },
+        { value: "📞", label: "phone/speaker quality" },
+        { value: "⏱️", label: "timing" },
+        { value: "⏸️", label: "pause, silence" },
+        { value: "🌬️", label: "heavy breathing" },
+        { value: "🍭", label: "sweet, cutesy" },
+        { value: "🎛️", label: "audio FX" },
+        { value: "🎭", label: "theatrical" },
+        { value: "🐱", label: "catlike" },
+        { value: "👃", label: "sniffing" },
+        { value: "👅", label: "licking, wet sounds" },
+        { value: "👌", label: "backchannel, agreement" },
+        { value: "👏", label: "clapping" },
+        { value: "💋", label: "lip smack" },
+        { value: "💦", label: "sweat, exertion" },
+        { value: "📄", label: "paper rustle" },
+        { value: "📣", label: "announcing" },
+        { value: "😮‍💨", label: "breath, sigh" },
+        { value: "🤢", label: "nauseated, disgust" },
+        { value: "🤧", label: "cough, sneeze" },
+        { value: "🥤", label: "gulp, swallow" },
+        { value: "🥵", label: "panting, moan" },
+      ];
+
+      function syncEmotionPills() {
+        if (!emotionPills) {
+          return;
+        }
+        emotionPills.querySelectorAll(".emotion-pill").forEach((pill) => {
+          pill.classList.toggle(
+            "active",
+            (pill.dataset.emotion || "") === (state.selectedEmotion || "")
+          );
+        });
+      }
+
+      function renderEmotionPills() {
+        if (!emotionPills) {
+          return;
+        }
+        if (emotionPills.childElementCount === 0) {
+          EMOTIONS.forEach((item) => {
+            const pill = document.createElement("button");
+            pill.type = "button";
+            pill.className = "emotion-pill";
+            pill.dataset.emotion = item.value;
+            pill.textContent = item.value;
+            pill.title = item.label;
+            pill.addEventListener("click", () => {
+              setSelectedEmotion(
+                state.selectedEmotion === item.value ? "" : item.value
+              );
+            });
+            emotionPills.appendChild(pill);
+          });
+        }
+        syncEmotionPills();
+      }
+
+      function setSelectedEmotion(value) {
+        state.selectedEmotion = value || "";
+        try {
+          localStorage.setItem("nik.emotion", state.selectedEmotion);
+        } catch (err) {}
+        syncEmotionPills();
+      }
+
+      function updateEmotionMode() {
+        if (emotionToggle) {
+          emotionToggle.textContent = t("emotionTitle");
+          emotionToggle.classList.toggle("mode-on", !!state.emotionMode);
+          emotionToggle.classList.toggle("mode-off", !state.emotionMode);
+        }
+        if (emotionPanel) {
+          emotionPanel.classList.toggle("open", !!state.emotionMode);
+        }
+      }
+
       function rerenderVoiceList() {
         voiceGroup.innerHTML = "";
         localVoiceActionButton = null;
@@ -5737,6 +5904,7 @@
 
       function loadSettings() {
         state.voicePreference = localStorage.getItem("nik.voice");
+        state.selectedEmotion = localStorage.getItem("nik.emotion") || "";
         setKanaStyle("hiragana", false);
         state.advancedMode = false;
         state.libraryShelf = normalizeShelf(
@@ -6608,6 +6776,7 @@
               kana_style: state.kanaStyle,
               voice: getSelectedVoice(),
               use_voice_map: state.advancedMode,
+              emotion: state.selectedEmotion || "",
             }),
           });
           state.chunkCacheBust[chunkCacheKey(item)] = Date.now();
@@ -7215,6 +7384,7 @@
           voice: getSelectedVoice(),
           use_voice_map: state.advancedMode,
           kana_style: state.kanaStyle,
+          emotion: state.selectedEmotion || "",
         };
         state.pendingManifestRefresh = !state.chapters.length;
         try {
@@ -7331,6 +7501,7 @@
               book_id: state.book.id,
               voice: getSelectedVoice(),
               kana_style: state.kanaStyle,
+              emotion: state.selectedEmotion || "",
             }),
           });
           setStatus(t("sampleGenerating"));
@@ -8700,6 +8871,10 @@
         state.advancedMode = !state.advancedMode;
         updateAdvancedMode();
       });
+      emotionToggle.addEventListener("click", () => {
+        state.emotionMode = !state.emotionMode;
+        updateEmotionMode();
+      });
       advancedSelectAll.addEventListener("change", () => {
         if (!state.book) {
           return;
@@ -8825,6 +9000,8 @@
       updateMergeButtonState();
       updateClearButtonState();
       loadSettings();
+      renderEmotionPills();
+      updateEmotionMode();
       loadVoices();
       readUrlState();
       loadBooks();

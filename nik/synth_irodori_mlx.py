@@ -32,6 +32,7 @@ ENV_NUM_STEPS = "NIK_NUM_STEPS"
 ENV_HF_REPO = "NIK_MLX_HF_REPO"
 ENV_SEQUENCE_LENGTH = "NIK_MLX_SEQUENCE_LENGTH"
 ENV_CFG_MODE = "NIK_MLX_CFG_MODE"
+ENV_STYLE_EMOJI = "NIK_STYLE_EMOJI"
 
 DEFAULT_HF_REPO = "mlx-community/Irodori-TTS-500M-v3-8bit"
 DEFAULT_SEQUENCE_LENGTH = 400
@@ -73,6 +74,18 @@ def _default_cfg_mode() -> str:
     return DEFAULT_CFG_MODE
 
 
+def _style_prefix() -> str:
+    """Optional emotion annotation prepended to every chunk's text.
+
+    Irodori is emoji-driven: a control emoji (e.g. 😌 calm) in the input steers
+    delivery. Set globally per synth run via NIK_STYLE_EMOJI (the player wires it
+    from the emotion pills). Applied here at the model boundary so it never
+    touches the cached/hashed chunk text or the manifest.
+    """
+    raw = os.environ.get(ENV_STYLE_EMOJI)
+    return raw.strip() if raw else ""
+
+
 def get_runtime(*, hf_repo: Optional[str] = None):
     """Load (or fetch from cache) an mlx-audio Model for the given repo."""
     repo = _resolve_hf_repo(hf_repo)
@@ -98,14 +111,22 @@ def generate_chunk(
     cfg_scale_text: float = 3.0,
     cfg_scale_speaker: float = 5.0,
     seed: Optional[int] = None,
+    style_emoji: Optional[str] = None,
 ) -> Tuple[np.ndarray, int]:
     """Synthesize one chunk; returns (audio_float32_1d, sample_rate).
+
+    `style_emoji` (an explicit emotion annotation) overrides the NIK_STYLE_EMOJI
+    env fallback when not None; pass "" to force neutral. The env path drives the
+    batch/sample subprocesses; the explicit arg drives in-process chunk re-render.
 
     Same defaults as `synth_irodori.generate_chunk` so the two backends are
     drop-in interchangeable at the call site.
     """
     if num_steps is None:
         num_steps = _default_num_steps()
+
+    prefix = _style_prefix() if style_emoji is None else style_emoji.strip()
+    gen_text = f"{prefix}{text}" if prefix else text
 
     sampling_kwargs = dict(
         num_steps=num_steps,
@@ -120,7 +141,7 @@ def generate_chunk(
     # Model.generate yields a single GenerationResult for non-streaming mode.
     result = next(
         runtime.generate(
-            text=text,
+            text=gen_text,
             ref_audio=voice.ref_audio,
             **sampling_kwargs,
         )

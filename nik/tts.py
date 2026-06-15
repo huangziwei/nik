@@ -5723,6 +5723,7 @@ def synthesize_chunk(
     voice: Optional[str] = None,
     voice_map_path: Optional[Path] = None,
     base_dir: Optional[Path] = None,
+    style_emoji: Optional[str] = None,
 ) -> dict:
     if base_dir is None:
         base_dir = Path.cwd()
@@ -5938,7 +5939,9 @@ def synthesize_chunk(
             "duration_ms": dms,
         }
 
-    audio, sample_rate = synth_irodori.generate_chunk(model, tts_text, config)
+    audio, sample_rate = synth_irodori.generate_chunk(
+        model, tts_text, config, style_emoji=style_emoji
+    )
     if audio.size == 0:
         durations[chunk_index] = 0
         atomic_write_json(manifest_path, manifest)

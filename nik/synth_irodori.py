@@ -26,6 +26,7 @@ import numpy as np
 from .voice import VoiceConfig
 
 ENV_NUM_STEPS = "NIK_NUM_STEPS"
+ENV_STYLE_EMOJI = "NIK_STYLE_EMOJI"
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _VENDOR_PATH = _REPO_ROOT / ".cache" / "Irodori-TTS"
@@ -86,6 +87,16 @@ def _default_num_steps() -> int:
     return 20
 
 
+def _style_prefix() -> str:
+    """Optional emotion annotation prepended to every chunk's text.
+
+    Mirrors the MLX backend: an emoji from NIK_STYLE_EMOJI (e.g. 😌 calm) steers
+    Irodori's delivery. Applied at the model boundary, never cached.
+    """
+    raw = os.environ.get(ENV_STYLE_EMOJI)
+    return raw.strip() if raw else ""
+
+
 def generate_chunk(
     runtime,
     text: str,
@@ -95,8 +106,12 @@ def generate_chunk(
     cfg_scale_text: float = 3.0,
     cfg_scale_speaker: float = 5.0,
     seed: Optional[int] = None,
+    style_emoji: Optional[str] = None,
 ) -> Tuple[np.ndarray, int]:
     """Synthesize one chunk; returns (audio_float32_1d, sample_rate).
+
+    `style_emoji` overrides the NIK_STYLE_EMOJI env fallback when not None
+    (pass "" to force neutral); mirrors the MLX backend.
 
     `num_steps` defaults to 20 (quality cliff is between 5 and 10; 20 is the
     safer default for long inputs — see `.claude/plans/refactor-qwen-to-irodori.md`).
@@ -107,8 +122,10 @@ def generate_chunk(
 
     if num_steps is None:
         num_steps = _default_num_steps()
+    prefix = _style_prefix() if style_emoji is None else style_emoji.strip()
+    gen_text = f"{prefix}{text}" if prefix else text
     request = SamplingRequest(
-        text=text,
+        text=gen_text,
         ref_wav=voice.ref_audio,
         num_steps=num_steps,
         cfg_scale_text=cfg_scale_text,
