@@ -13,7 +13,7 @@ from urllib.parse import unquote
 from bs4 import BeautifulSoup
 from ebooklib import ITEM_DOCUMENT, ITEM_IMAGE, ITEM_STYLE, epub
 
-from .text import SECTION_BREAK, normalize_section_breaks
+from .text import SECTION_BREAK, normalize_section_breaks, reading_is_unpronounceable
 
 
 @dataclass(frozen=True)
@@ -632,7 +632,10 @@ def _html_to_text_with_ruby_tokens(
     soup = _parse_html_soup(html)
     for ruby in soup.find_all("ruby"):
         base, reading = _ruby_base_reading(ruby)
-        if base and reading:
+        # Ruby is sometimes abused for emphasis, with <rt> holding 傍点 marks
+        # (e.g. ヽヽヽ) rather than a reading. Treat such readings as absent so
+        # the base text survives as plain text and no bogus span is recorded.
+        if base and reading and not reading_is_unpronounceable(reading):
             token = f"{_RUBY_TOKEN_START}{base}{_RUBY_TOKEN_MID}{reading}{_RUBY_TOKEN_END}"
             ruby.replace_with(token)
         elif base:

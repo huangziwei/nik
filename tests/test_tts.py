@@ -830,6 +830,24 @@ def test_is_suspicious_ruby_span_rejects_kanji_in_reading() -> None:
     assert tts_util._is_suspicious_ruby_span("可", "おかしそうに女は")
 
 
+def test_is_suspicious_ruby_span_rejects_emphasis_mark_reading() -> None:
+    # Some EPUBs abuse ruby for emphasis, filling <rt> with repetition marks
+    # (傍点) instead of a reading. These carry no speakable content.
+    assert tts_util._is_suspicious_ruby_span("分析したり探りを入れたり", "ヽ" * 12)
+    assert tts_util._is_suspicious_ruby_span("原因", "ヽヽ")
+    assert tts_util._is_suspicious_ruby_span("強調", "・・")  # katakana middle dots
+    assert tts_util._is_suspicious_ruby_span("のばす", "ーー")  # prolonged marks only
+
+
+def test_is_suspicious_ruby_span_keeps_gikun_wordplay_reading() -> None:
+    # Gikun/wordplay furigana spell out a different word, but in kana — so the
+    # reading is still pronounceable and must be kept.
+    assert not tts_util._is_suspicious_ruby_span("宿敵", "とも")
+    assert not tts_util._is_suspicious_ruby_span("本気", "マジ")
+    assert not tts_util._is_suspicious_ruby_span("地球", "ほし")
+    assert not tts_util._is_suspicious_ruby_span("TTS", "ティーティーエス")
+
+
 def test_apply_ruby_evidence_to_chunk_keeps_non_kanji_span() -> None:
     chunk_text = "TTSを試す。"
     chunk_span = (0, len(chunk_text))

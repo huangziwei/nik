@@ -56,6 +56,7 @@ from .text import (
     SECTION_BREAK,
     normalize_section_breaks,
     read_clean_text,
+    reading_is_unpronounceable,
     strip_section_breaks,
 )
 from .voice import VoiceConfig
@@ -3500,6 +3501,8 @@ def _is_suspicious_ruby_span(base: str, reading: str) -> bool:
     if not base.strip() or not reading.strip():
         return True
     if _has_kanji(reading):
+        return True
+    if reading_is_unpronounceable(reading):
         return True
     if "\n" in base or "\n" in reading:
         return True

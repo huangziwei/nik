@@ -491,6 +491,19 @@ def test_html_to_text_with_ruby_spans() -> None:
     ]
 
 
+def test_html_to_text_with_ruby_drops_emphasis_mark_reading() -> None:
+    # Ruby abused for emphasis: <rt> holds 傍点 marks (ヽ) rather than a reading.
+    # The base text must survive as plain text with no span recorded.
+    html = (
+        "<p>非行の<ruby>原因<rt>ヽヽ</rt></ruby>を"
+        "<ruby>分析<rt>かい</rt></ruby>する。</p>"
+    ).encode("utf-8")
+    text, spans = epub_util.html_to_text_with_ruby(html)
+    assert text == "非行の原因を分析する。"
+    # Only the genuine reading is kept; the emphasis-mark ruby is dropped.
+    assert spans == [{"start": 6, "end": 8, "base": "分析", "reading": "かい"}]
+
+
 def test_html_to_text_inserts_section_break_for_rare_class() -> None:
     html = "".join("<p class='main'>本文</p>" for _ in range(10))
     html += "<p class='alt'>区切り</p>"
