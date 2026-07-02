@@ -11,7 +11,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import unicodedata
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -84,20 +83,7 @@ def _is_unidic_aligned_ruby_reading(
     reading: str,
     tagger: Optional[object],
 ) -> bool:
-    if not base or not reading or tagger is None:
-        return False
-    reading_text = unicodedata.normalize("NFKC", str(reading).strip())
-    if not reading_text or not tts_util._is_kana_reading(reading_text):
-        return False
-    try:
-        normalized = tts_util._normalize_ruby_reading(base, reading_text, tagger)
-        reading_kata = tts_util._hiragana_to_katakana(
-            unicodedata.normalize("NFKC", normalized)
-        )
-        base_kata = tts_util._base_reading_kata(base, tagger)
-    except Exception:
-        return False
-    return bool(base_kata and reading_kata == base_kata)
+    return tts_util._is_unidic_aligned_ruby_reading(base, reading, tagger)
 
 
 def _select_preferred_ruby_reading(
@@ -315,7 +301,17 @@ def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
 
         out_path.write_text(chapter.text.rstrip() + "\n", encoding="utf-8")
         chapter_id = Path(filename).stem
-        summary = _summarize_ruby_pairs(chapter.ruby_pairs)
+        # Count coalesced spans so mis-split names (adjacent single-kanji ruby)
+        # register as one compound pair; raw_spans keep positional fidelity.
+        coalesced_spans = tts_util._coalesce_adjacent_single_kanji_ruby_spans(
+            chapter.ruby_spans
+        )
+        summary = _summarize_ruby_pairs(
+            [
+                (str(span.get("base") or ""), str(span.get("reading") or ""))
+                for span in coalesced_spans
+            ]
+        )
         if summary:
             ruby_overrides[chapter_id] = summary
         if chapter.ruby_spans:
@@ -325,7 +321,7 @@ def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
                 "raw_spans": chapter.ruby_spans,
             }
         chapter_token_spans = _ruby_token_spans(chapter.text, unidic_tagger)
-        for span in chapter.ruby_spans:
+        for span in coalesced_spans:
             base_text = str(span.get("base", "")).strip()
             reading_text = str(span.get("reading", "")).strip()
             if not base_text or not reading_text:

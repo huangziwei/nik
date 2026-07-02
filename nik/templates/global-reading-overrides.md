@@ -2,6 +2,9 @@
 
 # One per line, use: 漢字＝かな
 
+# 本文ルビ由来の読みはこのファイルではなく、プレイヤーの
+# 「ルビ読みレビュー」パネルで修正・展開・無効化するのが基本です。
+
 # Regex (Python) lines are supported with "re:" prefix:
 
 # re:御(存知|迷惑)=ご\1

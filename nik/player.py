@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from . import audio_norm as audio_norm_util
 from . import asr as asr_util
 from . import epub as epub_util
+from . import ruby_review
 from . import sanitize
 from . import tts as tts_util
 from . import voice as voice_util
@@ -51,15 +52,17 @@ def _tag_ruby_spans(spans: List[dict], kind: str) -> List[dict]:
         base = str(span.get("base") or "")
         if not reading or end <= start:
             continue
-        tagged.append(
-            {
-                "start": start,
-                "end": end,
-                "base": base,
-                "reading": reading,
-                "kind": kind,
-            }
-        )
+        out = {
+            "start": start,
+            "end": end,
+            "base": base,
+            "reading": reading,
+            "kind": kind,
+        }
+        key = str(span.get("key") or "")
+        if key:
+            out["key"] = key
+        tagged.append(out)
     return tagged
 
 
@@ -1856,6 +1859,11 @@ class ReadingOverridesPayload(BaseModel):
     text: Optional[str] = None
 
 
+class RubyDecisionsPayload(BaseModel):
+    book_id: str
+    decisions: dict = {}
+
+
 class PlaybackPayload(BaseModel):
     last_played: Optional[int] = None
     furthest_played: Optional[int] = None
@@ -2019,6 +2027,22 @@ def create_app(root_dir: Path) -> FastAPI:
         if ruby_data:
             spans = tts_util._select_ruby_spans(chapter_id, clean_text, ruby_data)
             if spans:
+                # Coalesce and key the spans exactly like the review groups,
+                # then show them as TTS will speak them (decisions applied).
+                spans = tts_util._coalesce_adjacent_single_kanji_ruby_spans(spans)
+                spans = [
+                    dict(
+                        span,
+                        key=tts_util._ruby_decision_key(
+                            str(span.get("base") or ""),
+                            str(span.get("reading") or ""),
+                        ),
+                    )
+                    for span in spans
+                ]
+                spans = tts_util._apply_ruby_decisions_to_spans(
+                    spans, tts_util._load_ruby_decisions(ruby_data)
+                )
                 spans = tts_util._maybe_normalize_ruby_entries(spans)
                 ruby_spans = _tag_ruby_spans(spans, "inline")
             override_spans = _filter_overlapping_spans(override_spans, ruby_spans)
@@ -2044,6 +2068,30 @@ def create_app(root_dir: Path) -> FastAPI:
                 int(span.get("end", 0)),
             ),
         )
+        if ruby_data:
+            # Map propagated spans back to their evidence group so the reader
+            # popover can act on them; spans from user overrides get no key.
+            decisions_map = tts_util._load_ruby_decisions(ruby_data)
+            effective_keys: dict[tuple[str, str], str] = {}
+            for base, reading_counts in tts_util._ruby_span_group_counts(
+                ruby_data
+            ).items():
+                for evidence_reading in reading_counts:
+                    group_key = tts_util._ruby_decision_key(base, evidence_reading)
+                    decision = decisions_map.get(group_key) or {}
+                    effective = (
+                        str(decision.get("reading") or "").strip() or evidence_reading
+                    )
+                    effective_keys[(base, effective)] = group_key
+            for span in ruby_prop_spans:
+                span_key = effective_keys.get(
+                    (
+                        str(span.get("base") or ""),
+                        str(span.get("reading") or ""),
+                    )
+                )
+                if span_key:
+                    span["key"] = span_key
         return _no_store(
             {
                 "book_id": book_id,
@@ -2943,6 +2991,43 @@ def create_app(root_dir: Path) -> FastAPI:
                 "status": "ok",
                 "overrides": overrides,
                 "text": editor_text,
+                "tts_cleared": tts_cleared,
+            }
+        )
+
+    @app.get("/api/ruby-review")
+    def ruby_review_get(book_id: str) -> JSONResponse:
+        book_dir = _resolve_book_dir(root_dir, book_id)
+        try:
+            payload = ruby_review.build_review_groups(book_dir)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        payload["book_id"] = book_id
+        return _no_store(payload)
+
+    @app.post("/api/ruby-review/decisions")
+    def ruby_review_save(payload: RubyDecisionsPayload) -> JSONResponse:
+        book_dir = _resolve_book_dir(root_dir, payload.book_id)
+        synth_job = jobs.get(payload.book_id)
+        if synth_job and synth_job.process.poll() is None:
+            raise HTTPException(
+                status_code=409, detail="Stop TTS before editing readings."
+            )
+        merge_job = merge_jobs.get(payload.book_id)
+        if merge_job and merge_job.process.poll() is None:
+            raise HTTPException(
+                status_code=409, detail="Stop merge before editing readings."
+            )
+        decisions = ruby_review.update_decisions(book_dir, payload.decisions or {})
+        try:
+            tts_cleared = sanitize.refresh_chunks(book_dir=book_dir)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return _no_store(
+            {
+                "status": "ok",
+                "book_id": payload.book_id,
+                "decisions": decisions,
                 "tts_cleared": tts_cleared,
             }
         )

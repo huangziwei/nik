@@ -1628,6 +1628,255 @@
         color: var(--ink);
       }
 
+      .edit-ruby-review .edit-meta {
+        margin: 6px 0 10px;
+      }
+
+      .ruby-review-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+      }
+
+      .ruby-review-toolbar select {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 4px 8px;
+        font-size: 12px;
+        color: var(--ink);
+        background: var(--surface);
+      }
+
+      .ruby-review-status {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .ruby-review-table {
+        max-height: 440px;
+        overflow-y: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .ruby-review-empty {
+        padding: 14px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .ruby-review-row {
+        border-bottom: 1px solid var(--line);
+        padding: 6px 10px;
+      }
+
+      .ruby-review-row:last-child {
+        border-bottom: none;
+      }
+
+      .ruby-review-line {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .ruby-review-word {
+        font-size: 15px;
+        min-width: 7em;
+      }
+
+      .ruby-review-word ruby rt {
+        font-size: 9px;
+        color: var(--muted);
+      }
+
+      .ruby-review-corrected {
+        font-size: 12px;
+        color: var(--accent);
+        white-space: nowrap;
+      }
+
+      .ruby-review-reading-input {
+        width: 9em;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 2px 6px;
+        font-size: 12px;
+        background: var(--surface);
+        color: var(--ink);
+      }
+
+      .ruby-review-counts {
+        font-size: 11px;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .ruby-chip {
+        font-size: 10px;
+        border-radius: 999px;
+        padding: 1px 7px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .ruby-chip.aligned {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+
+      .ruby-chip-btn {
+        cursor: pointer;
+        background: var(--mark-bg);
+        color: var(--ink);
+        border: 1px solid var(--line);
+      }
+
+      .ruby-scope {
+        display: inline-flex;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        margin-left: auto;
+        flex-shrink: 0;
+      }
+
+      .ruby-scope button {
+        border: none;
+        background: transparent;
+        padding: 3px 9px;
+        font-size: 11px;
+        color: var(--muted);
+        cursor: pointer;
+      }
+
+      .ruby-scope button + button {
+        border-left: 1px solid var(--line);
+      }
+
+      .ruby-scope button.active {
+        background: var(--mark-bg);
+        color: var(--ink);
+        font-weight: 600;
+      }
+
+      .ruby-review-row.decided .ruby-scope button.active {
+        color: var(--accent);
+      }
+
+      .ruby-review-expand,
+      .ruby-review-reset {
+        border: none;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 12px;
+        padding: 2px 4px;
+      }
+
+      .ruby-review-contexts {
+        margin: 6px 0 2px;
+        display: grid;
+        gap: 3px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .ruby-review-context b {
+        color: var(--ink);
+        background: var(--mark-bg);
+        border-radius: 3px;
+        padding: 0 2px;
+        font-weight: 600;
+      }
+
+      .ruby-review-context .ctx-chapter {
+        font-size: 10px;
+        margin-right: 6px;
+        opacity: 0.85;
+      }
+
+      .ruby-review-context .ctx-kind {
+        font-size: 10px;
+        margin-left: 6px;
+        opacity: 0.7;
+      }
+
+      .ruby-review-context.clickable {
+        cursor: pointer;
+      }
+
+      .ruby-review-context.clickable:hover {
+        color: var(--ink);
+      }
+
+      .chapter-text ruby.ruby-actionable {
+        cursor: pointer;
+      }
+
+      .chapter-text ruby.ruby-jump-flash {
+        background: var(--mark-bg);
+        border-radius: 4px;
+      }
+
+      .ruby-popover {
+        position: absolute;
+        z-index: 80;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+        padding: 10px;
+        width: 250px;
+        font-size: 12px;
+        color: var(--ink);
+      }
+
+      .ruby-popover-word {
+        font-size: 16px;
+        margin-bottom: 6px;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+
+      .ruby-popover-word ruby rt {
+        font-size: 9px;
+        color: var(--muted);
+      }
+
+      .ruby-popover input {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 4px 6px;
+        font-size: 13px;
+        background: var(--surface);
+        color: var(--ink);
+        margin: 2px 0 8px;
+        box-sizing: border-box;
+      }
+
+      .ruby-popover-actions {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .ruby-popover .ruby-scope {
+        margin-left: 0;
+      }
+
+      .ruby-popover-suggestion {
+        margin-bottom: 8px;
+      }
+
       .edit-rules select {
         width: 100%;
         border: 1px solid var(--line);
@@ -2213,6 +2462,17 @@
                   </div>
                 </div>
               </div>
+              <div class="panel edit-ruby-review">
+                <div class="edit-section-title" id="rubyReviewTitle">ルビ読みレビュー</div>
+                <p class="edit-meta" id="rubyReviewHelp">本文ルビ由来の読みを確認・修正します。全体=ルビなし箇所へも展開 / ルビのみ=印字箇所だけ / 無視=このルビを使わない。読みをクリックすると修正できます。</p>
+                <div class="ruby-review-toolbar">
+                  <select id="rubyReviewFilter"></select>
+                  <button class="btn small" id="rubyReviewWordplayBtn" type="button">言葉遊びをルビのみに</button>
+                  <button class="btn small" id="rubyReviewReloadBtn" type="button">再読込</button>
+                  <span class="ruby-review-status" id="rubyReviewStatus"></span>
+                </div>
+                <div class="ruby-review-table" id="rubyReviewTable"></div>
+              </div>
               <div class="panel edit-overrides">
                 <div class="edit-section-title" id="editOverridesTitle">読み上げ置換（全体）</div>
                 <p class="edit-meta" id="editOverridesHelp">1 行 1 件: 漢字=かな。TTS 時のみ適用。</p>
@@ -2509,6 +2769,10 @@
         cleanEditChapter: null,
         readingOverridesDirty: false,
         readingOverridesOriginal: "",
+        rubyReviewGroups: [],
+        rubyReviewFilter: "all",
+        rubyReviewExpanded: {},
+        rubyReviewLoaded: "",
         bookVoice: null,
         playTransitioning: false,
         pendingBoundary: null,
@@ -2569,6 +2833,13 @@
       const editOverridesTitle = document.getElementById("editOverridesTitle");
       const editOverridesHelp = document.getElementById("editOverridesHelp");
       const readingOverrides = document.getElementById("readingOverrides");
+      const rubyReviewTitle = document.getElementById("rubyReviewTitle");
+      const rubyReviewHelp = document.getElementById("rubyReviewHelp");
+      const rubyReviewFilter = document.getElementById("rubyReviewFilter");
+      const rubyReviewWordplayBtn = document.getElementById("rubyReviewWordplayBtn");
+      const rubyReviewReloadBtn = document.getElementById("rubyReviewReloadBtn");
+      const rubyReviewStatus = document.getElementById("rubyReviewStatus");
+      const rubyReviewTable = document.getElementById("rubyReviewTable");
       const saveOverridesBtn = document.getElementById("saveOverridesBtn");
       const bookMenuBtn = document.getElementById("bookMenuBtn");
       const bookMenuPanel = document.getElementById("bookMenuPanel");
@@ -3032,6 +3303,42 @@
           statusChunkNotReady: "チャンクが準備できていません。再生ボタンを押して再試行してください。",
           pressPlayToRetry: "再生ボタンを押して再試行してください。",
           regenChunkTitleDynamic: "{label} を再生成",
+          rubyReviewTitle: "ルビ読みレビュー",
+          rubyReviewHelp:
+            "本文ルビ由来の読みを確認・修正します。全体=ルビなし箇所へも展開 / ルビのみ=印字箇所だけ / 無視=このルビを使わない。読みをクリックすると修正できます。",
+          rubyReviewFilterAll: "すべて",
+          rubyReviewFilterUndecided: "未決定",
+          rubyReviewFilterWordplay: "言葉遊び疑い",
+          rubyReviewFilterSutegana: "小書き疑い",
+          rubyReviewFilterName: "人名らしい",
+          rubyReviewFilterSingleton: "1回のみ",
+          rubyReviewFilterDecided: "決定済み",
+          rubyReviewWordplayBulk: "言葉遊びをルビのみに",
+          rubyReviewReload: "再読込",
+          rubyReviewEmpty: "この絞り込みに該当するルビがありません。",
+          rubyReviewNoData: "ルビ情報がありません。",
+          rubyReviewLoading: "ルビ読みを読み込み中...",
+          rubyReviewLoadFailed: "ルビ読みの読み込みに失敗しました。",
+          rubyReviewSaving: "決定を保存中...",
+          rubyReviewSaved: "決定を保存しました。",
+          rubyReviewSavedCleared: "決定を保存しました。TTS キャッシュを削除しました。",
+          rubyReviewSaveFailed: "決定の保存に失敗しました。",
+          rubyReviewCounts: "ルビ {count} 回 / 展開先 {prop} 箇所",
+          rubyReviewScopeGlobal: "全体",
+          rubyReviewScopeInline: "ルビのみ",
+          rubyReviewScopeOff: "無視",
+          rubyReviewSuggestion: "候補: {reading}",
+          rubyReviewReset: "既定に戻す",
+          rubyReviewContexts: "文脈を表示",
+          rubyReviewContextInline: "ルビ",
+          rubyReviewContextProp: "展開先",
+          rubyReviewFlagAligned: "辞書一致",
+          rubyReviewFlagWordplay: "言葉遊び?",
+          rubyReviewFlagSutegana: "小書き?",
+          rubyReviewFlagName: "人名?",
+          rubyReviewFlagSingleton: "1回",
+          rubyReviewBulkNone: "対象がありません。",
+          rubyPopoverApply: "読みを適用",
         },
         en: {
           languageName: "English",
@@ -3359,6 +3666,42 @@
           statusChunkNotReady: "Chunk not ready. Press Play to retry.",
           pressPlayToRetry: "Press Play to retry.",
           regenChunkTitleDynamic: "Regenerate {label}",
+          rubyReviewTitle: "Ruby readings review",
+          rubyReviewHelp:
+            "Review readings harvested from the book's ruby. Global = also applied where no ruby is printed / Inline = only at printed ruby / Off = ignore this ruby. Click a reading to correct it.",
+          rubyReviewFilterAll: "All",
+          rubyReviewFilterUndecided: "Undecided",
+          rubyReviewFilterWordplay: "Wordplay suspects",
+          rubyReviewFilterSutegana: "Small-kana suspects",
+          rubyReviewFilterName: "Name-like",
+          rubyReviewFilterSingleton: "Single occurrence",
+          rubyReviewFilterDecided: "Decided",
+          rubyReviewWordplayBulk: "Wordplay → inline only",
+          rubyReviewReload: "Reload",
+          rubyReviewEmpty: "No ruby entries match this filter.",
+          rubyReviewNoData: "No ruby data for this book.",
+          rubyReviewLoading: "Loading ruby readings...",
+          rubyReviewLoadFailed: "Failed to load ruby readings.",
+          rubyReviewSaving: "Saving decisions...",
+          rubyReviewSaved: "Saved decisions.",
+          rubyReviewSavedCleared: "Saved decisions. TTS cache cleared.",
+          rubyReviewSaveFailed: "Failed to save decisions.",
+          rubyReviewCounts: "{count} ruby / {prop} propagation targets",
+          rubyReviewScopeGlobal: "Global",
+          rubyReviewScopeInline: "Inline",
+          rubyReviewScopeOff: "Off",
+          rubyReviewSuggestion: "Suggest: {reading}",
+          rubyReviewReset: "Reset to default",
+          rubyReviewContexts: "Show contexts",
+          rubyReviewContextInline: "ruby",
+          rubyReviewContextProp: "target",
+          rubyReviewFlagAligned: "dictionary",
+          rubyReviewFlagWordplay: "wordplay?",
+          rubyReviewFlagSutegana: "small kana?",
+          rubyReviewFlagName: "name?",
+          rubyReviewFlagSingleton: "once",
+          rubyReviewBulkNone: "Nothing to update.",
+          rubyPopoverApply: "Apply reading",
         },
       };
 
@@ -3501,6 +3844,20 @@
         if (saveOverridesBtn) {
           saveOverridesBtn.textContent = t("saveOverrides");
         }
+        if (rubyReviewTitle) {
+          rubyReviewTitle.textContent = t("rubyReviewTitle");
+        }
+        if (rubyReviewHelp) {
+          rubyReviewHelp.textContent = t("rubyReviewHelp");
+        }
+        if (rubyReviewWordplayBtn) {
+          rubyReviewWordplayBtn.textContent = t("rubyReviewWordplayBulk");
+        }
+        if (rubyReviewReloadBtn) {
+          rubyReviewReloadBtn.textContent = t("rubyReviewReload");
+        }
+        renderRubyReviewFilterOptions();
+        renderRubyReview();
         if (editRulesTitle) {
           editRulesTitle.textContent = t("rulesTitle");
         }
@@ -6391,13 +6748,15 @@
             const end = Number(span.end);
             const reading = String(span.reading || "").trim();
             const kind = span.kind === "propagated" ? "propagated" : "inline";
+            const base = String(span.base || "");
+            const key = String(span.key || "");
             if (!Number.isFinite(start) || !Number.isFinite(end)) {
               return null;
             }
             if (!reading || end <= start) {
               return null;
             }
-            return { start, end, reading, kind };
+            return { start, end, reading, kind, base, key };
           })
           .filter(Boolean);
       }
@@ -6452,6 +6811,15 @@
           ruby.classList.add(
             span.kind === "propagated" ? "ruby-propagated" : "ruby-inline"
           );
+          ruby.dataset.rubyStart = String(span.start);
+          ruby.dataset.rubyKind = span.kind || "inline";
+          ruby.dataset.rubyReading = span.reading;
+          ruby.dataset.rubyBase =
+            span.base || text.slice(span.start, span.end);
+          if (span.key) {
+            ruby.dataset.rubyKey = span.key;
+            ruby.classList.add("ruby-actionable");
+          }
           ruby.appendChild(
             document.createTextNode(text.slice(span.start, span.end))
           );
@@ -8125,6 +8493,577 @@
         }
       }
 
+      function renderRubyReviewFilterOptions() {
+        if (!rubyReviewFilter) {
+          return;
+        }
+        const options = [
+          ["all", t("rubyReviewFilterAll")],
+          ["undecided", t("rubyReviewFilterUndecided")],
+          ["decided", t("rubyReviewFilterDecided")],
+          ["wordplay", t("rubyReviewFilterWordplay")],
+          ["sutegana", t("rubyReviewFilterSutegana")],
+          ["name", t("rubyReviewFilterName")],
+          ["singleton", t("rubyReviewFilterSingleton")],
+        ];
+        const current = state.rubyReviewFilter || "all";
+        rubyReviewFilter.innerHTML = "";
+        options.forEach(([value, label]) => {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = label;
+          rubyReviewFilter.appendChild(option);
+        });
+        rubyReviewFilter.value = current;
+      }
+
+      async function loadRubyReview(force = false) {
+        if (!state.book || !rubyReviewTable) {
+          return;
+        }
+        if (!force && state.rubyReviewLoaded === state.book.id) {
+          renderRubyReview();
+          return;
+        }
+        if (rubyReviewStatus) {
+          rubyReviewStatus.textContent = t("rubyReviewLoading");
+        }
+        try {
+          const params = new URLSearchParams({ book_id: state.book.id });
+          const data = await fetchJson(`/api/ruby-review?${params.toString()}`);
+          state.rubyReviewGroups = Array.isArray(data.groups) ? data.groups : [];
+          state.rubyReviewLoaded = state.book.id;
+          if (rubyReviewStatus) {
+            rubyReviewStatus.textContent = "";
+          }
+          renderRubyReview();
+        } catch (err) {
+          if (rubyReviewStatus) {
+            rubyReviewStatus.textContent =
+              err.message || t("rubyReviewLoadFailed");
+          }
+        }
+      }
+
+      function rubyReviewGroupMatchesFilter(group) {
+        const filter = state.rubyReviewFilter || "all";
+        const flags = group.flags || [];
+        switch (filter) {
+          case "undecided":
+            return !group.decided;
+          case "decided":
+            return !!group.decided;
+          case "wordplay":
+            return flags.includes("wordplay");
+          case "sutegana":
+            return flags.includes("sutegana");
+          case "name":
+            return flags.includes("name");
+          case "singleton":
+            return flags.includes("singleton");
+          default:
+            return true;
+        }
+      }
+
+      function rubyReviewChapterLabel(chapterId) {
+        const chapter = getChapterById(chapterId);
+        if (chapter && chapter.title) {
+          return chapter.title;
+        }
+        return chapterId || "";
+      }
+
+      function buildRubyDecision(group, patch = {}) {
+        const decision = {};
+        const scope = Object.prototype.hasOwnProperty.call(patch, "scope")
+          ? patch.scope
+          : group.decided
+          ? group.scope
+          : "";
+        const reading = Object.prototype.hasOwnProperty.call(patch, "reading")
+          ? patch.reading
+          : group.corrected || "";
+        if (scope === "global" || scope === "inline" || scope === "off") {
+          decision.scope = scope;
+        }
+        if (reading && reading !== group.reading) {
+          decision.reading = reading;
+        }
+        if (decision.scope === "global" && group.base.length === 1) {
+          decision.mode = group.mode || "isolated";
+        }
+        return Object.keys(decision).length ? decision : null;
+      }
+
+      function invalidateChapterRuby() {
+        Object.values(state.chapterMap || {}).forEach((chapter) => {
+          if (!chapter) {
+            return;
+          }
+          chapter.clean_text = "";
+          chapter.ruby_spans = [];
+          chapter.ruby_prop_spans = [];
+        });
+      }
+
+      async function saveRubyDecisions(updates) {
+        if (!state.book || !updates || !Object.keys(updates).length) {
+          return false;
+        }
+        if (rubyReviewStatus) {
+          rubyReviewStatus.textContent = t("rubyReviewSaving");
+        }
+        try {
+          const data = await fetchJson("/api/ruby-review/decisions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              book_id: state.book.id,
+              decisions: updates,
+            }),
+          });
+          invalidateChapterRuby();
+          await loadRubyReview(true);
+          if (rubyReviewStatus) {
+            rubyReviewStatus.textContent = data.tts_cleared
+              ? t("rubyReviewSavedCleared")
+              : t("rubyReviewSaved");
+          }
+          return true;
+        } catch (err) {
+          if (rubyReviewStatus) {
+            rubyReviewStatus.textContent =
+              err.message || t("rubyReviewSaveFailed");
+          }
+          return false;
+        }
+      }
+
+      function renderRubyReviewRow(group) {
+        const row = document.createElement("div");
+        row.className = "ruby-review-row";
+        if (group.decided) {
+          row.classList.add("decided");
+        }
+
+        const line = document.createElement("div");
+        line.className = "ruby-review-line";
+
+        const word = document.createElement("span");
+        word.className = "ruby-review-word";
+        const rubyEl = document.createElement("ruby");
+        rubyEl.appendChild(document.createTextNode(group.base));
+        const rt = document.createElement("rt");
+        rt.textContent = group.reading;
+        rubyEl.appendChild(rt);
+        word.appendChild(rubyEl);
+        line.appendChild(word);
+
+        let committed = false;
+        const commitReading = (value) => {
+          if (committed) {
+            return;
+          }
+          committed = true;
+          const cleaned = String(value || "").trim();
+          const next = cleaned === group.reading ? "" : cleaned;
+          const current = group.corrected || "";
+          if (next === current) {
+            renderRubyReview();
+            return;
+          }
+          saveRubyDecisions({
+            [group.key]: buildRubyDecision(group, { reading: next }),
+          });
+        };
+
+        const readingBtn = document.createElement("button");
+        readingBtn.type = "button";
+        readingBtn.className = "ruby-review-corrected";
+        readingBtn.textContent = `→ ${group.corrected || group.reading}`;
+        readingBtn.addEventListener("click", () => {
+          const input = document.createElement("input");
+          input.type = "text";
+          input.className = "ruby-review-reading-input";
+          input.value = group.corrected || group.reading;
+          input.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commitReading(input.value);
+            } else if (event.key === "Escape") {
+              committed = true;
+              renderRubyReview();
+            }
+          });
+          input.addEventListener("blur", () => commitReading(input.value));
+          readingBtn.replaceWith(input);
+          input.focus();
+          input.select();
+        });
+        line.appendChild(readingBtn);
+
+        if (group.suggestion) {
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "ruby-chip ruby-chip-btn";
+          chip.textContent = t("rubyReviewSuggestion", {
+            reading: group.suggestion,
+          });
+          chip.addEventListener("click", () => {
+            saveRubyDecisions({
+              [group.key]: buildRubyDecision(group, {
+                reading: group.suggestion,
+              }),
+            });
+          });
+          line.appendChild(chip);
+        }
+
+        const flagLabels = {
+          aligned: t("rubyReviewFlagAligned"),
+          wordplay: t("rubyReviewFlagWordplay"),
+          name: t("rubyReviewFlagName"),
+          singleton: t("rubyReviewFlagSingleton"),
+        };
+        (group.flags || []).forEach((flag) => {
+          const label = flagLabels[flag];
+          if (!label) {
+            return;
+          }
+          const chip = document.createElement("span");
+          chip.className = `ruby-chip ${flag}`;
+          chip.textContent = label;
+          line.appendChild(chip);
+        });
+
+        const counts = document.createElement("span");
+        counts.className = "ruby-review-counts";
+        counts.textContent = t("rubyReviewCounts", {
+          count: group.count,
+          prop: group.prop_count,
+        });
+        line.appendChild(counts);
+
+        const scopeWrap = document.createElement("span");
+        scopeWrap.className = "ruby-scope";
+        [
+          ["global", t("rubyReviewScopeGlobal")],
+          ["inline", t("rubyReviewScopeInline")],
+          ["off", t("rubyReviewScopeOff")],
+        ].forEach(([value, label]) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.textContent = label;
+          if (group.scope === value) {
+            btn.classList.add("active");
+          }
+          btn.addEventListener("click", () => {
+            if (group.scope === value && group.decided) {
+              return;
+            }
+            saveRubyDecisions({
+              [group.key]: buildRubyDecision(group, { scope: value }),
+            });
+          });
+          scopeWrap.appendChild(btn);
+        });
+        line.appendChild(scopeWrap);
+
+        if (group.decided) {
+          const reset = document.createElement("button");
+          reset.type = "button";
+          reset.className = "ruby-review-reset";
+          reset.title = t("rubyReviewReset");
+          reset.textContent = "↺";
+          reset.addEventListener("click", () => {
+            saveRubyDecisions({ [group.key]: null });
+          });
+          line.appendChild(reset);
+        }
+
+        const hasContexts =
+          (group.contexts || []).length || (group.prop_contexts || []).length;
+        if (hasContexts) {
+          const expand = document.createElement("button");
+          expand.type = "button";
+          expand.className = "ruby-review-expand";
+          expand.title = t("rubyReviewContexts");
+          expand.textContent = state.rubyReviewExpanded[group.key] ? "▾" : "▸";
+          expand.addEventListener("click", () => {
+            state.rubyReviewExpanded[group.key] =
+              !state.rubyReviewExpanded[group.key];
+            renderRubyReview();
+          });
+          line.appendChild(expand);
+        }
+        row.appendChild(line);
+
+        if (state.rubyReviewExpanded[group.key] && hasContexts) {
+          const list = document.createElement("div");
+          list.className = "ruby-review-contexts";
+          const renderCtx = (ctx, kindLabel) => {
+            const item = document.createElement("div");
+            item.className = "ruby-review-context clickable";
+            item.innerHTML = `<span class="ctx-chapter">${escapeHtml(
+              rubyReviewChapterLabel(ctx.chapter_id)
+            )}</span>${escapeHtml(ctx.before || "")}<b>${escapeHtml(
+              ctx.hit || ""
+            )}</b>${escapeHtml(ctx.after || "")}<span class="ctx-kind">${escapeHtml(
+              kindLabel
+            )}</span>`;
+            item.addEventListener("click", () => jumpToRubyContext(ctx));
+            list.appendChild(item);
+          };
+          (group.contexts || []).forEach((ctx) =>
+            renderCtx(ctx, t("rubyReviewContextInline"))
+          );
+          (group.prop_contexts || []).forEach((ctx) =>
+            renderCtx(ctx, t("rubyReviewContextProp"))
+          );
+          row.appendChild(list);
+        }
+        return row;
+      }
+
+      function renderRubyReview() {
+        if (!rubyReviewTable) {
+          return;
+        }
+        rubyReviewTable.innerHTML = "";
+        const groups = state.rubyReviewGroups || [];
+        if (!groups.length) {
+          rubyReviewTable.innerHTML = `<p class="ruby-review-empty">${escapeHtml(
+            t("rubyReviewNoData")
+          )}</p>`;
+          return;
+        }
+        const visible = groups.filter(rubyReviewGroupMatchesFilter);
+        if (!visible.length) {
+          rubyReviewTable.innerHTML = `<p class="ruby-review-empty">${escapeHtml(
+            t("rubyReviewEmpty")
+          )}</p>`;
+          return;
+        }
+        visible.forEach((group) => {
+          rubyReviewTable.appendChild(renderRubyReviewRow(group));
+        });
+      }
+
+      async function applyRubyWordplayBulk() {
+        const updates = {};
+        (state.rubyReviewGroups || []).forEach((group) => {
+          if (group.decided) {
+            return;
+          }
+          if (!(group.flags || []).includes("wordplay")) {
+            return;
+          }
+          if (group.scope !== "global") {
+            return;
+          }
+          updates[group.key] = buildRubyDecision(group, { scope: "inline" });
+        });
+        if (!Object.keys(updates).length) {
+          if (rubyReviewStatus) {
+            rubyReviewStatus.textContent = t("rubyReviewBulkNone");
+          }
+          return;
+        }
+        await saveRubyDecisions(updates);
+      }
+
+      let rubyPopoverEl = null;
+
+      function handleRubyPopoverOutside(event) {
+        if (rubyPopoverEl && !rubyPopoverEl.contains(event.target)) {
+          closeRubyPopover();
+        }
+      }
+
+      function closeRubyPopover() {
+        if (rubyPopoverEl) {
+          rubyPopoverEl.remove();
+          rubyPopoverEl = null;
+        }
+        document.removeEventListener("click", handleRubyPopoverOutside, true);
+      }
+
+      async function openRubyPopover(target) {
+        const key = target && target.dataset ? target.dataset.rubyKey : "";
+        if (!key || !state.book) {
+          return;
+        }
+        closeRubyPopover();
+        await loadRubyReview();
+        const group = (state.rubyReviewGroups || []).find(
+          (item) => item.key === key
+        );
+        if (!group) {
+          return;
+        }
+
+        const pop = document.createElement("div");
+        pop.className = "ruby-popover";
+
+        const word = document.createElement("div");
+        word.className = "ruby-popover-word";
+        const rubyEl = document.createElement("ruby");
+        rubyEl.appendChild(document.createTextNode(group.base));
+        const rt = document.createElement("rt");
+        rt.textContent = group.reading;
+        rubyEl.appendChild(rt);
+        word.appendChild(rubyEl);
+        const counts = document.createElement("span");
+        counts.className = "ruby-review-counts";
+        counts.textContent = t("rubyReviewCounts", {
+          count: group.count,
+          prop: group.prop_count,
+        });
+        word.appendChild(counts);
+        pop.appendChild(word);
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.value = group.corrected || group.reading;
+        pop.appendChild(input);
+
+        const readingPatch = () => {
+          const cleaned = String(input.value || "").trim();
+          return cleaned === group.reading ? "" : cleaned;
+        };
+
+        const commit = async (patch) => {
+          const decision = buildRubyDecision(group, patch);
+          closeRubyPopover();
+          const ok = await saveRubyDecisions({ [group.key]: decision });
+          if (ok && state.currentChapterId) {
+            renderChapter(state.currentChapterId);
+          }
+        };
+
+        input.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit({ reading: readingPatch() });
+          } else if (event.key === "Escape") {
+            closeRubyPopover();
+          }
+        });
+
+        if (group.suggestion) {
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "ruby-chip ruby-chip-btn ruby-popover-suggestion";
+          chip.textContent = t("rubyReviewSuggestion", {
+            reading: group.suggestion,
+          });
+          chip.addEventListener("click", () => {
+            input.value = group.suggestion;
+          });
+          pop.appendChild(chip);
+        }
+
+        const actions = document.createElement("div");
+        actions.className = "ruby-popover-actions";
+
+        const applyBtn = document.createElement("button");
+        applyBtn.type = "button";
+        applyBtn.className = "btn small";
+        applyBtn.textContent = t("rubyPopoverApply");
+        applyBtn.addEventListener("click", () => {
+          commit({ reading: readingPatch() });
+        });
+        actions.appendChild(applyBtn);
+
+        const scopeWrap = document.createElement("span");
+        scopeWrap.className = "ruby-scope";
+        [
+          ["global", t("rubyReviewScopeGlobal")],
+          ["inline", t("rubyReviewScopeInline")],
+          ["off", t("rubyReviewScopeOff")],
+        ].forEach(([value, label]) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.textContent = label;
+          if (group.scope === value) {
+            btn.classList.add("active");
+          }
+          btn.addEventListener("click", () => {
+            commit({ scope: value, reading: readingPatch() });
+          });
+          scopeWrap.appendChild(btn);
+        });
+        actions.appendChild(scopeWrap);
+
+        if (group.decided) {
+          const reset = document.createElement("button");
+          reset.type = "button";
+          reset.className = "ruby-review-reset";
+          reset.title = t("rubyReviewReset");
+          reset.textContent = "↺";
+          reset.addEventListener("click", async () => {
+            closeRubyPopover();
+            const ok = await saveRubyDecisions({ [group.key]: null });
+            if (ok && state.currentChapterId) {
+              renderChapter(state.currentChapterId);
+            }
+          });
+          actions.appendChild(reset);
+        }
+        pop.appendChild(actions);
+
+        document.body.appendChild(pop);
+        const rect = target.getBoundingClientRect();
+        const popRect = pop.getBoundingClientRect();
+        let left =
+          window.scrollX + rect.left + rect.width / 2 - popRect.width / 2;
+        const maxLeft = window.scrollX + window.innerWidth - popRect.width - 8;
+        left = Math.max(window.scrollX + 8, Math.min(left, maxLeft));
+        pop.style.left = `${left}px`;
+        pop.style.top = `${window.scrollY + rect.bottom + 6}px`;
+        rubyPopoverEl = pop;
+        window.setTimeout(() => {
+          document.addEventListener("click", handleRubyPopoverOutside, true);
+        }, 0);
+      }
+
+      async function jumpToRubyContext(ctx) {
+        if (!state.book || !ctx || !ctx.chapter_id) {
+          return;
+        }
+        if (state.editOpen) {
+          toggleEditPanel();
+        }
+        await renderChapter(ctx.chapter_id);
+        const anchor = chapterText.querySelector(
+          `ruby[data-ruby-start="${ctx.start}"]`
+        );
+        if (anchor) {
+          anchor.scrollIntoView({ behavior: "smooth", block: "center" });
+          anchor.classList.add("ruby-jump-flash");
+          window.setTimeout(
+            () => anchor.classList.remove("ruby-jump-flash"),
+            1600
+          );
+          return;
+        }
+        const chapter = getChapterById(ctx.chapter_id);
+        const spans = (chapter && chapter.chunk_spans) || [];
+        const offset = state.chapterOffsets[ctx.chapter_id] || 0;
+        for (let i = 0; i < spans.length; i += 1) {
+          if (spans[i][0] <= ctx.start && ctx.start < spans[i][1]) {
+            const chunkEl = chapterText.querySelector(
+              `[data-queue-index="${offset + i}"]`
+            );
+            if (chunkEl) {
+              chunkEl.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+            return;
+          }
+        }
+      }
+
       function renderEditChapterList(chapters, selectedIndex) {
         editChapterList.innerHTML = "";
         if (!chapters.length) {
@@ -8239,6 +9178,7 @@
         if (state.editOpen) {
           loadPreview(state.previewChapterIndex);
           loadReadingOverrides();
+          loadRubyReview();
           editPanel.scrollIntoView({ behavior: "smooth", block: "start" });
         } else if (state.cleanEditing) {
           setCleanEditMode(false);
@@ -8824,6 +9764,18 @@
           readingOverrides.value !== state.readingOverridesOriginal;
       });
       saveOverridesBtn.addEventListener("click", saveReadingOverrides);
+      if (rubyReviewFilter) {
+        rubyReviewFilter.addEventListener("change", () => {
+          state.rubyReviewFilter = rubyReviewFilter.value || "all";
+          renderRubyReview();
+        });
+      }
+      if (rubyReviewReloadBtn) {
+        rubyReviewReloadBtn.addEventListener("click", () => loadRubyReview(true));
+      }
+      if (rubyReviewWordplayBtn) {
+        rubyReviewWordplayBtn.addEventListener("click", applyRubyWordplayBulk);
+      }
       rulesDrop.addEventListener("input", scheduleRulesSave);
       rulesCutoff.addEventListener("input", scheduleRulesSave);
       rulesRemove.addEventListener("input", scheduleRulesSave);
@@ -8989,6 +9941,15 @@
 
       chapterText.addEventListener("click", (event) => {
         const target = event.target;
+        const ruby =
+          target && target.closest
+            ? target.closest("ruby[data-ruby-key]")
+            : null;
+        if (ruby) {
+          event.preventDefault();
+          openRubyPopover(ruby);
+          return;
+        }
         const chunk = target && target.closest ? target.closest(".chunk") : null;
         if (chunk) {
           const index = parseInt(chunk.dataset.queueIndex, 10);

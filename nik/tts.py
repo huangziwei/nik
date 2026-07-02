@@ -3767,8 +3767,13 @@ def _apply_ruby_evidence(
 ) -> str:
     if not ruby_data:
         return text
+    decisions = _load_ruby_decisions(ruby_data)
     spans = _select_ruby_spans(chapter_id, text, ruby_data)
     if spans:
+        # Coalesce before applying decisions so keys match review groups
+        # (mis-split names arrive as adjacent single-kanji spans).
+        spans = _coalesce_adjacent_single_kanji_ruby_spans(spans)
+        spans = _apply_ruby_decisions_to_spans(spans, decisions)
         spans = _filter_ruby_spans(spans)
         if spans:
             spans = _maybe_normalize_ruby_entries(spans)
@@ -3921,8 +3926,10 @@ def _apply_ruby_evidence_to_chunk(
     skip_bases: Optional[set[str]] = None,
 ) -> str:
     text = chunk_text
+    decisions = _load_ruby_decisions(ruby_data)
     spans = _chunk_ruby_spans(chunk_span, chapter_spans)
     if spans:
+        spans = _apply_ruby_decisions_to_spans(spans, decisions)
         spans = _filter_ruby_spans(spans)
         if spans:
             spans = _maybe_normalize_ruby_entries(spans)
@@ -4284,18 +4291,220 @@ def _load_reading_overrides(
     return global_entries, overrides
 
 
+class _RubyData(dict):
+    """dict subclass so derived data (global overrides) can be memoized on the
+    loaded object itself; the memo dies with the object when the file changes."""
+
+    __slots__ = ("_overrides_memo",)
+
+
+_RUBY_DATA_FILE_CACHE: Dict[str, tuple[tuple[int, int], _RubyData]] = {}
+_RUBY_DATA_FILE_CACHE_MAX = 8
+
+
 def _load_ruby_data(book_dir: Path) -> dict:
+    """Load a book's ruby section. Parsing multi-MB span data per chunk is
+    wasteful in the synth loop, so results are cached per file until the
+    file's (mtime, size) stamp changes."""
     path = book_dir / "reading-overrides.json"
     if not path.exists():
         return {}
+    try:
+        stat = path.stat()
+        stamp = (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        stamp = None
+    cache_key = str(path)
+    if stamp is not None:
+        cached = _RUBY_DATA_FILE_CACHE.get(cache_key)
+        if cached is not None and cached[0] == stamp:
+            return cached[1]
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return {}
     if not isinstance(data, dict):
         return {}
-    ruby_data = data.get("ruby") or {}
-    return ruby_data if isinstance(ruby_data, dict) else {}
+    raw_ruby = data.get("ruby") or {}
+    ruby_data = _RubyData(raw_ruby) if isinstance(raw_ruby, dict) else _RubyData()
+    if stamp is not None:
+        while len(_RUBY_DATA_FILE_CACHE) >= _RUBY_DATA_FILE_CACHE_MAX:
+            _RUBY_DATA_FILE_CACHE.pop(next(iter(_RUBY_DATA_FILE_CACHE)))
+        _RUBY_DATA_FILE_CACHE[cache_key] = (stamp, ruby_data)
+    return ruby_data
+
+
+_RUBY_DECISION_SCOPES = {"global", "inline", "off"}
+_RUBY_PROPAGATION_MIN_COUNT = 2
+
+
+def _ruby_decision_key(base: str, reading: str) -> str:
+    base_text = unicodedata.normalize("NFKC", str(base or "")).strip()
+    reading_text = unicodedata.normalize("NFKC", str(reading or "")).strip()
+    return f"{base_text}|{reading_text}"
+
+
+def _normalize_ruby_decision(raw: object) -> Optional[dict]:
+    if not isinstance(raw, dict):
+        return None
+    out: dict = {}
+    scope = str(raw.get("scope") or "").strip().lower()
+    if scope in _RUBY_DECISION_SCOPES:
+        out["scope"] = scope
+    reading = str(raw.get("reading") or "").strip()
+    if reading:
+        out["reading"] = reading
+    mode = _normalize_reading_mode(raw.get("mode"))
+    if mode:
+        out["mode"] = mode
+    return out or None
+
+
+def _load_ruby_decisions(ruby_data: dict) -> dict[str, dict]:
+    """Reviewer decisions keyed by "base|reading" of the (coalesced) ruby
+    evidence pair. `scope`: global (propagate) / inline (apply only at printed
+    ruby) / off (ignore the evidence); `reading` corrects the evidence itself
+    everywhere it is applied; `mode` constrains propagation matches."""
+    if not isinstance(ruby_data, dict):
+        return {}
+    raw = ruby_data.get("decisions")
+    if not isinstance(raw, dict):
+        return {}
+    decisions: dict[str, dict] = {}
+    for key, value in raw.items():
+        base, sep, reading = str(key).partition("|")
+        if not sep or not base.strip():
+            continue
+        entry = _normalize_ruby_decision(value)
+        if not entry:
+            continue
+        decisions[_ruby_decision_key(base, reading)] = entry
+    return decisions
+
+
+def _apply_ruby_decisions_to_spans(
+    spans: Sequence[dict],
+    decisions: dict[str, dict],
+    *,
+    correct: bool = True,
+) -> List[dict]:
+    if not decisions:
+        return [span for span in spans if isinstance(span, dict)]
+    out: List[dict] = []
+    for span in spans:
+        if not isinstance(span, dict):
+            continue
+        decision = decisions.get(
+            _ruby_decision_key(
+                str(span.get("base") or ""), str(span.get("reading") or "")
+            )
+        )
+        if decision is None:
+            out.append(span)
+            continue
+        if decision.get("scope") == "off":
+            continue
+        corrected = str(decision.get("reading") or "").strip()
+        if correct and corrected and corrected != str(span.get("reading") or ""):
+            updated = dict(span)
+            updated["reading"] = corrected
+            out.append(updated)
+            continue
+        out.append(span)
+    return out
+
+
+def _coerce_optional_int(value: object) -> Optional[int]:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+_RUBY_READING_ALIGNMENT_CACHE: Dict[tuple[str, str], bool] = {}
+
+
+def _is_unidic_aligned_ruby_reading(
+    base: str,
+    reading: str,
+    tagger: Optional[Any],
+) -> bool:
+    if not base or not reading or tagger is None:
+        return False
+    reading_text = unicodedata.normalize("NFKC", str(reading).strip())
+    if not reading_text or not _is_kana_reading(reading_text):
+        return False
+    try:
+        normalized = _normalize_ruby_reading(base, reading_text, tagger)
+        reading_kata = _hiragana_to_katakana(
+            unicodedata.normalize("NFKC", normalized)
+        )
+        base_kata = _base_reading_kata(base, tagger)
+    except Exception:
+        return False
+    return bool(base_kata and reading_kata == base_kata)
+
+
+def _ruby_reading_aligned(base: str, reading: str) -> bool:
+    key = (base, reading)
+    cached = _RUBY_READING_ALIGNMENT_CACHE.get(key)
+    if cached is not None:
+        return cached
+    try:
+        tagger = _get_kana_tagger()
+    except Exception:
+        tagger = None
+    aligned = _is_unidic_aligned_ruby_reading(base, reading, tagger)
+    _RUBY_READING_ALIGNMENT_CACHE[key] = aligned
+    return aligned
+
+
+def _reading_is_katakana(reading: str) -> bool:
+    has_katakana = False
+    for ch in reading:
+        if _is_katakana_char(ch):
+            has_katakana = True
+        elif _is_hiragana_char(ch):
+            return False
+    return has_katakana
+
+
+def _ruby_default_propagation_allowed(
+    base: str,
+    reading: str,
+    *,
+    count: Optional[int],
+    contextual: bool = False,
+) -> bool:
+    """Default (undecided) propagation policy for ruby evidence.
+
+    Propagation only helps for words TTS would misread — overwhelmingly
+    kanji-only names and rare readings. Kana in the base or a katakana
+    reading over kanji is the signature of wordplay ruby, and one-off
+    evidence is as likely wordplay as truth, so those stay inline-only
+    unless a decision says otherwise.
+    """
+    base_text = str(base or "").strip()
+    reading_text = str(reading or "").strip()
+    if not base_text or not reading_text:
+        return False
+    if len(base_text) == 1:
+        return False
+    if not _is_kanji_only(base_text):
+        return False
+    if _reading_is_katakana(reading_text) and not _ruby_reading_aligned(
+        base_text, reading_text
+    ):
+        return False
+    if contextual:
+        return True
+    if count is None:
+        return True
+    if count < _RUBY_PROPAGATION_MIN_COUNT and not _ruby_reading_aligned(
+        base_text, reading_text
+    ):
+        return False
+    return True
 
 
 _RUBY_CONFLICT_GLOBAL_MIN_COUNT = 5
@@ -4471,6 +4680,7 @@ def _ruby_chapter_compound_overrides(
     if not isinstance(chapters, dict):
         return []
 
+    decisions = _load_ruby_decisions(ruby_data)
     chapter_entries: list[dict] = []
     if chapter_id is not None:
         selected = chapters.get(chapter_id)
@@ -4510,6 +4720,11 @@ def _ruby_chapter_compound_overrides(
         if not spans:
             continue
         coalesced = _coalesce_adjacent_single_kanji_ruby_spans(spans)
+        # Drop decision-rejected evidence before counting, but keep original
+        # readings so emission below can look decisions up by evidence key.
+        coalesced = _apply_ruby_decisions_to_spans(
+            coalesced, decisions, correct=False
+        )
         for item in coalesced:
             entry = _normalize_reading_override_entry(item)
             if not entry:
@@ -4567,10 +4782,79 @@ def _ruby_chapter_compound_overrides(
         # Require strict majority to avoid propagating ambiguous chapter-only ruby.
         if majority_count * 2 <= total:
             continue
-        entry = _normalize_reading_override_entry({"base": base, "reading": majority})
+        reading_out = majority
+        decision = decisions.get(_ruby_decision_key(base, majority))
+        if decision is not None:
+            if decision.get("scope") in {"inline", "off"}:
+                continue
+            corrected = str(decision.get("reading") or "").strip()
+            if corrected:
+                reading_out = corrected
+        entry = _normalize_reading_override_entry(
+            {"base": base, "reading": reading_out}
+        )
         if entry:
             overrides.append(entry)
     return overrides
+
+
+def _gate_ruby_seeded_chapter_overrides(
+    entries: List[dict[str, str]],
+    ruby_data: dict,
+    *,
+    chapter_id: Optional[str],
+) -> List[dict[str, str]]:
+    """Ingest seeds per-chapter override lists from that chapter's ruby pairs,
+    so a wordplay one-off would otherwise rewrite the whole chapter. Entries
+    whose (base, reading) match the chapter's ruby evidence get the same
+    decision + default-propagation gating as global entries; anything else is
+    treated as hand-written and left alone."""
+    if not entries or not isinstance(ruby_data, dict) or chapter_id is None:
+        return entries
+    chapters = ruby_data.get("chapters")
+    if not isinstance(chapters, dict):
+        return entries
+    chapter_entry = chapters.get(chapter_id)
+    if not isinstance(chapter_entry, dict):
+        return entries
+    spans = _chapter_ruby_spans_for_counts(chapter_entry)
+    if not spans:
+        return entries
+    counts: dict[tuple[str, str], int] = {}
+    for span in _coalesce_adjacent_single_kanji_ruby_spans(spans):
+        base = str(span.get("base") or "").strip()
+        reading = str(span.get("reading") or "").strip()
+        if base and reading:
+            counts[(base, reading)] = counts.get((base, reading), 0) + 1
+    if not counts:
+        return entries
+    decisions = _load_ruby_decisions(ruby_data)
+    out: List[dict[str, str]] = []
+    for item in entries:
+        entry = _normalize_reading_override_entry(item)
+        if not entry or entry.get("pattern"):
+            out.append(item)
+            continue
+        base = str(entry.get("base") or "").strip()
+        reading = str(entry.get("reading") or "").strip()
+        count = counts.get((base, reading))
+        if count is None:
+            out.append(item)
+            continue
+        decision = decisions.get(_ruby_decision_key(base, reading))
+        if decision is not None:
+            if decision.get("scope") in {"inline", "off"}:
+                continue
+            corrected = str(decision.get("reading") or "").strip()
+            if corrected:
+                entry = dict(entry)
+                entry["reading"] = corrected
+            out.append(entry)
+            continue
+        if not _ruby_default_propagation_allowed(base, reading, count=count):
+            continue
+        out.append(item)
+    return out
 
 
 def _augment_chapter_overrides_with_ruby_compounds(
@@ -4580,7 +4864,11 @@ def _augment_chapter_overrides_with_ruby_compounds(
     chapter_id: Optional[str],
     chapter_text: str | None = None,
 ) -> List[dict[str, str]]:
-    chapter_items = list(chapter_overrides)
+    chapter_items = _gate_ruby_seeded_chapter_overrides(
+        list(chapter_overrides),
+        ruby_data,
+        chapter_id=chapter_id,
+    )
     ruby_compounds = _ruby_chapter_compound_overrides(
         ruby_data,
         chapter_id=chapter_id,
@@ -4592,23 +4880,62 @@ def _augment_chapter_overrides_with_ruby_compounds(
     return _merge_reading_overrides(ruby_compounds, chapter_items)
 
 
+def _ruby_span_group_counts(ruby_data: dict) -> dict[str, dict[str, int]]:
+    """Book-wide (base -> reading -> count) from stored chapter spans,
+    coalesced so mis-split compound names count as one pair."""
+    counts: dict[str, dict[str, int]] = {}
+    chapters = ruby_data.get("chapters") if isinstance(ruby_data, dict) else None
+    if not isinstance(chapters, dict):
+        return counts
+    for chapter_entry in chapters.values():
+        if not isinstance(chapter_entry, dict):
+            continue
+        spans = _chapter_ruby_spans_for_counts(chapter_entry)
+        if not spans:
+            continue
+        for span in _coalesce_adjacent_single_kanji_ruby_spans(spans):
+            base = str(span.get("base") or "").strip()
+            reading = str(span.get("reading") or "").strip()
+            if not base or not reading:
+                continue
+            counts.setdefault(base, {})
+            counts[base][reading] = counts[base].get(reading, 0) + 1
+    return counts
+
+
 def _ruby_global_overrides(ruby_data: dict) -> List[dict[str, str]]:
+    # Rebuilding from span groups costs tens of ms on span-heavy books and this
+    # runs per chunk, so memoize per loaded ruby-data object (file changes make
+    # _load_ruby_data hand out a fresh object).
+    if isinstance(ruby_data, _RubyData):
+        memo = getattr(ruby_data, "_overrides_memo", None)
+        if memo is not None:
+            return list(memo)
+        computed = _ruby_global_overrides_uncached(ruby_data)
+        ruby_data._overrides_memo = computed
+        return list(computed)
+    return _ruby_global_overrides_uncached(ruby_data)
+
+
+def _ruby_global_overrides_uncached(ruby_data: dict) -> List[dict[str, str]]:
     overrides: List[dict[str, str]] = []
     if not isinstance(ruby_data, dict):
         return overrides
 
+    decisions = _load_ruby_decisions(ruby_data)
     seen_entries: set[tuple[str, str]] = set()
     literal_bases: set[str] = set()
 
-    def add_entry(entry: dict[str, str]) -> None:
+    def add_entry(entry: dict[str, str], *, allow_single_kanji: bool = False) -> None:
         base = str(entry.get("base") or "").strip()
         pattern = str(entry.get("pattern") or "").strip()
         reading = str(entry.get("reading") or "").strip()
         if not reading:
             return
         if base:
-            # Keep legacy single-kanji protection for literal global base overrides.
-            if len(base) == 1:
+            # Single-kanji readings are context-dependent; only an explicit
+            # decision may propagate one (and then in a constrained mode).
+            if len(base) == 1 and not allow_single_kanji:
                 return
             key = (f"lit:{base}", reading)
             literal_bases.add(base)
@@ -4621,11 +4948,96 @@ def _ruby_global_overrides(ruby_data: dict) -> List[dict[str, str]]:
         seen_entries.add(key)
         overrides.append(entry)
 
+    # Decisions with scope=global come first so they win ordering ties in
+    # apply_reading_overrides (equal-length bases apply in list order) and
+    # claim their base before conflict-majority entries can.
+    for key in sorted(decisions):
+        decision = decisions[key]
+        if decision.get("scope") != "global":
+            continue
+        base, _sep, original_reading = key.partition("|")
+        base = base.strip()
+        reading = str(decision.get("reading") or "").strip() or original_reading.strip()
+        if not base or not reading:
+            continue
+        entry: dict[str, str] = {"base": base, "reading": reading}
+        mode = decision.get("mode") or ("isolated" if len(base) == 1 else None)
+        if mode:
+            entry["mode"] = mode
+        add_entry(entry, allow_single_kanji=True)
+
+    # Candidates derived from the spans themselves. Ingest-era ruby.global
+    # predates span coalescing, so compound names that arrived as split
+    # single-kanji ruby never made it into that list; the spans are the
+    # ground truth either way.
+    span_counts = _ruby_span_group_counts(ruby_data)
+    for base in sorted(span_counts):
+        reading_counts = span_counts[base]
+        if not reading_counts:
+            continue
+        total = sum(count for count in reading_counts.values() if count > 0)
+        if total <= 0:
+            continue
+        if len(reading_counts) == 1:
+            reading, count = next(iter(reading_counts.items()))
+        else:
+            reading = min(
+                reading_counts,
+                key=lambda value: (-reading_counts.get(value, 0), value),
+            )
+            count = reading_counts.get(reading, 0)
+            if count < _RUBY_CONFLICT_GLOBAL_MIN_COUNT:
+                continue
+            if (count / total) < _RUBY_CONFLICT_GLOBAL_MIN_RATIO:
+                continue
+        decision = decisions.get(_ruby_decision_key(base, reading))
+        reading_out = reading
+        if decision is not None:
+            if decision.get("scope") in {"inline", "off"}:
+                continue
+            corrected = str(decision.get("reading") or "").strip()
+            if corrected:
+                reading_out = corrected
+        if not _ruby_default_propagation_allowed(base, reading_out, count=count):
+            continue
+        add_entry({"base": base, "reading": reading_out})
+
     items = ruby_data.get("global")
     if isinstance(items, list):
         for item in items:
             entry = _normalize_reading_override_entry(item)
             if not entry:
+                continue
+            raw_base = ""
+            raw_reading = ""
+            count: Optional[int] = None
+            if isinstance(item, dict):
+                raw_base = str(item.get("base") or "").strip()
+                raw_reading = str(item.get("reading") or "").strip()
+                count = _coerce_optional_int(item.get("count"))
+            decision = (
+                decisions.get(_ruby_decision_key(raw_base, raw_reading))
+                if raw_base and raw_reading
+                else None
+            )
+            if decision is not None:
+                scope = decision.get("scope")
+                if scope in {"inline", "off"}:
+                    continue
+                corrected = str(decision.get("reading") or "").strip()
+                if corrected:
+                    entry = dict(entry)
+                    entry["reading"] = corrected
+                if scope == "global":
+                    add_entry(entry)
+                    continue
+            check_base = raw_base or str(entry.get("base") or "")
+            if not _ruby_default_propagation_allowed(
+                check_base,
+                str(entry.get("reading") or ""),
+                count=count,
+                contextual=bool(entry.get("pattern")),
+            ):
                 continue
             add_entry(entry)
 
@@ -4673,7 +5085,15 @@ def _ruby_global_overrides(ruby_data: dict) -> List[dict[str, str]]:
             continue
         if (majority_count / total_count) < _RUBY_CONFLICT_GLOBAL_MIN_RATIO:
             continue
-        entry = _normalize_reading_override_entry({"base": base, "reading": majority})
+        reading_out = majority
+        decision = decisions.get(_ruby_decision_key(base, majority))
+        if decision is not None:
+            if decision.get("scope") in {"inline", "off"}:
+                continue
+            corrected = str(decision.get("reading") or "").strip()
+            if corrected:
+                reading_out = corrected
+        entry = _normalize_reading_override_entry({"base": base, "reading": reading_out})
         if not entry:
             continue
         add_entry(entry)
@@ -4702,6 +5122,16 @@ def _ruby_propagated_reading_map(
     if not isinstance(ruby_data, dict):
         return mapping
     add_items(ruby_data.get("global"))
+
+    # Corrected readings from decisions count as propagated too, so chapter
+    # entries rewritten by a correction keep deferring to explicit overrides.
+    for key, decision in _load_ruby_decisions(ruby_data).items():
+        corrected = str(decision.get("reading") or "").strip()
+        if not corrected:
+            continue
+        base = key.partition("|")[0]
+        if base:
+            mapping.setdefault(base, set()).add(corrected)
 
     chapters = ruby_data.get("chapters")
     if not isinstance(chapters, dict):

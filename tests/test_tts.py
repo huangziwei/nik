@@ -912,6 +912,269 @@ def test_apply_ruby_evidence_to_chunk_drops_separator_before_okurigana() -> None
     assert out == f"{sep}くおう。"
 
 
+def test_apply_ruby_evidence_to_chunk_decision_corrects_inline_reading() -> None:
+    chunk_text = "天愛星は言った。"
+    chunk_span = (0, len(chunk_text))
+    chapter_spans = [{"start": 0, "end": 3, "base": "天愛星", "reading": "ていあら"}]
+    ruby_data = {"decisions": {"天愛星|ていあら": {"reading": "てぃあら"}}}
+    out = tts_util._apply_ruby_evidence_to_chunk(
+        chunk_text,
+        chunk_span,
+        chapter_spans,
+        ruby_data,
+    )
+    assert "てぃあら" in out
+    assert "ていあら" not in out
+
+
+def test_apply_ruby_evidence_to_chunk_decision_off_drops_inline_span() -> None:
+    chunk_text = "その言葉は重い。"
+    chunk_span = (0, len(chunk_text))
+    chapter_spans = [{"start": 2, "end": 4, "base": "言葉", "reading": "ワード"}]
+    ruby_data = {"decisions": {"言葉|ワード": {"scope": "off"}}}
+    out = tts_util._apply_ruby_evidence_to_chunk(
+        chunk_text,
+        chunk_span,
+        chapter_spans,
+        ruby_data,
+    )
+    assert out == chunk_text
+
+
+def test_apply_ruby_evidence_to_chunk_decision_inline_blocks_propagation() -> None:
+    chunk_text = "小鳥遊が笑う。小鳥遊は強い。"
+    chunk_span = (0, len(chunk_text))
+    chapter_spans = [{"start": 0, "end": 3, "base": "小鳥遊", "reading": "たかなし"}]
+    ruby_data = {
+        "global": [{"base": "小鳥遊", "reading": "たかなし", "count": 6, "total": 6}],
+        "decisions": {"小鳥遊|たかなし": {"scope": "inline"}},
+    }
+    out = tts_util._apply_ruby_evidence_to_chunk(
+        chunk_text,
+        chunk_span,
+        chapter_spans,
+        ruby_data,
+    )
+    assert out.startswith("たかなし")
+    assert "小鳥遊は強い" in out
+
+
+def test_apply_ruby_evidence_to_chunk_propagates_repeated_name_by_default() -> None:
+    chunk_text = "小鳥遊が笑う。小鳥遊は強い。"
+    chunk_span = (0, len(chunk_text))
+    chapter_spans = [{"start": 0, "end": 3, "base": "小鳥遊", "reading": "たかなし"}]
+    ruby_data = {
+        "global": [{"base": "小鳥遊", "reading": "たかなし", "count": 6, "total": 6}],
+    }
+    out = tts_util._apply_ruby_evidence_to_chunk(
+        chunk_text,
+        chunk_span,
+        chapter_spans,
+        ruby_data,
+    )
+    assert "小鳥遊" not in out
+
+
+def test_apply_ruby_evidence_to_chunk_decision_corrects_coalesced_split_name() -> None:
+    chunk_text = "佳樹は頷いた。"
+    chunk_span = (0, len(chunk_text))
+    chapter_spans = [
+        {"start": 0, "end": 1, "base": "佳", "reading": "か"},
+        {"start": 1, "end": 2, "base": "樹", "reading": "じゆ"},
+    ]
+    ruby_data = {"decisions": {"佳樹|かじゆ": {"reading": "かじゅ"}}}
+    out = tts_util._apply_ruby_evidence_to_chunk(
+        chunk_text,
+        chunk_span,
+        chapter_spans,
+        ruby_data,
+    )
+    assert out.startswith("かじゅ")
+
+
+def test_ruby_global_overrides_drops_singleton_nonaligned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        tts_util, "_ruby_reading_aligned", lambda base, reading: False
+    )
+    ruby_data = {
+        "global": [
+            {"base": "人生", "reading": "クソゲー", "count": 1, "total": 1},
+            {"base": "檸檬", "reading": "れもん", "count": 9, "total": 9},
+        ]
+    }
+    overrides = tts_util._ruby_global_overrides(ruby_data)
+    bases = {entry.get("base") for entry in overrides}
+    assert "人生" not in bases
+    assert "檸檬" in bases
+
+
+def test_ruby_global_overrides_keeps_singleton_aligned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        tts_util, "_ruby_reading_aligned", lambda base, reading: True
+    )
+    ruby_data = {
+        "global": [{"base": "明後日", "reading": "あさって", "count": 1, "total": 1}]
+    }
+    overrides = tts_util._ruby_global_overrides(ruby_data)
+    assert any(entry.get("base") == "明後日" for entry in overrides)
+
+
+def test_ruby_global_overrides_drops_wordplay_bases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        tts_util, "_ruby_reading_aligned", lambda base, reading: False
+    )
+    ruby_data = {
+        "global": [
+            {"base": "スマートフォン", "reading": "ケータイ", "count": 3, "total": 3},
+            {"base": "休筆する", "reading": "しぬ", "count": 2, "total": 2},
+            {"base": "人生", "reading": "クソゲー", "count": 4, "total": 4},
+        ]
+    }
+    assert tts_util._ruby_global_overrides(ruby_data) == []
+
+
+def test_ruby_global_overrides_keeps_handwritten_entry_without_counts() -> None:
+    ruby_data = {"global": [{"base": "後半", "reading": "こうはん"}]}
+    overrides = tts_util._ruby_global_overrides(ruby_data)
+    assert any(entry.get("base") == "後半" for entry in overrides)
+
+
+def test_ruby_global_overrides_decision_scope_global_forces_singleton(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        tts_util, "_ruby_reading_aligned", lambda base, reading: False
+    )
+    ruby_data = {
+        "global": [{"base": "小鳥遊", "reading": "たかなし", "count": 1, "total": 1}],
+        "decisions": {"小鳥遊|たかなし": {"scope": "global"}},
+    }
+    overrides = tts_util._ruby_global_overrides(ruby_data)
+    assert any(
+        entry.get("base") == "小鳥遊" and entry.get("reading") == "たかなし"
+        for entry in overrides
+    )
+
+
+def test_ruby_global_overrides_decision_correction_rewrites_reading() -> None:
+    ruby_data = {
+        "global": [{"base": "天愛星", "reading": "ていあら", "count": 101, "total": 101}],
+        "decisions": {"天愛星|ていあら": {"reading": "てぃあら"}},
+    }
+    overrides = tts_util._ruby_global_overrides(ruby_data)
+    readings = {
+        entry.get("reading") for entry in overrides if entry.get("base") == "天愛星"
+    }
+    assert readings == {"てぃあら"}
+
+
+def test_ruby_global_overrides_decision_off_removes_entry() -> None:
+    ruby_data = {
+        "global": [{"base": "天愛星", "reading": "ていあら", "count": 101, "total": 101}],
+        "decisions": {"天愛星|ていあら": {"scope": "off"}},
+    }
+    assert tts_util._ruby_global_overrides(ruby_data) == []
+
+
+def test_ruby_global_overrides_single_kanji_decision_gets_isolated_mode() -> None:
+    ruby_data = {"decisions": {"一|はじめ": {"scope": "global"}}}
+    overrides = tts_util._ruby_global_overrides(ruby_data)
+    assert overrides == [{"base": "一", "reading": "はじめ", "mode": "isolated"}]
+
+
+def test_ruby_global_overrides_decision_gates_conflict_majority() -> None:
+    ruby_data = {
+        "conflicts": [
+            {
+                "base": "空太",
+                "majority": "そらた",
+                "readings": [
+                    {"reading": "そらた", "count": 614},
+                    {"reading": "そうた", "count": 2},
+                ],
+            }
+        ],
+        "decisions": {"空太|そらた": {"scope": "inline"}},
+    }
+    assert tts_util._ruby_global_overrides(ruby_data) == []
+
+
+def test_augment_chapter_overrides_gates_ruby_seeded_singletons(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        tts_util, "_ruby_reading_aligned", lambda base, reading: False
+    )
+    ruby_data = {
+        "chapters": {
+            "0001-chapter": {
+                "raw_spans": [
+                    {"start": 0, "end": 2, "base": "人生", "reading": "クソゲー"}
+                ]
+            }
+        }
+    }
+    chapter_overrides = [
+        {"base": "人生", "reading": "クソゲー"},
+        {"base": "彼女", "reading": "あいつ"},
+    ]
+    merged = tts_util._augment_chapter_overrides_with_ruby_compounds(
+        chapter_overrides,
+        ruby_data,
+        chapter_id="0001-chapter",
+    )
+    bases = {entry.get("base") for entry in merged}
+    assert "人生" not in bases
+    assert "彼女" in bases
+
+
+def test_augment_chapter_overrides_corrects_ruby_seeded_entries() -> None:
+    ruby_data = {
+        "chapters": {
+            "0001-chapter": {
+                "raw_spans": [
+                    {"start": 0, "end": 3, "base": "天愛星", "reading": "ていあら"},
+                    {"start": 10, "end": 13, "base": "天愛星", "reading": "ていあら"},
+                ]
+            }
+        },
+        "decisions": {"天愛星|ていあら": {"reading": "てぃあら"}},
+    }
+    chapter_overrides = [{"base": "天愛星", "reading": "ていあら"}]
+    merged = tts_util._augment_chapter_overrides_with_ruby_compounds(
+        chapter_overrides,
+        ruby_data,
+        chapter_id="0001-chapter",
+    )
+    entries = {(entry.get("base"), entry.get("reading")) for entry in merged}
+    assert ("天愛星", "てぃあら") in entries
+    assert ("天愛星", "ていあら") not in entries
+
+
+def test_ruby_propagated_reading_map_includes_corrected_readings() -> None:
+    ruby_data = {
+        "chapters": {
+            "0001-chapter": {
+                "raw_spans": [
+                    {"start": 0, "end": 3, "base": "天愛星", "reading": "ていあら"}
+                ]
+            }
+        },
+        "decisions": {"天愛星|ていあら": {"reading": "てぃあら"}},
+    }
+    mapping = tts_util._ruby_propagated_reading_map(
+        ruby_data, chapter_id="0001-chapter"
+    )
+    assert "てぃあら" in mapping.get("天愛星", set())
+    assert "ていあら" in mapping.get("天愛星", set())
+
+
 def _normalize_ruby_reading_with_stub(
     base: str, reading: str, base_reading_kata: str
 ) -> str:
@@ -2006,3 +2269,48 @@ def test_load_reading_overrides_includes_template(
     assert tts_util.apply_reading_overrides("妻子", global_overrides) == "つまこ"
 
 
+
+
+def test_ruby_global_overrides_derives_compound_names_from_spans(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        tts_util, "_ruby_reading_aligned", lambda base, reading: False
+    )
+    ruby_data = {
+        "chapters": {
+            "0001-chapter": {
+                "raw_spans": [
+                    {"start": 0, "end": 1, "base": "温", "reading": "ぬく"},
+                    {"start": 1, "end": 2, "base": "水", "reading": "みず"},
+                    {"start": 10, "end": 11, "base": "温", "reading": "ぬく"},
+                    {"start": 11, "end": 12, "base": "水", "reading": "みず"},
+                    {"start": 20, "end": 22, "base": "人生", "reading": "クソゲー"},
+                ]
+            }
+        }
+    }
+    overrides = tts_util._ruby_global_overrides(ruby_data)
+    pairs = {
+        (entry.get("base"), entry.get("reading"))
+        for entry in overrides
+        if entry.get("base")
+    }
+    assert ("温水", "ぬくみず") in pairs
+    assert not any(base == "人生" for base, _reading in pairs)
+    assert not any(base in {"温", "水"} for base, _reading in pairs)
+
+
+def test_apply_ruby_evidence_to_chunk_single_kanji_decision_isolated() -> None:
+    chunk_text = "一が言った。第一に、一つだけだ。"
+    chunk_span = (0, len(chunk_text))
+    ruby_data = {"decisions": {"一|はじめ": {"scope": "global"}}}
+    out = tts_util._apply_ruby_evidence_to_chunk(
+        chunk_text,
+        chunk_span,
+        [],
+        ruby_data,
+    )
+    assert out.startswith("はじめが")
+    assert "第一" in out
+    assert "一つ" in out

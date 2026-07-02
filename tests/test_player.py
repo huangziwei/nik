@@ -746,6 +746,7 @@ def test_chapter_text_prefers_overrides_over_propagated_ruby(tmp_path: Path) -> 
             "base": "事件",
             "reading": "ヤマ",
             "kind": "inline",
+            "key": "事件|ヤマ",
         }
     ]
     assert payload["ruby_prop_spans"] == [
@@ -757,3 +758,95 @@ def test_chapter_text_prefers_overrides_over_propagated_ruby(tmp_path: Path) -> 
             "kind": "propagated",
         }
     ]
+
+
+def test_ruby_review_endpoint_returns_groups(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        player_util.tts_util, "_ruby_reading_aligned", lambda base, reading: False
+    )
+    _, root_dir = _make_repo(tmp_path)
+    book_dir = _make_book(root_dir)
+    chapter_text = "天愛星は笑った。天愛星は歩いた。天愛星が来た。"
+    (book_dir / "clean" / "c1.txt").write_text(chapter_text, encoding="utf-8")
+    (book_dir / "clean" / "toc.json").write_text(
+        json.dumps(
+            {"chapters": [{"index": 1, "title": "c1", "path": "clean/c1.txt"}]},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    chapter_hash = sha256(chapter_text.encode("utf-8")).hexdigest()
+    (book_dir / "reading-overrides.json").write_text(
+        json.dumps(
+            {
+                "ruby": {
+                    "global": [
+                        {"base": "天愛星", "reading": "ていあら", "count": 2, "total": 2}
+                    ],
+                    "chapters": {
+                        "c1": {
+                            "clean_sha256": chapter_hash,
+                            "clean_spans": [
+                                {"start": 0, "end": 3, "base": "天愛星", "reading": "ていあら"},
+                                {"start": 8, "end": 11, "base": "天愛星", "reading": "ていあら"},
+                            ],
+                        }
+                    },
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    app = player_util.create_app(root_dir)
+    client = TestClient(app)
+    response = client.get("/api/ruby-review", params={"book_id": "book"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["book_id"] == "book"
+    groups = {group["key"]: group for group in payload["groups"]}
+    tia = groups["天愛星|ていあら"]
+    assert tia["count"] == 2
+    assert tia["prop_count"] == 1
+    assert tia["scope"] == "global"
+    assert tia["suggestion"] == "てぃあら"
+    assert len(tia["contexts"]) == 2
+
+
+def test_ruby_review_decisions_endpoint_saves_and_refreshes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, root_dir = _make_repo(tmp_path)
+    book_dir = _make_book(root_dir)
+    called: dict[str, object] = {}
+
+    def fake_refresh_chunks(*, book_dir: Path, **kwargs: object) -> bool:
+        called["book_dir"] = book_dir
+        return True
+
+    monkeypatch.setattr(player_util.sanitize, "refresh_chunks", fake_refresh_chunks)
+
+    app = player_util.create_app(root_dir)
+    client = TestClient(app)
+    response = client.post(
+        "/api/ruby-review/decisions",
+        json={
+            "book_id": "book",
+            "decisions": {"天愛星|ていあら": {"reading": "てぃあら", "scope": "global"}},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["decisions"]["天愛星|ていあら"]["reading"] == "てぃあら"
+    assert body["tts_cleared"] is True
+    assert called["book_dir"] == book_dir
+    data = json.loads(
+        (book_dir / "reading-overrides.json").read_text(encoding="utf-8")
+    )
+    assert data["ruby"]["decisions"]["天愛星|ていあら"]["scope"] == "global"

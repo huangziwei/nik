@@ -1,4 +1,5 @@
 import argparse
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -280,3 +281,52 @@ def test_clone_returns_error_when_normalization_fails(
     captured = capsys.readouterr()
     assert code == 2
     assert "Failed to normalize cloned audio" in captured.err
+
+
+def _write_split_ruby_epub(epub_path: Path) -> None:
+    from ebooklib import epub as ebook_epub
+
+    book = ebook_epub.EpubBook()
+    book.set_identifier("ruby-book")
+    book.set_title("Ruby Sample")
+    book.set_language("ja")
+    chapter = ebook_epub.EpubHtml(title="第一章", file_name="ch-1.xhtml", lang="ja")
+    chapter.content = (
+        "<h1>第一章</h1>"
+        "<p><ruby>佳<rt>か</rt></ruby><ruby>樹<rt>じゆ</rt></ruby>は笑った。</p>"
+        "<p><ruby>佳<rt>か</rt></ruby><ruby>樹<rt>じゆ</rt></ruby>は頷いた。</p>"
+    )
+    book.add_item(chapter)
+    book.toc = (chapter,)
+    book.spine = ["nav", chapter]
+    book.add_item(ebook_epub.EpubNcx())
+    book.add_item(ebook_epub.EpubNav())
+    ebook_epub.write_epub(str(epub_path), book)
+
+
+def test_ingest_epub_counts_coalesced_ruby_groups(tmp_path: Path) -> None:
+    epub_path = tmp_path / "ruby.epub"
+    _write_split_ruby_epub(epub_path)
+    out_dir = tmp_path / "out"
+    raw_dir = out_dir / "raw" / "chapters"
+    raw_dir.mkdir(parents=True)
+    rc = cli._ingest_epub(epub_path, out_dir, raw_dir)
+    assert rc == 0
+    data = json.loads(
+        (out_dir / "reading-overrides.json").read_text(encoding="utf-8")
+    )
+    chapters = data.get("chapters", {})
+    assert chapters
+    replacements = next(iter(chapters.values())).get("replacements", [])
+    pairs = {(item.get("base"), item.get("reading")) for item in replacements}
+    assert ("佳樹", "かじゆ") in pairs
+    global_pairs = {
+        (entry.get("base"), entry.get("reading"))
+        for entry in data["ruby"]["global"]
+    }
+    assert ("佳樹", "かじゆ") in global_pairs
+    conflict_bases = {item.get("base") for item in data["ruby"]["conflicts"]}
+    assert "佳" not in conflict_bases
+    # Positional evidence stays as printed (single-kanji spans preserved).
+    chapter_spans = next(iter(data["ruby"]["chapters"].values()))["raw_spans"]
+    assert {span["base"] for span in chapter_spans} == {"佳", "樹"}
