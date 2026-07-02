@@ -636,3 +636,145 @@ def test_extract_chapters_folds_non_toc_intro_into_chapter(tmp_path: Path) -> No
     assert "幼い頃、いつも天井の隅っこに天使が飛んでいたんだ。" in chapter_one.text
     first_story = next(ch for ch in chapters if ch.title == "第一話 白蛇の夢")
     assert "ある友人" not in first_story.text
+
+
+def _write_pagelist_nav_epub(epub_path: Path) -> None:
+    """Numbered chapters wrapped in id-carrying sections, plus a page-list nav
+    whose numeric anchors target those section ids (Betteria-style layout)."""
+    book = epub.EpubBook()
+    book.set_identifier("pagelist-book")
+    book.set_title("Pagelist Sample")
+    book.set_language("ja")
+
+    chapters = []
+    for idx in range(1, 4):
+        chapter = epub.EpubHtml(
+            title=str(idx),
+            file_name=f"ch_{idx:03d}.xhtml",
+            lang="ja",
+        )
+        chapter.content = (
+            f'<section id="{idx:02d}-{idx}">'
+            f"<h2>{idx}</h2><p>短い本文{idx}です。</p>"
+            "</section>"
+        )
+        book.add_item(chapter)
+        chapters.append(chapter)
+
+    page_list = epub.EpubHtml(
+        title="pages", file_name="pages.xhtml", lang="ja"
+    )
+    page_list.content = (
+        '<nav epub:type="page-list" hidden="hidden"><ol>'
+        + "".join(
+            f'<li><a href="ch_{idx:03d}.xhtml#{idx:02d}-{idx}">{idx}</a></li>'
+            for idx in range(1, 4)
+        )
+        + "</ol></nav>"
+    )
+    book.add_item(page_list)
+
+    book.toc = tuple(chapters)
+    book.spine = ["nav", *chapters]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
+def test_extract_chapters_ignores_pagelist_nav_anchors(tmp_path: Path) -> None:
+    epub_path = tmp_path / "pagelist-nav.epub"
+    _write_pagelist_nav_epub(epub_path)
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=True)
+    titles = [ch.title for ch in chapters]
+    assert titles == ["1", "2", "3"]
+    for idx, chapter in enumerate(chapters, start=1):
+        assert f"短い本文{idx}です。" in chapter.text
+
+
+def _write_inline_page_links_epub(epub_path: Path) -> None:
+    """Numeric page links outside any <nav> element, targeting each chapter's
+    root section id; the sections hold the entire chapter text."""
+    book = epub.EpubBook()
+    book.set_identifier("inline-page-links-book")
+    book.set_title("Inline Page Links Sample")
+    book.set_language("ja")
+
+    body = "この章の本文はとても長く、注釈ではありません。" * 8
+    chapters = []
+    for idx in range(1, 4):
+        chapter = epub.EpubHtml(
+            title=str(idx),
+            file_name=f"ch-{idx}.xhtml",
+            lang="ja",
+        )
+        chapter.content = (
+            f'<section id="s{idx}"><h2>{idx}</h2><p>{body}</p></section>'
+        )
+        book.add_item(chapter)
+        chapters.append(chapter)
+
+    pages = epub.EpubHtml(title="pages", file_name="pages.xhtml", lang="ja")
+    pages.content = "".join(
+        f'<p><a href="ch-{idx}.xhtml#s{idx}">{idx}</a></p>' for idx in range(1, 4)
+    )
+    book.add_item(pages)
+
+    book.toc = tuple(chapters)
+    book.spine = ["nav", pages, *chapters]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
+def test_extract_chapters_keeps_sections_targeted_by_inline_page_links(
+    tmp_path: Path,
+) -> None:
+    epub_path = tmp_path / "inline-page-links.epub"
+    _write_inline_page_links_epub(epub_path)
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=True)
+    titles = [ch.title for ch in chapters]
+    assert titles == ["1", "2", "3"]
+    for chapter in chapters:
+        assert "この章の本文はとても長く" in chapter.text
+
+
+def _write_footnote_backref_epub(epub_path: Path) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("footnote-backref-book")
+    book.set_title("Footnote Backref Sample")
+    book.set_language("ja")
+
+    chapter = epub.EpubHtml(title="一章", file_name="ch-1.xhtml", lang="ja")
+    chapter.content = (
+        "<h2>一章</h2>"
+        '<p>これは本文です<a href="notes.xhtml#note-1">1</a>。本文の続きです。</p>'
+    )
+    notes = epub.EpubHtml(title="注記", file_name="notes.xhtml", lang="ja")
+    notes.content = (
+        "<h2>注記</h2>"
+        '<p id="note-1">1 これは注釈のテキストです。</p>'
+    )
+    book.add_item(chapter)
+    book.add_item(notes)
+    book.toc = (chapter, notes)
+    book.spine = ["nav", chapter, notes]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
+def test_extract_chapters_still_strips_footnote_bodies_and_markers(
+    tmp_path: Path,
+) -> None:
+    epub_path = tmp_path / "footnote-backref.epub"
+    _write_footnote_backref_epub(epub_path)
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=True)
+    chapter_one = next(ch for ch in chapters if ch.title == "一章")
+    assert "これは本文です" in chapter_one.text
+    assert "注釈のテキスト" not in chapter_one.text
+    assert "1" not in chapter_one.text.replace("一章", "")
+    for chapter in chapters:
+        assert "注釈のテキスト" not in chapter.text

@@ -319,6 +319,26 @@ def _looks_like_note_marker(text: str) -> bool:
     return bool(_NOTE_MARKER_RE.match(text.strip()))
 
 
+_NAV_CONTAINER_EPUB_TYPES = {"toc", "page-list", "landmarks", "loi", "lot"}
+
+
+def _is_navigation_anchor(anchor: object) -> bool:
+    """TOC/page-list links routinely carry bare numbers as labels (numbered
+    chapters, page anchors), so navigation anchors must never seed the
+    footnote-marker heuristics."""
+    for parent in getattr(anchor, "parents", None) or ():
+        name = str(getattr(parent, "name", "") or "").lower()
+        if name == "nav":
+            return True
+        get = getattr(parent, "get", None)
+        if not callable(get):
+            continue
+        epub_type = str(get("epub:type") or "").strip().lower()
+        if epub_type in _NAV_CONTAINER_EPUB_TYPES:
+            return True
+    return False
+
+
 def _collect_footnote_index(
     book: epub.EpubBook,
 ) -> dict[str, set[str]]:
@@ -363,6 +383,8 @@ def _collect_footnote_index(
                     note_ids.add(note_id)
 
         for anchor in soup.find_all("a"):
+            if _is_navigation_anchor(anchor):
+                continue
             text = anchor.get_text(strip=True)
             if not _looks_like_note_marker(text):
                 continue
@@ -421,6 +443,26 @@ def _render_image_alt_text(soup: BeautifulSoup) -> None:
         img.replace_with(alt)
 
 
+_BACKREF_KEEP_MIN_CHARS = 120
+_BACKREF_KEEP_MIN_PAGE_RATIO = 0.8
+
+
+def _holds_most_of_page_text(tag: object, page_text_len: int) -> bool:
+    """Backref fragments sometimes resolve to a page's root container (e.g. a
+    chapter <section> targeted by page anchors) rather than a note marker.
+    A real footnote is subordinate content, so an element holding nearly all
+    of a substantial page must be page content and may not be removed."""
+    if page_text_len <= 0:
+        return False
+    get_text = getattr(tag, "get_text", None)
+    if not callable(get_text):
+        return False
+    tag_len = len(_compact_heading_text(get_text()))
+    if tag_len < _BACKREF_KEEP_MIN_CHARS:
+        return False
+    return tag_len >= page_text_len * _BACKREF_KEEP_MIN_PAGE_RATIO
+
+
 def _soup_to_text(
     soup: BeautifulSoup,
     footnote_index: dict[str, set[str]] | None = None,
@@ -445,14 +487,20 @@ def _soup_to_text(
     if footnote_index:
         note_ids = footnote_index.get("note_ids", set())
         backref_ids = footnote_index.get("backref_ids", set())
-        if note_ids or backref_ids:
+        if backref_ids:
+            page_root = soup.body if soup.body else soup
+            page_text_len = len(_compact_heading_text(page_root.get_text()))
             for tag in soup.find_all(attrs={"id": True}):
                 attrs = getattr(tag, "attrs", None)
                 if not attrs:
                     continue
                 tag_id = _normalize_id(str(attrs.get("id") or ""))
-                if tag_id and tag_id in backref_ids:
-                    tag.decompose()
+                if not tag_id or tag_id not in backref_ids:
+                    continue
+                if _holds_most_of_page_text(tag, page_text_len):
+                    continue
+                tag.decompose()
+        if note_ids or backref_ids:
             for anchor in soup.find_all("a"):
                 text = anchor.get_text(strip=True)
                 if not _looks_like_note_marker(text):
