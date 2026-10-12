@@ -15,7 +15,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, List, Optional, Union
+from typing import IO
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -23,14 +23,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from . import audio_norm as audio_norm_util
 from . import asr as asr_util
+from . import audio_norm as audio_norm_util
 from . import epub as epub_util
-from . import ruby_review
-from . import sanitize
+from . import ruby_review, sanitize
 from . import tts as tts_util
 from . import voice as voice_util
 from .text import read_clean_text
+
 
 def _load_json(path: Path) -> dict:
     if not path.exists():
@@ -38,8 +38,8 @@ def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _tag_ruby_spans(spans: List[dict], kind: str) -> List[dict]:
-    tagged: List[dict] = []
+def _tag_ruby_spans(spans: list[dict], kind: str) -> list[dict]:
+    tagged: list[dict] = []
     for span in spans:
         if not isinstance(span, dict):
             continue
@@ -66,7 +66,7 @@ def _tag_ruby_spans(spans: List[dict], kind: str) -> List[dict]:
     return tagged
 
 
-def _filter_overlapping_spans(spans: List[dict], reserved: List[dict]) -> List[dict]:
+def _filter_overlapping_spans(spans: list[dict], reserved: list[dict]) -> list[dict]:
     if not spans or not reserved:
         return spans
     reserved_ranges = []
@@ -82,7 +82,7 @@ def _filter_overlapping_spans(spans: List[dict], reserved: List[dict]) -> List[d
                 return True
         return False
 
-    filtered: List[dict] = []
+    filtered: list[dict] = []
     for span in spans:
         try:
             start = int(span.get("start"))
@@ -115,7 +115,7 @@ _CLONE_TIME_TOKEN_RE = re.compile(r"^\d+(?:\.\d+)?$")
 _VOICE_GENDERS = {"female", "male"}
 
 
-def _normalize_voice_gender(value: object) -> Optional[str]:
+def _normalize_voice_gender(value: object) -> str | None:
     if value is None:
         return None
     raw = str(value).strip().lower()
@@ -138,7 +138,7 @@ def _download_clone_source(url: str, dest: Path) -> None:
         shutil.copyfileobj(response, handle)
 
 
-def _coerce_clone_voice_name(raw: Optional[str], source_name: str) -> str:
+def _coerce_clone_voice_name(raw: str | None, source_name: str) -> str:
     return voice_util.coerce_voice_name(raw, source_name)
 
 
@@ -263,7 +263,7 @@ def _run_clone_ffmpeg(
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = _build_clone_ffmpeg_cmd(input_path, output_path, start, duration)
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()
         if detail:
@@ -276,7 +276,7 @@ def _run_clone_ffmpeg(
         raise RuntimeError(f"Failed to normalize clone audio: {exc}") from exc
 
 
-def _normalize_clone_text(value: Optional[str]) -> Optional[str]:
+def _normalize_clone_text(value: str | None) -> str | None:
     text = str(value or "").strip()
     return text or None
 
@@ -297,7 +297,7 @@ def _resolve_voice_config_path(value: str, repo_root: Path) -> tuple[str, Path]:
         raise ValueError("Voice is required.")
     voices_dir = (repo_root / voice_util.VOICE_DIRNAME).resolve()
     candidate = Path(raw)
-    resolved: Optional[Path] = None
+    resolved: Path | None = None
     if candidate.is_absolute():
         resolved = candidate.resolve()
     else:
@@ -305,7 +305,7 @@ def _resolve_voice_config_path(value: str, repo_root: Path) -> tuple[str, Path]:
         if repo_candidate.exists():
             resolved = repo_candidate
 
-    config_path: Optional[Path] = None
+    config_path: Path | None = None
     voice_id = ""
     if resolved is not None:
         if resolved.is_dir():
@@ -346,9 +346,9 @@ def _resolve_voice_audio_path(config_path: Path, data: dict) -> tuple[str, Path]
 
 
 def _resolve_clone_text(
-    payload: "VoiceCloneTextPayload",
+    payload: VoiceCloneTextPayload,
     audio_path: Path,
-) -> Optional[str]:
+) -> str | None:
     text = _normalize_clone_text(payload.text)
     if not text and not payload.x_vector_only and not payload.auto_text:
         raise ValueError(
@@ -388,7 +388,7 @@ def _book_rules_path(book_dir: Path) -> Path:
     return sanitize.book_rules_path(book_dir)
 
 
-def _select_rules_path(book_dir: Path) -> Optional[Path]:
+def _select_rules_path(book_dir: Path) -> Path | None:
     book_rules = _book_rules_path(book_dir)
     if book_rules.exists():
         return book_rules
@@ -461,13 +461,13 @@ def _render_highlight(text: str, ranges: list[tuple[int, int]]) -> str:
     return "".join(parts)
 
 
-def _load_chapter_text(path: Optional[Path]) -> str:
+def _load_chapter_text(path: Path | None) -> str:
     if not path or not path.exists():
         return ""
     return path.read_text(encoding="utf-8")
 
 
-def _pick_preview_chapter(clean_toc: dict, chapter_index: Optional[int]) -> dict:
+def _pick_preview_chapter(clean_toc: dict, chapter_index: int | None) -> dict:
     chapters = clean_toc.get("chapters", []) if isinstance(clean_toc, dict) else []
     if not chapters:
         return {}
@@ -478,7 +478,7 @@ def _pick_preview_chapter(clean_toc: dict, chapter_index: Optional[int]) -> dict
     return chapters[0]
 
 
-def _find_clean_chapter(clean_toc: dict, chapter_index: int) -> Optional[dict]:
+def _find_clean_chapter(clean_toc: dict, chapter_index: int) -> dict | None:
     chapters = clean_toc.get("chapters", []) if isinstance(clean_toc, dict) else []
     for entry in chapters:
         if entry.get("index") == chapter_index:
@@ -486,7 +486,7 @@ def _find_clean_chapter(clean_toc: dict, chapter_index: int) -> Optional[dict]:
     return None
 
 
-def _resolve_raw_path(book_dir: Path, raw_toc: dict, clean_entry: dict) -> Optional[Path]:
+def _resolve_raw_path(book_dir: Path, raw_toc: dict, clean_entry: dict) -> Path | None:
     source_index = clean_entry.get("source_index")
     if source_index is None:
         return None
@@ -645,9 +645,9 @@ def _book_summary(book_dir: Path) -> dict:
     }
 
 
-def _list_voice_ids(repo_root: Path) -> List[str]:
+def _list_voice_ids(repo_root: Path) -> list[str]:
     voices_dir = repo_root / "voices"
-    ids: List[str] = []
+    ids: list[str] = []
     if voices_dir.exists():
         for path in sorted(voices_dir.glob("*.json")):
             ids.append(path.stem)
@@ -676,18 +676,18 @@ def _normalize_voice_value(value: object, repo_root: Path) -> str:
     return cleaned
 
 
-def _normalize_metadata_text(value: Optional[str]) -> str:
+def _normalize_metadata_text(value: str | None) -> str:
     return str(value or "").strip()
 
 
-def _normalize_authors(raw: Union[str, List[str], None]) -> List[str]:
+def _normalize_authors(raw: str | list[str] | None) -> list[str]:
     if raw is None:
         return []
     if isinstance(raw, list):
         items = raw
     else:
         items = re.split(r"[,\n]+", str(raw))
-    cleaned: List[str] = []
+    cleaned: list[str] = []
     for item in items:
         text = str(item).strip()
         if text:
@@ -723,9 +723,9 @@ def _sanitize_voice_map(payload: dict, repo_root: Path, fallback_default: str) -
     return {"default": default_voice, "chapters": chapters}
 
 
-def _normalize_reading_overrides(raw: object) -> List[dict[str, str]]:
+def _normalize_reading_overrides(raw: object) -> list[dict[str, str]]:
     items = raw if isinstance(raw, list) else []
-    cleaned: List[dict[str, str]] = []
+    cleaned: list[dict[str, str]] = []
     for item in items:
         base = ""
         reading = ""
@@ -751,7 +751,7 @@ def _normalize_reading_overrides(raw: object) -> List[dict[str, str]]:
             continue
         if base:
             lowered = base.lower()
-            if lowered.startswith("re:") or lowered.startswith("regex:"):
+            if lowered.startswith(("re:", "regex:")):
                 prefix_len = 3 if lowered.startswith("re:") else 6
                 regex_pattern = base[prefix_len:].strip()
                 if regex_pattern:
@@ -776,7 +776,7 @@ def _reading_override_line(entry: dict[str, str]) -> str:
     return ""
 
 
-def _overrides_to_text(entries: List[dict[str, str]]) -> str:
+def _overrides_to_text(entries: list[dict[str, str]]) -> str:
     lines = [_reading_override_line(item) for item in entries]
     return "\n".join(line for line in lines if line)
 
@@ -787,7 +787,7 @@ def _normalize_reading_overrides_text(raw: object) -> str:
     return normalized.strip("\n")
 
 
-def _load_unidic_tagger_if_available() -> Optional[object]:
+def _load_unidic_tagger_if_available() -> object | None:
     dict_dir = tts_util._resolve_unidic_dir()
     if not (dict_dir / "dicrc").exists():
         return None
@@ -801,8 +801,8 @@ def _reading_to_kata(reading: str) -> str:
     return tts_util._hiragana_to_katakana(unicodedata.normalize("NFKC", reading))
 
 
-def _token_reading_candidates_kata(token: object) -> List[str]:
-    out: List[str] = []
+def _token_reading_candidates_kata(token: object) -> list[str]:
+    out: list[str] = []
     seen: set[str] = set()
     primary = str(tts_util._extract_token_reading(token) or "").strip()
     if primary:
@@ -840,7 +840,7 @@ def _token_reading_candidates_kata(token: object) -> List[str]:
 
 def _surface_reading_candidates_kata(
     surface: str,
-    tagger: Optional[object],
+    tagger: object | None,
     *,
     max_candidates: int = 48,
 ) -> set[str]:
@@ -853,7 +853,7 @@ def _surface_reading_candidates_kata(
     if not tokens:
         return set()
 
-    per_token: List[List[str]] = []
+    per_token: list[list[str]] = []
     for token in tokens:
         candidates = _token_reading_candidates_kata(token)
         if not candidates:
@@ -879,7 +879,7 @@ def _surface_reading_candidates_kata(
 def _is_unidic_aligned_ruby_reading(
     base: str,
     reading: str,
-    tagger: Optional[object],
+    tagger: object | None,
 ) -> bool:
     if not base or not reading or tagger is None:
         return False
@@ -897,10 +897,10 @@ def _is_unidic_aligned_ruby_reading(
     return reading_kata in candidates
 
 
-def _collect_ruby_reading_pairs(raw: object) -> List[tuple[str, str]]:
+def _collect_ruby_reading_pairs(raw: object) -> list[tuple[str, str]]:
     if not isinstance(raw, dict):
         return []
-    pairs: List[tuple[str, str]] = []
+    pairs: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
 
     def add_pair(base_raw: object, reading_raw: object) -> None:
@@ -1083,7 +1083,7 @@ def _collect_ruby_surface_candidates(book_dir: Path, raw: object) -> dict[tuple[
 def _is_unidic_aligned_ruby_reading_with_surfaces(
     base: str,
     reading: str,
-    tagger: Optional[object],
+    tagger: object | None,
     surfaces: set[str],
 ) -> bool:
     if not base or not reading or tagger is None or not surfaces:
@@ -1110,8 +1110,8 @@ def _is_unidic_aligned_ruby_reading_with_surfaces(
 
 def _suggest_unidic_mismatch_comments(
     book_dir: Path,
-    global_overrides: List[dict[str, str]],
-) -> List[str]:
+    global_overrides: list[dict[str, str]],
+) -> list[str]:
     path = book_dir / "reading-overrides.json"
     if not path.exists():
         return []
@@ -1135,7 +1135,7 @@ def _suggest_unidic_mismatch_comments(
     }
     overridden_bases.discard("")
     aligned_cache: dict[tuple[str, str], bool] = {}
-    suggestions: List[str] = []
+    suggestions: list[str] = []
     seen_lines: set[str] = set()
     for base, reading in pairs:
         if base in overridden_bases:
@@ -1162,7 +1162,7 @@ def _suggest_unidic_mismatch_comments(
     return suggestions
 
 
-def _merge_override_text_with_comments(text: str, comments: List[str]) -> str:
+def _merge_override_text_with_comments(text: str, comments: list[str]) -> str:
     base_text = _normalize_reading_overrides_text(text)
     if not comments:
         return base_text
@@ -1218,7 +1218,7 @@ def _book_details(book_dir: Path, repo_root: Path) -> dict:
     source_origin = _source_origin_from_metadata(metadata)
 
     manifest = _load_json(book_dir / "tts" / "manifest.json")
-    chapters: List[dict] = []
+    chapters: list[dict] = []
     pad_ms = 0
     last_voice = ""
     audio_total, audio_done = _audio_progress_summary(book_dir, manifest)
@@ -1283,7 +1283,7 @@ def _boundary_latency_log_path(book_dir: Path) -> Path:
     return book_dir / "tts" / "player-boundary-latency.jsonl"
 
 
-def _append_jsonl(path: Path, entries: List[dict]) -> None:
+def _append_jsonl(path: Path, entries: list[dict]) -> None:
     if not entries:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1301,7 +1301,7 @@ def _merge_output_path(book_dir: Path) -> Path:
     return library_dir / f"{book_dir.name}.m4b"
 
 
-def _list_m4b_parts(book_dir: Path) -> List[Path]:
+def _list_m4b_parts(book_dir: Path) -> list[Path]:
     library_dir = _m4b_library_dir(book_dir.parent)
     pattern = f"{book_dir.name}.part*.m4b"
     return sorted(library_dir.glob(pattern))
@@ -1398,7 +1398,7 @@ def _sanitize_playback(data: dict) -> dict:
     furthest = data.get("furthest_played")
     if not isinstance(furthest, int) or furthest < 0:
         furthest = None
-    bookmarks: List[dict] = []
+    bookmarks: list[dict] = []
     raw_marks = data.get("bookmarks")
     if isinstance(raw_marks, list):
         for entry in raw_marks:
@@ -1661,7 +1661,7 @@ def _ffmpeg_log_path(repo_root: Path) -> Path:
 
 def _spawn_ffmpeg_install(
     repo_root: Path,
-) -> tuple[Optional["FfmpegJob"], Optional[str]]:
+) -> tuple[FfmpegJob | None, str | None]:
     if shutil.which("ffmpeg") is not None:
         return None, None
     try:
@@ -1713,11 +1713,11 @@ class SynthJob:
     chunk_mode: str
     rechunk: bool
     mode: str = "tts"
-    sample_chapter_id: Optional[str] = None
-    sample_chapter_title: Optional[str] = None
-    log_handle: Optional[IO[str]] = None
-    exit_code: Optional[int] = None
-    ended_at: Optional[float] = None
+    sample_chapter_id: str | None = None
+    sample_chapter_title: str | None = None
+    log_handle: IO[str] | None = None
+    exit_code: int | None = None
+    ended_at: float | None = None
     min_chars: int = 0
 
 
@@ -1731,9 +1731,9 @@ class MergeJob:
     output_path: Path
     install_ffmpeg: bool
     progress_path: Path
-    log_handle: Optional[IO[str]] = None
-    exit_code: Optional[int] = None
-    ended_at: Optional[float] = None
+    log_handle: IO[str] | None = None
+    exit_code: int | None = None
+    ended_at: float | None = None
 
 
 @dataclass
@@ -1741,9 +1741,9 @@ class FfmpegJob:
     process: subprocess.Popen
     started_at: float
     log_path: Path
-    log_handle: Optional[IO[str]] = None
-    exit_code: Optional[int] = None
-    ended_at: Optional[float] = None
+    log_handle: IO[str] | None = None
+    exit_code: int | None = None
+    ended_at: float | None = None
 
 
 @dataclass
@@ -1792,23 +1792,23 @@ def _resolve_style_emoji(value: object) -> str:
 
 class SynthRequest(BaseModel):
     book_id: str
-    voice: Optional[str] = None
+    voice: str | None = None
     max_chars: int = 100
     min_chars: int = 15
     pad_ms: int = 350
     chunk_mode: str = "japanese"
     rechunk: bool = False
     use_voice_map: bool = False
-    emotion: Optional[str] = None
+    emotion: str | None = None
 
 
 class ChunkSynthRequest(BaseModel):
     book_id: str
     chapter_id: str
     chunk_index: int
-    voice: Optional[str] = None
+    voice: str | None = None
     use_voice_map: bool = False
-    emotion: Optional[str] = None
+    emotion: str | None = None
 
 
 class MergeRequest(BaseModel):
@@ -1825,22 +1825,22 @@ class ClearRequest(BaseModel):
 
 
 class RulesPayload(BaseModel):
-    book_id: Optional[str] = None
-    drop_chapter_title_patterns: List[str] = []
-    section_cutoff_patterns: List[str] = []
-    remove_patterns: List[str] = []
+    book_id: str | None = None
+    drop_chapter_title_patterns: list[str] = []
+    section_cutoff_patterns: list[str] = []
+    remove_patterns: list[str] = []
     replace_defaults: bool = False
 
 
 class VoiceMapPayload(BaseModel):
-    default: Optional[str] = None
+    default: str | None = None
     chapters: dict = {}
 
 
 class ChapterAction(BaseModel):
     book_id: str
     title: str
-    chapter_index: Optional[int] = None
+    chapter_index: int | None = None
 
 
 class SanitizeRequest(BaseModel):
@@ -1855,8 +1855,8 @@ class CleanEditPayload(BaseModel):
 
 class ReadingOverridesPayload(BaseModel):
     book_id: str
-    overrides: List[dict] = []
-    text: Optional[str] = None
+    overrides: list[dict] = []
+    text: str | None = None
 
 
 class RubyDecisionsPayload(BaseModel):
@@ -1865,14 +1865,14 @@ class RubyDecisionsPayload(BaseModel):
 
 
 class PlaybackPayload(BaseModel):
-    last_played: Optional[int] = None
-    furthest_played: Optional[int] = None
-    bookmarks: List[dict] = []
+    last_played: int | None = None
+    furthest_played: int | None = None
+    bookmarks: list[dict] = []
 
 
 class BoundaryLogPayload(BaseModel):
     book_id: str
-    entries: List[dict] = []
+    entries: list[dict] = []
 
 
 class DeleteBookRequest(BaseModel):
@@ -1885,41 +1885,41 @@ class DeleteM4bRequest(BaseModel):
 
 class MetadataPayload(BaseModel):
     book_id: str
-    title: Optional[str] = None
-    authors: Union[str, List[str], None] = None
-    year: Optional[str] = None
+    title: str | None = None
+    authors: str | list[str] | None = None
+    year: str | None = None
 
 
 class VoiceCloneTextPayload(BaseModel):
-    text: Optional[str] = None
+    text: str | None = None
     auto_text: bool = True
     x_vector_only: bool = False
     whisper_model: str = "small"
-    whisper_language: Optional[str] = None
-    whisper_device: Optional[str] = None
-    whisper_prompt: Optional[str] = None
-    language: Optional[str] = None
-    gender: Optional[str] = None
+    whisper_language: str | None = None
+    whisper_device: str | None = None
+    whisper_prompt: str | None = None
+    language: str | None = None
+    gender: str | None = None
 
 
 class VoiceClonePreviewPayload(VoiceCloneTextPayload):
     source: str
-    start: Optional[str] = None
-    duration: Union[str, float, int] = 12
+    start: str | None = None
+    duration: str | float | int = 12
 
 
 class VoiceCloneSavePayload(VoiceCloneTextPayload):
     source: str
-    start: Optional[str] = None
-    duration: Union[str, float, int] = 12
-    name: Optional[str] = None
+    start: str | None = None
+    duration: str | float | int = 12
+    name: str | None = None
     overwrite: bool = False
 
 
 class VoiceMetadataPayload(BaseModel):
     voice: str
-    gender: Optional[str] = None
-    name: Optional[str] = None
+    gender: str | None = None
+    name: str | None = None
 
 
 class VoiceDeletePayload(BaseModel):
@@ -1934,9 +1934,9 @@ def create_app(root_dir: Path) -> FastAPI:
     repo_root = _find_repo_root(root_dir)
     jobs: dict[str, SynthJob] = {}
     merge_jobs: dict[str, MergeJob] = {}
-    ffmpeg_job: Optional[FfmpegJob] = None
-    ffmpeg_error: Optional[str] = None
-    clone_preview: Optional[VoiceClonePreview] = None
+    ffmpeg_job: FfmpegJob | None = None
+    ffmpeg_error: str | None = None
+    clone_preview: VoiceClonePreview | None = None
 
     app.mount("/audio", StaticFiles(directory=str(root_dir)), name="audio")
 
@@ -1947,7 +1947,7 @@ def create_app(root_dir: Path) -> FastAPI:
 
     @app.get("/api/books")
     def list_books() -> JSONResponse:
-        books: List[dict] = []
+        books: list[dict] = []
         for child in sorted(root_dir.iterdir(), key=lambda p: p.name):
             if not child.is_dir():
                 continue
@@ -2000,8 +2000,8 @@ def create_app(root_dir: Path) -> FastAPI:
         if not clean_path.exists():
             raise HTTPException(status_code=404, detail="Chapter text not found.")
         clean_text = tts_util._normalize_text(read_clean_text(clean_path))
-        ruby_spans: List[dict] = []
-        ruby_prop_spans: List[dict] = []
+        ruby_spans: list[dict] = []
+        ruby_prop_spans: list[dict] = []
         global_overrides, chapter_overrides = tts_util._load_reading_overrides(book_dir)
         chapter_entries = chapter_overrides.get(chapter_id, [])
         ruby_data = tts_util._load_ruby_data(book_dir)
@@ -2196,7 +2196,7 @@ def create_app(root_dir: Path) -> FastAPI:
 
     @app.get("/api/voices")
     def list_voices() -> JSONResponse:
-        local: List[dict] = []
+        local: list[dict] = []
         for voice_id in _list_voice_ids(repo_root):
             entry = {"label": voice_id, "value": voice_id}
             try:
@@ -2209,7 +2209,7 @@ def create_app(root_dir: Path) -> FastAPI:
                         gender = None
                     if gender:
                         entry["gender"] = gender
-            except Exception:
+            except (OSError, ValueError):
                 pass
             local.append(entry)
         return _no_store({"local": local, "builtin": [], "default": ""})
@@ -2328,36 +2328,35 @@ def create_app(root_dir: Path) -> FastAPI:
             next_voice_id = voice_id
 
         ref_audio_value, audio_path = _resolve_voice_audio_path(next_config_path, data)
-        if has_name:
-            if (
-                audio_path.exists()
-                and audio_path.is_file()
-                and voices_dir in audio_path.resolve().parents
-                and audio_path.stem == old_voice_id
-            ):
-                next_audio_path = audio_path.with_name(
-                    f"{next_voice_id}{audio_path.suffix}"
-                )
-                if next_audio_path.resolve() != audio_path.resolve():
-                    if next_audio_path.exists():
-                        raise HTTPException(
-                            status_code=409,
-                            detail=f"Voice audio '{next_voice_id}' already exists.",
-                        )
-                    try:
-                        audio_path.rename(next_audio_path)
-                    except OSError as exc:
-                        raise HTTPException(
-                            status_code=500,
-                            detail=f"Unable to rename voice audio: {exc}",
-                        ) from exc
-                    audio_path = next_audio_path
-                    if ref_audio_value and not Path(ref_audio_value).is_absolute():
-                        data["ref_audio"] = next_audio_path.relative_to(
-                            next_config_path.parent
-                        ).as_posix()
-                    else:
-                        data["ref_audio"] = str(next_audio_path)
+        if has_name and (
+            audio_path.exists()
+            and audio_path.is_file()
+            and voices_dir in audio_path.resolve().parents
+            and audio_path.stem == old_voice_id
+        ):
+            next_audio_path = audio_path.with_name(
+                f"{next_voice_id}{audio_path.suffix}"
+            )
+            if next_audio_path.resolve() != audio_path.resolve():
+                if next_audio_path.exists():
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"Voice audio '{next_voice_id}' already exists.",
+                    )
+                try:
+                    audio_path.rename(next_audio_path)
+                except OSError as exc:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Unable to rename voice audio: {exc}",
+                    ) from exc
+                audio_path = next_audio_path
+                if ref_audio_value and not Path(ref_audio_value).is_absolute():
+                    data["ref_audio"] = next_audio_path.relative_to(
+                        next_config_path.parent
+                    ).as_posix()
+                else:
+                    data["ref_audio"] = str(next_audio_path)
 
         if has_gender:
             try:
@@ -2397,15 +2396,18 @@ def create_app(root_dir: Path) -> FastAPI:
         _, audio_path = _resolve_voice_audio_path(config_path, data)
         voices_dir = (repo_root / voice_util.VOICE_DIRNAME).resolve()
 
-        if audio_path.exists() and audio_path.is_file():
-            if voices_dir in audio_path.resolve().parents:
-                try:
-                    audio_path.unlink()
-                except OSError as exc:
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Unable to delete voice audio: {exc}",
-                    ) from exc
+        if (
+            audio_path.exists()
+            and audio_path.is_file()
+            and voices_dir in audio_path.resolve().parents
+        ):
+            try:
+                audio_path.unlink()
+            except OSError as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Unable to delete voice audio: {exc}",
+                ) from exc
 
         try:
             config_path.unlink()
@@ -2436,7 +2438,7 @@ def create_app(root_dir: Path) -> FastAPI:
             )
             start = _parse_clone_time(payload.start, "start", allow_zero=True)
             duration = _parse_clone_time(payload.duration, "duration", allow_zero=False)
-            gender = _normalize_voice_gender(payload.gender)
+            _normalize_voice_gender(payload.gender)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -2694,6 +2696,7 @@ def create_app(root_dir: Path) -> FastAPI:
                     cwd=str(repo_root),
                     stdout=log_handle,
                     stderr=subprocess.STDOUT,
+                    check=False,
                 )
                 if proc.returncode == 0:
                     stage = "sanitize"
@@ -2712,6 +2715,7 @@ def create_app(root_dir: Path) -> FastAPI:
                         cwd=str(repo_root),
                         stdout=log_handle,
                         stderr=subprocess.STDOUT,
+                        check=False,
                     )
             if proc.returncode != 0:
                 detail = (
@@ -2737,7 +2741,7 @@ def create_app(root_dir: Path) -> FastAPI:
 
     @app.get("/api/sanitize/preview")
     def sanitize_preview(
-        book_id: str, chapter: Optional[int] = None
+        book_id: str, chapter: int | None = None
     ) -> JSONResponse:
         book_dir = _resolve_book_dir(root_dir, book_id)
         clean_toc = _load_json(book_dir / "clean" / "toc.json")
@@ -2879,6 +2883,7 @@ def create_app(root_dir: Path) -> FastAPI:
                 cwd=str(repo_root),
                 stdout=log_handle,
                 stderr=subprocess.STDOUT,
+                check=False,
             )
         if proc.returncode != 0:
             raise HTTPException(
@@ -3449,7 +3454,6 @@ def create_app(root_dir: Path) -> FastAPI:
         output_path = _merge_output_path(book_dir)
         output_parts = _list_m4b_parts(book_dir)
         tts_dir = book_dir / "tts"
-        progress_path = tts_dir / "merge.progress.json"
         job = merge_jobs.get(book_id)
         running = False
         exit_code = None
@@ -3567,7 +3571,7 @@ def create_app(root_dir: Path) -> FastAPI:
         )
 
     @app.get("/api/m4b/download")
-    def download_m4b(book_id: str, part: Optional[int] = None) -> FileResponse:
+    def download_m4b(book_id: str, part: int | None = None) -> FileResponse:
         book_dir = _resolve_book_dir(root_dir, book_id)
         output_path = _merge_output_path(book_dir)
         if part is not None:

@@ -56,10 +56,10 @@ def _write_structural_heading_epub(epub_path: Path) -> None:
         file_name="style.css",
         media_type="text/css",
         content=(
-            ".book-title { font-weight: bold; }\n"
-            ".class_s2 { text-align: left; }\n"
-            ".class_s4xe2 { font-weight: bold; }\n"
-        ).encode("utf-8"),
+            b".book-title { font-weight: bold; }\n"
+            b".class_s2 { text-align: left; }\n"
+            b".class_s4xe2 { font-weight: bold; }\n"
+        ),
     )
     book.add_item(style)
 
@@ -329,14 +329,14 @@ def test_extract_chapters_from_sample_epub(tmp_path: Path) -> None:
 
 
 def test_extract_html_headings_supports_heading_tags_and_class_markers() -> None:
-    html = """
+    html = b"""
     <html>
       <body>
         <h2>Part I</h2>
         <p><span class="subtitle">- Intro -</span></p>
       </body>
     </html>
-    """.encode("utf-8")
+    """
     headings = epub_util._extract_html_headings(html)
     assert "Part I" in headings
     assert "- Intro -" in headings
@@ -355,7 +355,7 @@ def test_extract_html_headings_ignores_plain_structural_blocks() -> None:
         <p class="calibre2">さらに本文が続きます。段落です。</p>
       </body>
     </html>
-    """.encode("utf-8")
+    """.encode()
     headings = epub_util._extract_html_headings(html)
     assert "プロローグ" not in headings
     assert "１" not in headings
@@ -477,13 +477,13 @@ def test_extract_chapters_keeps_non_toc_structural_section_starts(tmp_path: Path
 
 
 def test_extract_ruby_pairs_and_strip_rt() -> None:
-    html = "<p><ruby>漢字<rt>かんじ</rt></ruby>です。</p>".encode("utf-8")
+    html = "<p><ruby>漢字<rt>かんじ</rt></ruby>です。</p>".encode()
     assert epub_util.html_to_text(html) == "漢字です。"
     assert epub_util.extract_ruby_pairs(html) == [("漢字", "かんじ")]
 
 
 def test_html_to_text_with_ruby_spans() -> None:
-    html = "<p>前<ruby>漢字<rt>かんじ</rt></ruby>後</p>".encode("utf-8")
+    html = "<p>前<ruby>漢字<rt>かんじ</rt></ruby>後</p>".encode()
     text, spans = epub_util.html_to_text_with_ruby(html)
     assert text == "前漢字後"
     assert spans == [
@@ -497,7 +497,7 @@ def test_html_to_text_with_ruby_drops_emphasis_mark_reading() -> None:
     html = (
         "<p>非行の<ruby>原因<rt>ヽヽ</rt></ruby>を"
         "<ruby>分析<rt>かい</rt></ruby>する。</p>"
-    ).encode("utf-8")
+    ).encode()
     text, spans = epub_util.html_to_text_with_ruby(html)
     assert text == "非行の原因を分析する。"
     # Only the genuine reading is kept; the emphasis-mark ruby is dropped.
@@ -518,7 +518,7 @@ def test_html_to_text_renders_image_alt_text() -> None:
         "<p id='toc-1'><img src='ch01.jpg' alt='第一章 はじまり'/></p>"
         "<p>本文の最初の段落です。</p>"
         "</body></html>"
-    ).encode("utf-8")
+    ).encode()
     text = epub_util.html_to_text(html)
     assert text.startswith("第一章 はじまり")
     assert "本文の最初の段落です。" in text
@@ -530,7 +530,7 @@ def test_html_to_text_skips_empty_alt_image() -> None:
         "<p><img src='deco.jpg' alt=''/></p>"
         "<p>本文です。</p>"
         "</body></html>"
-    ).encode("utf-8")
+    ).encode()
     text = epub_util.html_to_text(html)
     assert text == "本文です。"
 

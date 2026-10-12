@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
 from nik import cli
 
 
@@ -232,7 +233,7 @@ def test_clone_applies_audio_normalization(
         cli.shutil, "which", lambda name: "/usr/bin/ffmpeg" if name == "ffmpeg" else None
     )
 
-    def fake_run(cmd: list[str]) -> SimpleNamespace:
+    def fake_run(cmd: list[str], check: bool) -> SimpleNamespace:
         out = Path(cmd[-1])
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"RIFFFAKEWAVE")
@@ -265,7 +266,7 @@ def test_clone_returns_error_when_normalization_fails(
         cli.shutil, "which", lambda name: "/usr/bin/ffmpeg" if name == "ffmpeg" else None
     )
 
-    def fake_run(cmd: list[str]) -> SimpleNamespace:
+    def fake_run(cmd: list[str], check: bool) -> SimpleNamespace:
         out = Path(cmd[-1])
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"RIFFFAKEWAVE")

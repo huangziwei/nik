@@ -4,9 +4,8 @@ from pathlib import Path
 import pytest
 
 from nik import tts as tts_util
-from nik.text import SECTION_BREAK, strip_section_breaks
 from nik import voice as voice_util
-
+from nik.text import SECTION_BREAK, strip_section_breaks
 
 _UNIDIC_DIR = tts_util._default_unidic_dir()
 _UNIDIC_AVAILABLE = (_UNIDIC_DIR / "dicrc").exists()

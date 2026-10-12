@@ -395,7 +395,9 @@ def test_run_clone_ffmpeg_applies_normalization(
     output_path = tmp_path / "out.wav"
     seen_cmd: list[str] = []
 
-    def fake_run(cmd: list[str], capture_output: bool, text: bool) -> SimpleNamespace:
+    def fake_run(
+        cmd: list[str], capture_output: bool, text: bool, check: bool
+    ) -> SimpleNamespace:
         seen_cmd[:] = cmd
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"RIFFFAKEWAVE")
@@ -420,7 +422,9 @@ def test_run_clone_ffmpeg_raises_when_normalization_fails(
     input_path = tmp_path / "in.wav"
     output_path = tmp_path / "out.wav"
 
-    def fake_run(cmd: list[str], capture_output: bool, text: bool) -> SimpleNamespace:
+    def fake_run(
+        cmd: list[str], capture_output: bool, text: bool, check: bool
+    ) -> SimpleNamespace:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"RIFFFAKEWAVE")
         return SimpleNamespace(returncode=0, stderr="", stdout="")
@@ -617,7 +621,7 @@ def test_sanitize_run_uses_cli_subprocess(
     captured: dict[str, object] = {}
 
     def fake_run(
-        cmd: list[str], cwd: str, stdout, stderr: int
+        cmd: list[str], cwd: str, stdout, stderr: int, check: bool
     ) -> SimpleNamespace:
         captured["cmd"] = cmd
         captured["cwd"] = cwd

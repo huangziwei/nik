@@ -22,7 +22,6 @@ is moot. `DEFAULT_SEQUENCE_LENGTH=400` / `NIK_MLX_SEQUENCE_LENGTH` only bite whe
 from __future__ import annotations
 
 import os
-from typing import Optional, Tuple
 
 import numpy as np
 
@@ -38,10 +37,10 @@ DEFAULT_HF_REPO = "mlx-community/Irodori-TTS-500M-v3-8bit"
 DEFAULT_SEQUENCE_LENGTH = 400
 DEFAULT_CFG_MODE = "independent"
 
-_runtime_cache: dict[str, "object"] = {}
+_runtime_cache: dict[str, object] = {}
 
 
-def _resolve_hf_repo(explicit: Optional[str]) -> str:
+def _resolve_hf_repo(explicit: str | None) -> str:
     if explicit:
         return explicit
     return os.environ.get(ENV_HF_REPO) or DEFAULT_HF_REPO
@@ -86,7 +85,7 @@ def _style_prefix() -> str:
     return raw.strip() if raw else ""
 
 
-def get_runtime(*, hf_repo: Optional[str] = None):
+def get_runtime(*, hf_repo: str | None = None):
     """Load (or fetch from cache) an mlx-audio Model for the given repo."""
     repo = _resolve_hf_repo(hf_repo)
     cached = _runtime_cache.get(repo)
@@ -107,12 +106,12 @@ def generate_chunk(
     text: str,
     voice: VoiceConfig,
     *,
-    num_steps: Optional[int] = None,
+    num_steps: int | None = None,
     cfg_scale_text: float = 3.0,
     cfg_scale_speaker: float = 5.0,
-    seed: Optional[int] = None,
-    style_emoji: Optional[str] = None,
-) -> Tuple[np.ndarray, int]:
+    seed: int | None = None,
+    style_emoji: str | None = None,
+) -> tuple[np.ndarray, int]:
     """Synthesize one chunk; returns (audio_float32_1d, sample_rate).
 
     `style_emoji` (an explicit emotion annotation) overrides the NIK_STYLE_EMOJI
@@ -128,13 +127,13 @@ def generate_chunk(
     prefix = _style_prefix() if style_emoji is None else style_emoji.strip()
     gen_text = f"{prefix}{text}" if prefix else text
 
-    sampling_kwargs = dict(
-        num_steps=num_steps,
-        cfg_scale_text=cfg_scale_text,
-        cfg_scale_speaker=cfg_scale_speaker,
-        cfg_guidance_mode=_default_cfg_mode(),
-        sequence_length=_default_sequence_length(),
-    )
+    sampling_kwargs = {
+        "num_steps": num_steps,
+        "cfg_scale_text": cfg_scale_text,
+        "cfg_scale_speaker": cfg_scale_speaker,
+        "cfg_guidance_mode": _default_cfg_mode(),
+        "sequence_length": _default_sequence_length(),
+    }
     if seed is not None:
         sampling_kwargs["rng_seed"] = int(seed)
 

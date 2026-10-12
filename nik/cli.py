@@ -4,7 +4,6 @@ import argparse
 import importlib
 import json
 import math
-import os
 import re
 import shutil
 import subprocess
@@ -14,21 +13,20 @@ import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Callable, Optional
 
-from . import audio_norm as audio_norm_util
 from . import asr as asr_util
+from . import audio_norm as audio_norm_util
 from . import epub as epub_util
 from . import merge as merge_util
 from . import sanitize as sanitize_util
 from . import tts as tts_util
 from . import voice as voice_util
-from .text import read_clean_text, guess_title_from_path
+from .text import guess_title_from_path, read_clean_text
 
 
 def _summarize_ruby_pairs(
     pairs: list[tuple[str, str]],
-) -> Optional[dict]:
+) -> dict | None:
     if not pairs:
         return None
     readings: dict[str, set[str]] = {}
@@ -50,7 +48,7 @@ def _summarize_ruby_pairs(
         if len(base) == 1:
             continue
         if len(values) == 1:
-            replacements.append({"base": base, "reading": sorted(values)[0]})
+            replacements.append({"base": base, "reading": min(values)})
         else:
             conflicts.append({"base": base, "readings": sorted(values)})
     if not replacements and not conflicts:
@@ -58,7 +56,7 @@ def _summarize_ruby_pairs(
     return {"replacements": replacements, "conflicts": conflicts}
 
 
-def _load_unidic_tagger_if_available() -> Optional[object]:
+def _load_unidic_tagger_if_available() -> object | None:
     dict_dir = tts_util._resolve_unidic_dir()
     if not (dict_dir / "dicrc").exists():
         return None
@@ -81,7 +79,7 @@ def _majority_ruby_reading(counts: dict[str, int], order: dict[str, int]) -> str
 def _is_unidic_aligned_ruby_reading(
     base: str,
     reading: str,
-    tagger: Optional[object],
+    tagger: object | None,
 ) -> bool:
     return tts_util._is_unidic_aligned_ruby_reading(base, reading, tagger)
 
@@ -90,7 +88,7 @@ def _select_preferred_ruby_reading(
     base: str,
     counts: dict[str, int],
     order: dict[str, int],
-    tagger: Optional[object],
+    tagger: object | None,
 ) -> tuple[str, int]:
     if not counts:
         return "", 0
@@ -128,7 +126,7 @@ def _select_preferred_ruby_reading(
     return majority, majority_count
 
 
-def _ruby_token_spans(text: str, tagger: Optional[object]) -> list[tuple[int, int, str]]:
+def _ruby_token_spans(text: str, tagger: object | None) -> list[tuple[int, int, str]]:
     if not text or tagger is None:
         return []
     try:
@@ -204,7 +202,7 @@ def _build_global_ruby_entries_for_base(
     order: dict[str, int],
     selected_reading: str,
     selected_count: int,
-    context_counts: Optional[dict[str, dict[str, int]]] = None,
+    context_counts: dict[str, dict[str, int]] | None = None,
 ) -> list[dict]:
     if not base or not selected_reading or selected_count <= 0:
         return []
@@ -523,7 +521,7 @@ def _cover_extension(media_type: str, href: str) -> str:
     return ".jpg"
 
 
-def _write_cover_image(cover: dict, out_dir: Path) -> Optional[Path]:
+def _write_cover_image(cover: dict, out_dir: Path) -> Path | None:
     data = cover.get("data")
     if not data:
         return None
@@ -623,7 +621,7 @@ def _clone(args: argparse.Namespace) -> int:
                 sys.stderr.write(f"Download failed: {exc}\n")
                 return 2
             cmd = _build_clone_ffmpeg_cmd(input_path, output_path, start, duration)
-            result = subprocess.run(cmd)
+            result = subprocess.run(cmd, check=False)
             if result.returncode != 0:
                 sys.stderr.write("ffmpeg failed to process the audio.\n")
                 return 2
@@ -633,7 +631,7 @@ def _clone(args: argparse.Namespace) -> int:
             sys.stderr.write(f"Input file not found: {input_path}\n")
             return 2
         cmd = _build_clone_ffmpeg_cmd(input_path, output_path, start, duration)
-        result = subprocess.run(cmd)
+        result = subprocess.run(cmd, check=False)
         if result.returncode != 0:
             sys.stderr.write("ffmpeg failed to process the audio.\n")
             return 2
@@ -858,7 +856,7 @@ def _jsonl_entries(path: Path) -> list[dict]:
     return entries
 
 
-def _as_float(value: object) -> Optional[float]:
+def _as_float(value: object) -> float | None:
     try:
         parsed = float(value)
     except (TypeError, ValueError):
@@ -868,21 +866,21 @@ def _as_float(value: object) -> Optional[float]:
     return parsed
 
 
-def _as_int(value: object) -> Optional[int]:
+def _as_int(value: object) -> int | None:
     try:
         return int(value)
     except (TypeError, ValueError):
         return None
 
 
-def _percentile(sorted_values: list[float], q: float) -> Optional[float]:
+def _percentile(sorted_values: list[float], q: float) -> float | None:
     if not sorted_values:
         return None
     idx = int((len(sorted_values) - 1) * q)
     return sorted_values[idx]
 
 
-def _series_stats(values: list[float]) -> Optional[dict]:
+def _series_stats(values: list[float]) -> dict | None:
     if not values:
         return None
     ordered = sorted(values)
@@ -955,9 +953,7 @@ def _boundary_report_payload(entries: list[dict], min_samples: int = 200) -> dic
     else:
         corrected_stats = _series_stats(corrected_values)
         if corrected_stats:
-            recommendation["recommended_pad_adjust_ms"] = int(
-                round(corrected_stats["p50"])
-            )
+            recommendation["recommended_pad_adjust_ms"] = round(corrected_stats["p50"])
             recommendation["basis"] = "p50(delta_ms + output_latency_ms)"
             recommendation["reason"] = (
                 "Positive means increase pad_ms to make merged M4B pauses closer "
@@ -993,7 +989,7 @@ def _boundary_report(args: argparse.Namespace) -> int:
     return 0
 
 
-def _infer_book_and_chapter(path: Path) -> tuple[Optional[Path], Optional[str]]:
+def _infer_book_and_chapter(path: Path) -> tuple[Path | None, str | None]:
     resolved = path.resolve()
     book_dir = None
     for parent in [resolved] + list(resolved.parents):

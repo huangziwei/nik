@@ -19,7 +19,6 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Optional, Tuple
 
 import numpy as np
 
@@ -102,12 +101,12 @@ def generate_chunk(
     text: str,
     voice: VoiceConfig,
     *,
-    num_steps: Optional[int] = None,
+    num_steps: int | None = None,
     cfg_scale_text: float = 3.0,
     cfg_scale_speaker: float = 5.0,
-    seed: Optional[int] = None,
-    style_emoji: Optional[str] = None,
-) -> Tuple[np.ndarray, int]:
+    seed: int | None = None,
+    style_emoji: str | None = None,
+) -> tuple[np.ndarray, int]:
     """Synthesize one chunk; returns (audio_float32_1d, sample_rate).
 
     `style_emoji` overrides the NIK_STYLE_EMOJI env fallback when not None

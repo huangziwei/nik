@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from . import tts as tts_util
 
@@ -68,17 +67,7 @@ def suggest_small_kana_reading(reading: str) -> str:
             continue
         prev = chars[idx - 1]
         convert = False
-        if ch in "やゆよヤユヨ" and prev in _PALATAL_TRIGGERS:
-            convert = True
-        elif ch in "いイ" and prev in _TE_DE:
-            convert = True
-        elif ch in "えエ" and prev in (_SHI_JI_CHI | _TE_DE | _FU):
-            convert = True
-        elif ch in "あいえおアイエオ" and prev in _FU:
-            convert = True
-        elif ch in "イエオ" and prev in _KATAKANA_U:
-            convert = True
-        elif (
+        if ch in "やゆよヤユヨ" and prev in _PALATAL_TRIGGERS or ch in "いイ" and prev in _TE_DE or ch in "えエ" and prev in (_SHI_JI_CHI | _TE_DE | _FU) or ch in "あいえおアイエオ" and prev in _FU or ch in "イエオ" and prev in _KATAKANA_U or (
             ch in _TSU
             and idx + 1 < len(chars)
             and chars[idx + 1] in _GEMINATION_FOLLOWERS
@@ -109,15 +98,15 @@ def _context_payload(
     }
 
 
-def _overlaps_any(start: int, end: int, reserved: List[tuple[int, int]]) -> bool:
+def _overlaps_any(start: int, end: int, reserved: list[tuple[int, int]]) -> bool:
     for r_start, r_end in reserved:
         if start < r_end and end > r_start:
             return True
     return False
 
 
-def _literal_override_map(entries: List[dict]) -> Dict[str, set[str]]:
-    out: Dict[str, set[str]] = {}
+def _literal_override_map(entries: list[dict]) -> dict[str, set[str]]:
+    out: dict[str, set[str]] = {}
     for entry in entries:
         base = str(entry.get("base") or "").strip()
         reading = str(entry.get("reading") or "").strip()
@@ -132,8 +121,8 @@ def build_review_groups(book_dir: Path) -> dict:
     chapters_map = ruby_data.get("chapters") if isinstance(ruby_data, dict) else None
     chapters_map = chapters_map if isinstance(chapters_map, dict) else {}
 
-    texts: Dict[str, str] = {}
-    chapter_order: Dict[str, int] = {}
+    texts: dict[str, str] = {}
+    chapter_order: dict[str, int] = {}
     try:
         for chapter in tts_util.load_book_chapters(book_dir):
             texts[chapter.id] = chapter.text
@@ -141,8 +130,8 @@ def build_review_groups(book_dir: Path) -> dict:
     except Exception:
         texts = {}
 
-    groups: Dict[str, dict] = {}
-    inline_spans_by_chapter: Dict[str, List[tuple[int, int]]] = {}
+    groups: dict[str, dict] = {}
+    inline_spans_by_chapter: dict[str, list[tuple[int, int]]] = {}
 
     def group_for(base: str, reading: str) -> dict:
         key = tts_util._ruby_decision_key(base, reading)
@@ -207,7 +196,7 @@ def build_review_groups(book_dir: Path) -> dict:
         tts_util._ruby_global_overrides(baseline_data)
     )
 
-    payload_groups: List[dict] = []
+    payload_groups: list[dict] = []
     for key, group in groups.items():
         base = group["base"]
         reading = group["reading"]
@@ -228,7 +217,7 @@ def build_review_groups(book_dir: Path) -> dict:
         suggestion = ""
         if not aligned and not corrected:
             suggestion = suggest_small_kana_reading(reading)
-        flags: List[str] = []
+        flags: list[str] = []
         if aligned:
             flags.append("aligned")
         if count == 1:
@@ -253,7 +242,7 @@ def build_review_groups(book_dir: Path) -> dict:
         if mode:
             prop_entry["mode"] = mode
         prop_count = 0
-        prop_contexts: List[dict] = []
+        prop_contexts: list[dict] = []
         for chapter_id, text in texts.items():
             if not text or base not in text:
                 continue
@@ -301,7 +290,7 @@ def build_review_groups(book_dir: Path) -> dict:
     return {"groups": payload_groups}
 
 
-def update_decisions(book_dir: Path, updates: Dict[str, object]) -> Dict[str, dict]:
+def update_decisions(book_dir: Path, updates: dict[str, object]) -> dict[str, dict]:
     """Merge decision updates into reading-overrides.json (value None deletes
     a decision) and return the stored decisions."""
     path = book_dir / "reading-overrides.json"

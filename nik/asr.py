@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
-
 
 _LANGUAGE_MAP = {
     "japanese": "ja",
@@ -22,7 +20,7 @@ _LANGUAGE_MAP = {
 }
 
 
-def normalize_language(value: Optional[str]) -> Optional[str]:
+def normalize_language(value: str | None) -> str | None:
     if value is None:
         return None
     cleaned = str(value).strip()
@@ -35,9 +33,9 @@ def normalize_language(value: Optional[str]) -> Optional[str]:
 def transcribe_audio(
     audio_path: Path,
     model_name: str = "small",
-    language: Optional[str] = None,
-    device: Optional[str] = None,
-    initial_prompt: Optional[str] = None,
+    language: str | None = None,
+    device: str | None = None,
+    initial_prompt: str | None = None,
 ) -> str:
     if not audio_path.exists():
         raise FileNotFoundError(f"Audio not found: {audio_path}")
