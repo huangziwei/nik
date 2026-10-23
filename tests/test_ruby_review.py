@@ -242,11 +242,11 @@ def test_build_review_groups_flags_repeated_single_kanji_as_name(
 
     payload = ruby_review.build_review_groups(book_dir)
     groups = {group["key"]: group for group in payload["groups"]}
-    hajime = groups["一|はじめ"]
-    assert "name" in hajime["flags"]
-    assert hajime["scope"] == "inline"
-    assert hajime["mode"] == "isolated"
-    assert hajime["count"] == 3
+    name_group = groups["一|はじめ"]
+    assert "name" in name_group["flags"]
+    assert name_group["scope"] == "inline"
+    assert name_group["mode"] == "isolated"
+    assert name_group["count"] == 3
 
 
 def test_build_review_groups_does_not_flag_singleton_context_reading(

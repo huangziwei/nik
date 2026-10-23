@@ -112,8 +112,7 @@ def generate_chunk(
     `style_emoji` overrides the NIK_STYLE_EMOJI env fallback when not None
     (pass "" to force neutral); mirrors the MLX backend.
 
-    `num_steps` defaults to 20 (quality cliff is between 5 and 10; 20 is the
-    safer default for long inputs — see `.claude/plans/refactor-qwen-to-irodori.md`).
+    `num_steps` defaults to 20; quality drops sharply between 10 and 5 steps.
     Override via `NIK_NUM_STEPS` env var or the kwarg.
     """
     _ensure_vendor_on_path()

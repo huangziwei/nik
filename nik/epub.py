@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+import warnings
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,7 +11,7 @@ from posixpath import join as posix_join
 from posixpath import normpath as posix_normpath
 from urllib.parse import unquote
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment, XMLParsedAsHTMLWarning
 from ebooklib import ITEM_DOCUMENT, ITEM_IMAGE, ITEM_STYLE, epub
 
 from .text import SECTION_BREAK, normalize_section_breaks, reading_is_unpronounceable
@@ -32,10 +33,42 @@ class Chapter:
     ruby_spans: list[dict] = field(default_factory=list)
     headings: list[str] = field(default_factory=list)
     heading_categories: dict[str, str] = field(default_factory=dict)
+    # Normalized hrefs of the spine documents whose text this chapter holds.
+    spine_hrefs: tuple[str, ...] = ()
+
+
+def _lenient_ncx_links(data: bytes) -> list[epub.Link]:
+    """Flat `epub.Link`s for every navPoint, parsed with html.parser."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", XMLParsedAsHTMLWarning)
+        soup = BeautifulSoup(data, "html.parser")
+    links: list[epub.Link] = []
+    for point in soup.find_all("navpoint"):
+        label = point.find("navlabel")
+        content = point.find("content")
+        src = str(content.get("src") or "") if content else ""
+        if not src:
+            continue
+        title = label.get_text(strip=True) if label else ""
+        links.append(epub.Link(src, title, str(point.get("id") or "")))
+    return links
+
+
+class _TolerantEpubReader(epub.EpubReader):
+    """`EpubReader` that falls back to `_lenient_ncx_links` for a malformed NCX."""
+
+    def _parse_ncx(self, data: bytes) -> None:
+        try:
+            super()._parse_ncx(data)
+        except Exception:
+            self.book.toc = _lenient_ncx_links(data)
 
 
 def read_epub(path: Path) -> epub.EpubBook:
-    return epub.read_epub(str(path))
+    reader = _TolerantEpubReader(str(path), None)
+    book = reader.load()
+    reader.process()
+    return book
 
 
 def _first_dc_meta(book: epub.EpubBook, name: str) -> str:
@@ -189,7 +222,7 @@ def normalize_href(href: str) -> str:
     if not href:
         return ""
     href = href.split("#", 1)[0]
-    # Some EPUBs percent-encode filenames in TOC entries.
+    # TOC hrefs may be percent-encoded.
     return unquote(href)
 
 
@@ -229,6 +262,10 @@ def build_spine_entries(book: epub.EpubBook) -> list[TocEntry]:
         title = _item_title(item) or _item_name(item) or ""
         entries.append(TocEntry(title=title, href=_item_name(item)))
     return entries
+
+
+def _item_spine_href(item: object) -> str:
+    return normalize_href(_item_name(item))
 
 
 def _build_spine_items(book: epub.EpubBook) -> list[tuple[str, object]]:
@@ -295,6 +332,7 @@ def _join_item_text_and_ruby(
 
 
 _NOTE_MARKER_RE = re.compile(r"^\d{1,4}[a-z]?[.)]?$", re.IGNORECASE)
+_BRACKETED_NOTE_LABEL_RE = re.compile(r"[（(［\[〔]\d{1,4}[）)］\]〕]")
 _RUBY_TOKEN_START = "[[[RUBY_START]]]"
 _RUBY_TOKEN_MID = "[[[RUBY_MID]]]"
 _RUBY_TOKEN_END = "[[[RUBY_END]]]"
@@ -323,9 +361,7 @@ _NAV_CONTAINER_EPUB_TYPES = {"toc", "page-list", "landmarks", "loi", "lot"}
 
 
 def _is_navigation_anchor(anchor: object) -> bool:
-    """TOC/page-list links routinely carry bare numbers as labels (numbered
-    chapters, page anchors), so navigation anchors must never seed the
-    footnote-marker heuristics."""
+    """Whether `anchor` sits inside a `<nav>` or an `epub:type` navigation container."""
     for parent in getattr(anchor, "parents", None) or ():
         name = str(getattr(parent, "name", "") or "").lower()
         if name == "nav":
@@ -339,11 +375,57 @@ def _is_navigation_anchor(anchor: object) -> bool:
     return False
 
 
+_ANCHOR_BLOCK_TAGS = {
+    "p",
+    "div",
+    "li",
+    "dt",
+    "dd",
+    "td",
+    "th",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "section",
+    "body",
+}
+
+
+def _is_whole_block_anchor(anchor: object, text: str) -> bool:
+    """Whether `text` is all the text of the nearest block containing `anchor`."""
+    block = next(
+        (
+            parent
+            for parent in getattr(anchor, "parents", None) or ()
+            if str(getattr(parent, "name", "") or "").lower() in _ANCHOR_BLOCK_TAGS
+        ),
+        None,
+    )
+    if block is None:
+        return False
+    return _compact_heading_text(block.get_text()) == _compact_heading_text(text)
+
+
+def _is_number_link_list(root: object) -> bool:
+    """Whether all text under `root` is note-marker-like labels of `href` links."""
+    anchors = [anchor for anchor in root.find_all("a") if anchor.get("href")]
+    if not anchors:
+        return False
+    labels = [anchor.get_text(strip=True) for anchor in anchors]
+    if not all(_looks_like_note_marker(label) for label in labels):
+        return False
+    return _compact_heading_text(root.get_text()) == _compact_heading_text("".join(labels))
+
+
 def _collect_footnote_index(
     book: epub.EpubBook,
 ) -> dict[str, set[str]]:
     note_ids: set[str] = set()
     backref_ids: set[str] = set()
+    labelled_link_ids: set[str] = set()
 
     for item in book.get_items_of_type(ITEM_DOCUMENT):
         content = item.get_content()
@@ -383,13 +465,15 @@ def _collect_footnote_index(
                     note_ids.add(note_id)
 
         for anchor in soup.find_all("a"):
+            text = anchor.get_text(strip=True)
+            fragment = _normalize_id(_href_fragment(str(anchor.get("href") or "")))
+            if not _looks_like_note_marker(text):
+                if text and fragment:
+                    labelled_link_ids.add(fragment)
+                continue
             if _is_navigation_anchor(anchor):
                 continue
-            text = anchor.get_text(strip=True)
-            if not _looks_like_note_marker(text):
-                continue
-            fragment = _normalize_id(_href_fragment(str(anchor.get("href") or "")))
-            if fragment:
+            if fragment and not _is_whole_block_anchor(anchor, text):
                 backref_ids.add(fragment)
             parent = anchor.parent
             if parent and getattr(parent, "attrs", None):
@@ -399,7 +483,7 @@ def _collect_footnote_index(
                     if parent_text == text:
                         note_ids.add(parent_id)
 
-    return {"note_ids": note_ids, "backref_ids": backref_ids}
+    return {"note_ids": note_ids, "backref_ids": backref_ids - labelled_link_ids}
 
 
 def _parse_html_soup(html: bytes | str) -> BeautifulSoup:
@@ -416,21 +500,24 @@ def _parse_html_soup(html: bytes | str) -> BeautifulSoup:
     return BeautifulSoup(html, parser)
 
 
-def _ruby_base_reading(ruby: object) -> tuple[str, str]:
+def _ruby_raw_base(ruby: object) -> str:
     base_parts: list[str] = []
-    reading_parts: list[str] = []
-    contents = getattr(ruby, "contents", [])
-    for child in contents:
+    for child in getattr(ruby, "contents", []):
         name = getattr(child, "name", None)
-        if name in {"rt", "rp"}:
+        if name in {"rt", "rp"} or isinstance(child, Comment):
             continue
         if isinstance(child, str):
             base_parts.append(child)
         else:
             base_parts.append(child.get_text(separator="", strip=False))
+    return "".join(base_parts)
+
+
+def _ruby_base_reading(ruby: object) -> tuple[str, str]:
+    reading_parts: list[str] = []
     for rt in getattr(ruby, "find_all", lambda *_args, **_kwargs: [])("rt"):
         reading_parts.append(rt.get_text(separator="", strip=False))
-    base = "".join(base_parts).strip()
+    base = _ruby_raw_base(ruby).strip()
     reading = "".join(reading_parts).strip()
     return base, reading
 
@@ -443,15 +530,26 @@ def _render_image_alt_text(soup: BeautifulSoup) -> None:
         img.replace_with(alt)
 
 
+def _render_blank_base_ruby(soup: BeautifulSoup) -> None:
+    """Replace each ruby whose base is single-line whitespace
+    (e.g. 『<ruby>　　<rt>くうはく</rt></ruby>』) with its reading."""
+    for ruby in soup.find_all("ruby"):
+        raw_base = _ruby_raw_base(ruby)
+        if not raw_base or raw_base.strip() or "\n" in raw_base:
+            continue
+        _base, reading = _ruby_base_reading(ruby)
+        if not reading or reading_is_unpronounceable(reading):
+            continue
+        ruby.replace_with(reading)
+
+
 _BACKREF_KEEP_MIN_CHARS = 120
 _BACKREF_KEEP_MIN_PAGE_RATIO = 0.8
 
 
 def _holds_most_of_page_text(tag: object, page_text_len: int) -> bool:
-    """Backref fragments sometimes resolve to a page's root container (e.g. a
-    chapter <section> targeted by page anchors) rather than a note marker.
-    A real footnote is subordinate content, so an element holding nearly all
-    of a substantial page must be page content and may not be removed."""
+    """Whether `tag` holds `_BACKREF_KEEP_MIN_CHARS`+ characters and at least
+    `_BACKREF_KEEP_MIN_PAGE_RATIO` of `page_text_len`."""
     if page_text_len <= 0:
         return False
     get_text = getattr(tag, "get_text", None)
@@ -470,6 +568,7 @@ def _soup_to_text(
 ) -> str:
     _ = source_href
     _render_image_alt_text(soup)
+    _render_blank_base_ruby(soup)
     for tag in soup.find_all(["rt", "rp"]):
         tag.decompose()
     for tag in soup(["script", "style", "nav", "header", "footer", "aside", "noscript"]):
@@ -503,7 +602,7 @@ def _soup_to_text(
         if note_ids or backref_ids:
             for anchor in soup.find_all("a"):
                 text = anchor.get_text(strip=True)
-                if not _looks_like_note_marker(text):
+                if not _looks_like_note_marker(text) or _is_whole_block_anchor(anchor, text):
                     continue
                 fragment = _normalize_id(
                     _href_fragment(str(anchor.get("href") or ""))
@@ -530,6 +629,8 @@ def _soup_to_text(
         if id_text.startswith(("fn", "footnote", "endnote")):
             tag.decompose()
     root = soup.body if soup.body else soup
+    if _is_number_link_list(root):
+        return ""
 
     block_tags = {
         "p",
@@ -678,11 +779,12 @@ def _html_to_text_with_ruby_tokens(
     source_href: str = "",
 ) -> str:
     soup = _parse_html_soup(html)
+    _render_image_alt_text(soup)
+    _render_blank_base_ruby(soup)
     for ruby in soup.find_all("ruby"):
         base, reading = _ruby_base_reading(ruby)
-        # Ruby is sometimes abused for emphasis, with <rt> holding 傍点 marks
-        # (e.g. ヽヽヽ) rather than a reading. Treat such readings as absent so
-        # the base text survives as plain text and no bogus span is recorded.
+        # An unpronounceable reading (傍点 marks such as ヽヽヽ) leaves `base`
+        # as plain text with no ruby token.
         if base and reading and not reading_is_unpronounceable(reading):
             token = f"{_RUBY_TOKEN_START}{base}{_RUBY_TOKEN_MID}{reading}{_RUBY_TOKEN_END}"
             ruby.replace_with(token)
@@ -759,12 +861,21 @@ def slugify(text: str) -> str:
 _TITLE_MAX_LEN = 40
 _TITLE_ONLY_CHAPTER_MAX_LEN = 80
 _TITLE_ONLY_MERGE_MIN_NEXT_TEXT_LEN = 400
+# Front/back-matter chapter titles; a chapter with one never absorbs a neighbour.
 _NON_CONTENT_TOC_TITLES = {
     "表紙",
+    "カバー",
     "目次",
     "contents",
     "toc",
     "奥付",
+    "著作権",
+    "著作権情報",
+    "権利表記",
+    "著者紹介",
+    "作者紹介",
+    "広告",
+    "内容紹介",
 }
 _NON_CONTENT_TOC_TITLES_CASEFOLD = {value.casefold() for value in _NON_CONTENT_TOC_TITLES}
 _INLINE_TOC_MIN_LINKS = 3
@@ -1324,6 +1435,8 @@ def _should_merge_title_only_chapter_with_next(
 ) -> bool:
     if not _is_title_only_chapter(chapter):
         return False
+    if _is_non_content_toc_title(chapter.title):
+        return False
     if len(next_chapter.text) < _TITLE_ONLY_MERGE_MIN_NEXT_TEXT_LEN:
         return False
     if not _chapter_title_looks_inferred_from_body(next_chapter):
@@ -1398,6 +1511,7 @@ def _merge_title_only_chapter_with_next(chapter: Chapter, next_chapter: Chapter)
         ruby_spans=merged_ruby_spans,
         headings=merged_headings,
         heading_categories=merged_categories,
+        spine_hrefs=(*chapter.spine_hrefs, *next_chapter.spine_hrefs),
     )
 
 
@@ -1429,6 +1543,7 @@ def _merge_chapter_with_continuation(chapter: Chapter, continuation: Chapter) ->
         ruby_spans=merged_ruby_spans,
         headings=merged_headings,
         heading_categories=merged_categories,
+        spine_hrefs=(*chapter.spine_hrefs, *continuation.spine_hrefs),
     )
 
 
@@ -1513,9 +1628,13 @@ def _augment_toc_chapters_with_followups(
         next_pos = next(
             (p for p in sorted_boundaries if p > pos), len(spine_items)
         )
+        last_held_pos = max(
+            (spine_index[href] for href in chapter.spine_hrefs if href in spine_index),
+            default=pos,
+        )
 
         followup_items: list[object] = []
-        for p in range(pos + 1, next_pos):
+        for p in range(max(pos, last_held_pos) + 1, next_pos):
             _href, item = spine_items[p]
             if not _is_continuation_followup_item(
                 item,
@@ -1569,6 +1688,10 @@ def _augment_toc_chapters_with_followups(
                 ruby_spans=new_ruby_spans,
                 headings=new_headings,
                 heading_categories=new_categories,
+                spine_hrefs=(
+                    *chapter.spine_hrefs,
+                    *(_item_spine_href(fitem) for fitem in followup_items),
+                ),
             )
         )
 
@@ -1597,7 +1720,9 @@ def _merge_spine_chapters_by_start_hrefs(
             merged.append(current)
             current = chapter
             continue
-        if _is_spine_continuation_fragment(chapter):
+        if _is_spine_continuation_fragment(chapter) and not _is_non_content_toc_title(
+            current.title
+        ):
             current = _merge_chapter_with_continuation(current, chapter)
             continue
         merged.append(current)
@@ -1648,9 +1773,8 @@ def _build_spine_title_overrides_from_toc(
     inherited_hrefs: set[str] = set()
     text_cache: dict[str, str] = {}
 
-    # Some omnibus EPUBs place chapter labels in body-level CONTENTS pages
-    # instead of the package TOC. Harvest those link texts as additional title
-    # candidates before running title-page -> body inheritance.
+    # Link texts of body pages with `_INLINE_TOC_MIN_LINKS`+ spine links become
+    # title candidates.
     for source_href, source_item in spine_items:
         content = source_item.get_content()
         if not content:
@@ -1670,6 +1794,8 @@ def _build_spine_title_overrides_from_toc(
                 continue
             label = _normalize_heading_text(link.get_text(separator=" ", strip=True))
             if not label or len(label) > 120:
+                continue
+            if _BRACKETED_NOTE_LABEL_RE.fullmatch(_compact_heading_text(label)):
                 continue
             link_entries.append((resolved, label))
         if len(link_entries) < _INLINE_TOC_MIN_LINKS:
@@ -1707,12 +1833,12 @@ def _build_spine_title_overrides_from_toc(
             continue
         for next_idx in range(idx + 1, len(spine_items)):
             next_href, next_item = spine_items[next_idx]
-            if not item_text(next_href, next_item):
-                continue
             if next_href in toc_hrefs:
                 next_toc_title = str(overrides.get(next_href, "")).strip()
                 if next_toc_title and not _looks_like_filename(next_toc_title, next_href):
                     break
+            if not item_text(next_href, next_item):
+                continue
             next_override = str(overrides.get(next_href, "")).strip()
             if next_override and not _looks_like_filename(next_override, next_href):
                 break
@@ -1811,6 +1937,7 @@ def _chapters_from_entries(
                 ruby_spans=ruby_spans,
                 headings=headings,
                 heading_categories=resolved_heading_categories,
+                spine_hrefs=(_item_spine_href(item),),
             )
         )
 
@@ -1949,12 +2076,94 @@ def _chapters_from_toc_entries(
                 ruby_spans=ruby_spans,
                 headings=headings,
                 heading_categories=resolved_heading_categories,
+                spine_hrefs=tuple(
+                    _item_spine_href(member)
+                    for member in (merged_items or [item_for_title])
+                ),
             )
         )
 
     if apply_title_only_merge:
         return _merge_title_only_chapters(chapters)
     return chapters
+
+
+def _recover_uncovered_spine_text(
+    chapters: list[Chapter],
+    book: epub.EpubBook,
+    footnote_index: dict[str, set[str]] | None,
+    heading_class_markers: set[str] | None,
+    heading_id_markers: set[str] | None,
+    title_overrides: dict[str, str] | None,
+    prepend_title_hrefs: set[str] | None,
+) -> list[Chapter]:
+    """Turn every spine document that no chapter holds into chapters of its
+    own, placed in spine order among the existing chapters."""
+    spine_items = _build_spine_items(book)
+    spine_index = {href: idx for idx, (href, _item) in enumerate(spine_items)}
+    covered = {href for chapter in chapters for href in chapter.spine_hrefs}
+
+    runs: list[list[object]] = []
+    current_run: list[object] = []
+    for href, item in spine_items:
+        if href in covered:
+            if current_run:
+                runs.append(current_run)
+                current_run = []
+            continue
+        current_run.append(item)
+    if current_run:
+        runs.append(current_run)
+
+    recovered: list[Chapter] = []
+    for run in runs:
+        entries = [
+            TocEntry(title=_item_title(item) or _item_name(item), href=_item_name(item))
+            for item in run
+        ]
+        run_chapters = _chapters_from_entries(
+            book,
+            entries,
+            footnote_index,
+            title_overrides=title_overrides,
+            heading_class_markers=heading_class_markers,
+            heading_id_markers=heading_id_markers,
+            prepend_title_hrefs=prepend_title_hrefs,
+        )
+        merged: list[Chapter] = []
+        for chapter in run_chapters:
+            if (
+                merged
+                and _is_spine_continuation_fragment(chapter)
+                and not _is_non_content_toc_title(merged[-1].title)
+            ):
+                merged[-1] = _merge_chapter_with_continuation(merged[-1], chapter)
+            else:
+                merged.append(chapter)
+        recovered.extend(merged)
+    if not recovered:
+        return chapters
+
+    def spine_position(chapter: Chapter) -> int | None:
+        positions = [
+            spine_index[href] for href in chapter.spine_hrefs if href in spine_index
+        ]
+        return min(positions) if positions else None
+
+    recovered.sort(key=lambda chapter: spine_position(chapter) or 0)
+    out: list[Chapter] = []
+    pending = 0
+    for chapter in chapters:
+        position = spine_position(chapter)
+        if position is not None:
+            while pending < len(recovered) and (
+                (spine_position(recovered[pending]) or 0) < position
+            ):
+                out.append(recovered[pending])
+                pending += 1
+        out.append(chapter)
+    out.extend(recovered[pending:])
+    return out
 
 
 def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> list[Chapter]:
@@ -2036,4 +2245,12 @@ def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> list[Chapt
             extra_boundary_hrefs=spine_start_hrefs,
         )
         chapters = _merge_title_only_chapters(chapters)
-    return chapters
+    return _recover_uncovered_spine_text(
+        chapters,
+        book,
+        footnote_index,
+        heading_class_markers,
+        heading_id_markers,
+        title_overrides=spine_title_overrides or None,
+        prepend_title_hrefs=spine_prepend_title_hrefs or None,
+    )

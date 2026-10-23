@@ -504,6 +504,35 @@ def test_html_to_text_with_ruby_drops_emphasis_mark_reading() -> None:
     assert spans == [{"start": 6, "end": 8, "base": "分析", "reading": "かい"}]
 
 
+def test_html_to_text_renders_blank_base_ruby_as_reading() -> None:
+    html = "<p>よろしく『<ruby>　　<rt>くうはく</rt></ruby>』さん</p>".encode()
+    assert epub_util.html_to_text_with_ruby(html) == ("よろしく『くうはく』さん", [])
+    assert epub_util.html_to_text(html) == "よろしく『くうはく』さん"
+
+
+def test_html_to_text_drops_reading_of_ruby_without_base() -> None:
+    html = "<p>全部貰<ruby><rt>もら</rt></ruby>い物やから</p>".encode()
+    assert epub_util.html_to_text_with_ruby(html) == ("全部貰い物やから", [])
+    assert epub_util.html_to_text(html) == "全部貰い物やから"
+
+
+def test_html_to_text_with_ruby_skips_comments_inside_ruby_base() -> None:
+    html = "<p><ruby>Ｃ<!--kisyu=6-->Ｏ<rt>シーオー</rt></ruby>だ</p>".encode()
+    text, spans = epub_util.html_to_text_with_ruby(html)
+    assert text == "ＣＯだ"
+    assert spans == [{"start": 0, "end": 2, "base": "ＣＯ", "reading": "シーオー"}]
+
+
+def test_html_to_text_with_ruby_keeps_gaiji_alt_inside_ruby_base() -> None:
+    html = (
+        "<p><ruby><rb>酢</rb><rt>す</rt><rb><img src='g.png' alt='蓮'/></rb>"
+        "<rt>ばす</rt></ruby>に卵焼</p>"
+    ).encode()
+    text, spans = epub_util.html_to_text_with_ruby(html)
+    assert text == "酢蓮に卵焼"
+    assert spans == [{"start": 0, "end": 2, "base": "酢蓮", "reading": "すばす"}]
+
+
 def test_html_to_text_inserts_section_break_for_rare_class() -> None:
     html = "".join("<p class='main'>本文</p>" for _ in range(10))
     html += "<p class='alt'>区切り</p>"
@@ -640,7 +669,7 @@ def test_extract_chapters_folds_non_toc_intro_into_chapter(tmp_path: Path) -> No
 
 def _write_pagelist_nav_epub(epub_path: Path) -> None:
     """Numbered chapters wrapped in id-carrying sections, plus a page-list nav
-    whose numeric anchors target those section ids (Betteria-style layout)."""
+    whose numeric anchors target those section ids."""
     book = epub.EpubBook()
     book.set_identifier("pagelist-book")
     book.set_title("Pagelist Sample")
@@ -778,3 +807,366 @@ def test_extract_chapters_still_strips_footnote_bodies_and_markers(
     assert "1" not in chapter_one.text.replace("一章", "")
     for chapter in chapters:
         assert "注釈のテキスト" not in chapter.text
+
+
+def _write_untitled_scene_after_contents_epub(epub_path: Path, scene_lines: int) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("untitled-scene-after-contents-book")
+    book.set_title("Untitled Scene After Contents")
+    book.set_language("ja")
+
+    contents = epub.EpubHtml(title="目次", file_name="contents.xhtml", lang="ja")
+    contents.content = (
+        "<html><body><p>目次</p>"
+        "<p><a href='chapter-1.xhtml'>～１敗目～　断じて下心はありません</a></p>"
+        "<p><a href='chapter-2.xhtml'>～２敗目～　肩の重みに揺らされて</a></p>"
+        "</body></html>"
+    )
+
+    scene = epub.EpubHtml(title="", file_name="scene.xhtml", lang="ja")
+    scene.content = (
+        "<html><body><p>　放課後のツワブキ高校図書室。</p>"
+        + "".join("<p>　図書室は閑散としている。</p>" for _ in range(scene_lines))
+        + "</body></html>"
+    )
+
+    chapters = []
+    for idx, title in enumerate(
+        ("～１敗目～　断じて下心はありません", "～２敗目～　肩の重みに揺らされて"), start=1
+    ):
+        chapter = epub.EpubHtml(title=title, file_name=f"chapter-{idx}.xhtml", lang="ja")
+        chapter.content = (
+            f"<html><body><h1>{title}</h1>"
+            + "".join(f"<p>　本文{idx}です。</p>" for _ in range(200))
+            + "</body></html>"
+        )
+        chapters.append(chapter)
+
+    for item in (contents, scene, *chapters):
+        book.add_item(item)
+    book.toc = (contents, *chapters)
+    book.spine = [contents, scene, *chapters]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
+def _assert_scene_survives_contents_drop(chapters: list[epub_util.Chapter]) -> None:
+    titles = [ch.title for ch in chapters]
+    contents = next(ch for ch in chapters if ch.title == "目次")
+    assert "放課後のツワブキ高校図書室。" not in contents.text
+    scene = next(ch for ch in chapters if "放課後のツワブキ高校図書室。" in ch.text)
+    assert scene.title not in {"目次", "～１敗目～　断じて下心はありません"}
+    assert titles.index(scene.title) == titles.index("目次") + 1
+
+
+def test_extract_chapters_keeps_long_untitled_scene_out_of_contents_page(
+    tmp_path: Path,
+) -> None:
+    epub_path = tmp_path / "long-untitled-scene.epub"
+    _write_untitled_scene_after_contents_epub(epub_path, scene_lines=120)
+    book = epub_util.read_epub(epub_path)
+    _assert_scene_survives_contents_drop(epub_util.extract_chapters(book, prefer_toc=True))
+
+
+def test_extract_chapters_recovers_short_untitled_scene_after_contents_page(
+    tmp_path: Path,
+) -> None:
+    epub_path = tmp_path / "short-untitled-scene.epub"
+    _write_untitled_scene_after_contents_epub(epub_path, scene_lines=3)
+    book = epub_util.read_epub(epub_path)
+    _assert_scene_survives_contents_drop(epub_util.extract_chapters(book, prefer_toc=True))
+
+
+def _write_unlisted_structural_section_epub(epub_path: Path) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("unlisted-structural-section-book")
+    book.set_title("Unlisted Structural Section")
+    book.set_language("ja")
+
+    items = []
+    for name, heading, body in (
+        ("chapter-1.xhtml", "第一章", "最初の本文です。"),
+        ("chapter-2.xhtml", "第二章", "見出しの本文です。"),
+        ("chapter-2-cont.xhtml", "", "その続きです。"),
+        ("chapter-3.xhtml", "第三章", "最後の本文です。"),
+    ):
+        lines = 3 if name.startswith("chapter-2") else 200
+        item = epub.EpubHtml(title=heading or name, file_name=name, lang="ja")
+        item.content = (
+            "<html><body>"
+            + (f"<p>{heading}</p>" if heading else "")
+            + "".join(f"<p>{body}</p>" for _ in range(lines))
+            + "</body></html>"
+        )
+        items.append(item)
+        book.add_item(item)
+    # The TOC omits 第二章 on purpose.
+    book.toc = (items[0], items[3])
+    book.spine = items
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
+def test_extract_chapters_recovers_section_after_unlisted_structural_heading(
+    tmp_path: Path,
+) -> None:
+    epub_path = tmp_path / "unlisted-structural-section.epub"
+    _write_unlisted_structural_section_epub(epub_path)
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=True)
+    assert [ch.title for ch in chapters] == ["第一章", "第二章", "第三章"]
+    assert "見出しの本文です。" in chapters[1].text
+    assert "その続きです。" in chapters[1].text
+    assert "見出しの本文です。" not in chapters[0].text
+
+
+def _write_calibre_split_series_epub(epub_path: Path) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("calibre-split-series-book")
+    book.set_title("Calibre Split Series")
+    book.set_language("ja")
+
+    items = []
+    for idx in range(3):
+        item = epub.EpubHtml(
+            uid=f"split{idx}",
+            title=f"part0008_split_00{idx}.xhtml",
+            file_name=f"part0008_split_00{idx}.xhtml",
+            lang="ja",
+        )
+        heading = "<h1>第一話</h1>" if idx == 0 else ""
+        item.content = (
+            f"<html><body>{heading}"
+            + "".join(f"<p>断片{idx}の本文です。</p>" for _ in range(40))
+            + "</body></html>"
+        )
+        items.append(item)
+    ending = epub.EpubHtml(uid="ending", title="第二話", file_name="part0009.xhtml", lang="ja")
+    ending.content = (
+        "<html><body><h1>第二話</h1>"
+        + "".join("<p>最後の本文です。</p>" for _ in range(40))
+        + "</body></html>"
+    )
+    for item in (*items, ending):
+        book.add_item(item)
+    book.toc = (
+        epub.Link("part0008_split_000.xhtml", "第一話", "ch1"),
+        epub.Link("part0009.xhtml", "第二話", "ch2"),
+    )
+    book.spine = [*items, ending]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
+def test_extract_chapters_does_not_repeat_merged_split_series(tmp_path: Path) -> None:
+    epub_path = tmp_path / "calibre-split-series.epub"
+    _write_calibre_split_series_epub(epub_path)
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=True)
+    assert [ch.title for ch in chapters] == ["第一話", "第二話"]
+    for idx in range(3):
+        assert chapters[0].text.count(f"断片{idx}の本文です。") == 40
+
+
+def _write_image_only_story_before_title_page_epub(epub_path: Path) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("image-only-story-book")
+    book.set_title("Image Only Story")
+    book.set_language("ja")
+
+    pages = []
+    for name in ("picture-title.xhtml", "picture-1.xhtml", "story-title.xhtml"):
+        page = epub.EpubHtml(title=name, file_name=name, lang="ja")
+        page.content = "<html><body><img src='missing.jpg' alt=''/></body></html>"
+        pages.append(page)
+    body = epub.EpubHtml(title="story-body.xhtml", file_name="story-body.xhtml", lang="ja")
+    body.content = (
+        "<html><body>"
+        + "".join("<p>　物語の本文です。</p>" for _ in range(80))
+        + "</body></html>"
+    )
+    for item in (*pages, body):
+        book.add_item(item)
+    book.toc = (
+        epub.Link("picture-title.xhtml", "残酷童話　うつくし姫", "picture"),
+        epub.Link("story-title.xhtml", "第零話　あせろらボナペティ", "story"),
+    )
+    book.spine = [*pages, body]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
+def test_extract_chapters_does_not_inherit_title_across_another_toc_entry(
+    tmp_path: Path,
+) -> None:
+    epub_path = tmp_path / "image-only-story.epub"
+    _write_image_only_story_before_title_page_epub(epub_path)
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=True)
+    assert [ch.title for ch in chapters] == ["第零話　あせろらボナペティ"]
+
+
+def test_read_epub_recovers_toc_from_malformed_ncx(tmp_path: Path) -> None:
+    import zipfile
+
+    book = epub.EpubBook()
+    book.set_identifier("malformed-ncx-book")
+    book.set_title("Malformed NCX")
+    book.set_language("ja")
+    chapters = []
+    for idx, title in enumerate(("序章", "第一章", "終章"), start=1):
+        chapter = epub.EpubHtml(title=title, file_name=f"chapter-{idx}.xhtml", lang="ja")
+        chapter.content = f"<h1>{title}</h1><p>本文{idx}です。</p>"
+        book.add_item(chapter)
+        chapters.append(chapter)
+    book.toc = tuple(chapters)
+    book.spine = chapters
+    book.add_item(epub.EpubNcx())
+    source = tmp_path / "source.epub"
+    epub.write_epub(str(source), book)
+
+    broken = tmp_path / "broken-ncx.epub"
+    with zipfile.ZipFile(source) as zin, zipfile.ZipFile(broken, "w") as zout:
+        for info in zin.infolist():
+            data = zin.read(info.filename)
+            if info.filename.endswith(".ncx"):
+                data = data.replace(
+                    b"<text>Malformed NCX</text>", "<text>業物語 <物語></text>".encode(), 1
+                )
+            zout.writestr(info, data)
+    book = epub_util.read_epub(broken)
+    titles = [entry.title for entry in epub_util.build_toc_entries(book)]
+    assert titles == ["序章", "第一章", "終章"]
+    assert [ch.title for ch in epub_util.extract_chapters(book, prefer_toc=True)] == titles
+
+
+def _write_numbered_contents_link_epub(epub_path: Path) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("numbered-contents-link-book")
+    book.set_title("Numbered Contents Link")
+    book.set_language("ja")
+
+    contents = epub.EpubHtml(title="目次", file_name="contents.xhtml", lang="ja")
+    contents.content = (
+        "<html><body><p>目次</p>"
+        "<p class='toc'><a href='story.xhtml#title1'>１</a>"
+        "<a href='story.xhtml#title1'>中古品の子供たちを育てる人々</a></p>"
+        "</body></html>"
+    )
+    story = epub.EpubHtml(title="story.xhtml", file_name="story.xhtml", lang="ja")
+    story.content = (
+        "<html><body><p id='title1'>The Used-Boy Raisers</p>"
+        "<p>１．中古品の子供たちを育てる人々</p>"
+        + "".join("<p>　卵のことで気落ちした二人の夫がいた。</p>" for _ in range(40))
+        + "</body></html>"
+    )
+    for item in (contents, story):
+        book.add_item(item)
+    book.toc = (contents, epub.Link("story.xhtml", "１．中古品の子供たちを育てる人々", "s1"))
+    book.spine = [contents, story]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
+def test_extract_chapters_keeps_target_of_numbered_contents_link(tmp_path: Path) -> None:
+    epub_path = tmp_path / "numbered-contents-link.epub"
+    _write_numbered_contents_link_epub(epub_path)
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=True)
+    story = next(ch for ch in chapters if ch.title != "目次")
+    assert story.text.startswith("The Used-Boy Raisers")
+
+
+def _write_numbered_section_heading_epub(epub_path: Path) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("numbered-section-heading-book")
+    book.set_title("Numbered Section Heading")
+    book.set_language("ja")
+
+    contents = epub.EpubHtml(title="目次", file_name="contents.xhtml", lang="ja")
+    contents.content = (
+        "<html><body><p id='mokuji'>目次</p>"
+        + "".join(
+            f"<p><a href='section-{idx}.xhtml#heading-{idx}'><span>{label}</span></a></p>"
+            for idx, label in ((1, "１"), (2, "２"))
+        )
+        + "</body></html>"
+    )
+    sections = []
+    for idx, label in ((1, "１"), (2, "２")):
+        section = epub.EpubHtml(title=label, file_name=f"section-{idx}.xhtml", lang="ja")
+        section.content = (
+            f"<html><body><p id='heading-{idx}'>　　<span>"
+            f"<a href='contents.xhtml#mokuji'>{label}</a></span></p>"
+            + "".join(f"<p>　第{idx}節の本文です。</p>" for _ in range(40))
+            + "</body></html>"
+        )
+        sections.append(section)
+    for item in (contents, *sections):
+        book.add_item(item)
+    book.toc = (contents, *sections)
+    book.spine = [contents, *sections]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
+def test_extract_chapters_keeps_numbered_heading_linked_from_contents(
+    tmp_path: Path,
+) -> None:
+    epub_path = tmp_path / "numbered-section-heading.epub"
+    _write_numbered_section_heading_epub(epub_path)
+    book = epub_util.read_epub(epub_path)
+    chapters = epub_util.extract_chapters(book, prefer_toc=True)
+    sections = [ch for ch in chapters if ch.title in {"１", "２"}]
+    assert [ch.text.split("\n", 1)[0] for ch in sections] == ["１", "２"]
+
+
+def _write_annotation_backlinks_epub(epub_path: Path) -> None:
+    book = epub.EpubBook()
+    book.set_identifier("annotation-backlinks-book")
+    book.set_title("Annotation Backlinks")
+    book.set_language("ja")
+
+    stories = []
+    for idx, title in enumerate(("畸形の天女", "女妖", "空とぶ円盤"), start=1):
+        story = epub.EpubHtml(title=title, file_name=f"story-{idx}.xhtml", lang="ja")
+        story.content = (
+            f"<html><body><h1>{title}</h1>"
+            + "".join("<p>　本文です。</p>" for _ in range(40))
+            + f"<p>　活気がみちていた<a href='notes.xhtml#note{idx}'>（{idx}）</a>。</p>"
+            + "</body></html>"
+        )
+        stories.append(story)
+    notes = epub.EpubHtml(title="解題", file_name="notes.xhtml", lang="ja")
+    notes.content = (
+        "<html><body><h1>解題</h1>"
+        + "".join(
+            f"<p id='note{idx}'><a href='story-{idx}.xhtml#ref{idx}'>（{idx}）</a>"
+            "連載された作品である。</p>"
+            for idx in range(1, 4)
+        )
+        + "</body></html>"
+    )
+    for item in (*stories, notes):
+        book.add_item(item)
+    book.toc = (stories[0], notes)
+    book.spine = [*stories, notes]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(epub_path), book)
+
+
+def test_extract_chapters_ignores_bracketed_annotation_backlinks_as_titles(
+    tmp_path: Path,
+) -> None:
+    epub_path = tmp_path / "annotation-backlinks.epub"
+    _write_annotation_backlinks_epub(epub_path)
+    book = epub_util.read_epub(epub_path)
+    titles = [ch.title for ch in epub_util.extract_chapters(book, prefer_toc=True)]
+    assert titles == ["畸形の天女", "女妖", "空とぶ円盤", "解題"]
