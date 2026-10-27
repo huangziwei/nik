@@ -220,7 +220,9 @@ def test_boundary_report_recommends_pad_adjustment_with_latency_data() -> None:
 def test_clone_applies_audio_normalization(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "pyproject.toml").write_text("[project]\nname='nik'\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname='nik'\n", encoding="utf-8"
+    )
     source = tmp_path / "source.wav"
     source.write_bytes(b"src")
 
@@ -230,7 +232,9 @@ def test_clone_applies_audio_normalization(
     )
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
-        cli.shutil, "which", lambda name: "/usr/bin/ffmpeg" if name == "ffmpeg" else None
+        cli.shutil,
+        "which",
+        lambda name: "/usr/bin/ffmpeg" if name == "ffmpeg" else None,
     )
 
     def fake_run(cmd: list[str], check: bool) -> SimpleNamespace:
@@ -253,7 +257,9 @@ def test_clone_applies_audio_normalization(
 def test_clone_returns_error_when_normalization_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (tmp_path / "pyproject.toml").write_text("[project]\nname='nik'\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text(
+        "[project]\nname='nik'\n", encoding="utf-8"
+    )
     source = tmp_path / "source.wav"
     source.write_bytes(b"src")
 
@@ -263,7 +269,9 @@ def test_clone_returns_error_when_normalization_fails(
     )
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
-        cli.shutil, "which", lambda name: "/usr/bin/ffmpeg" if name == "ffmpeg" else None
+        cli.shutil,
+        "which",
+        lambda name: "/usr/bin/ffmpeg" if name == "ffmpeg" else None,
     )
 
     def fake_run(cmd: list[str], check: bool) -> SimpleNamespace:
@@ -313,17 +321,14 @@ def test_ingest_epub_counts_coalesced_ruby_groups(tmp_path: Path) -> None:
     raw_dir.mkdir(parents=True)
     rc = cli._ingest_epub(epub_path, out_dir, raw_dir)
     assert rc == 0
-    data = json.loads(
-        (out_dir / "reading-overrides.json").read_text(encoding="utf-8")
-    )
+    data = json.loads((out_dir / "reading-overrides.json").read_text(encoding="utf-8"))
     chapters = data.get("chapters", {})
     assert chapters
     replacements = next(iter(chapters.values())).get("replacements", [])
     pairs = {(item.get("base"), item.get("reading")) for item in replacements}
     assert ("佳樹", "かじゆ") in pairs
     global_pairs = {
-        (entry.get("base"), entry.get("reading"))
-        for entry in data["ruby"]["global"]
+        (entry.get("base"), entry.get("reading")) for entry in data["ruby"]["global"]
     }
     assert ("佳樹", "かじゆ") in global_pairs
     conflict_bases = {item.get("base") for item in data["ruby"]["conflicts"]}

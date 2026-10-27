@@ -14,7 +14,9 @@ from nik import voice as voice_util
 def _make_repo(tmp_path: Path) -> tuple[Path, Path]:
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
-    (repo_root / "pyproject.toml").write_text("[project]\nname='nik'\n", encoding="utf-8")
+    (repo_root / "pyproject.toml").write_text(
+        "[project]\nname='nik'\n", encoding="utf-8"
+    )
     root_dir = repo_root / "out"
     root_dir.mkdir()
     return repo_root, root_dir
@@ -26,7 +28,9 @@ def _make_book(root_dir: Path, book_id: str = "book") -> Path:
     (book_dir / "clean" / "toc.json").write_text("{}", encoding="utf-8")
     (book_dir / "tts").mkdir(parents=True, exist_ok=True)
     (book_dir / "tts" / "manifest.json").write_text(
-        json.dumps({"voice": "manifest-voice", "chapters": [{"id": "c1", "chunks": ["chunk"]}]}),
+        json.dumps(
+            {"voice": "manifest-voice", "chapters": [{"id": "c1", "chunks": ["chunk"]}]}
+        ),
         encoding="utf-8",
     )
     return book_dir
@@ -78,7 +82,9 @@ def test_list_voice_ids(tmp_path: Path) -> None:
 
 def test_sanitize_voice_map_fallback(tmp_path: Path) -> None:
     payload = {"default": "default", "chapters": {"001": "a"}}
-    data = player_util._sanitize_voice_map(payload, tmp_path, fallback_default="fallback")
+    data = player_util._sanitize_voice_map(
+        payload, tmp_path, fallback_default="fallback"
+    )
     assert data["default"] == "fallback"
     assert data["chapters"] == {"001": "a"}
 
@@ -138,7 +144,9 @@ def test_reading_overrides_save_preserves_editor_text_comments(
     assert payload["overrides"] == [{"base": "事件", "reading": "じけん"}]
     assert payload["text"] == text
 
-    saved = json.loads((book_dir / "reading-overrides.json").read_text(encoding="utf-8"))
+    saved = json.loads(
+        (book_dir / "reading-overrides.json").read_text(encoding="utf-8")
+    )
     assert saved["global"] == [{"base": "事件", "reading": "じけん"}]
     assert saved["global_text"] == text
 
@@ -171,7 +179,9 @@ def test_reading_overrides_get_prefills_unidic_mismatch_comments(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(player_util, "_load_unidic_tagger_if_available", lambda: object())
+    monkeypatch.setattr(
+        player_util, "_load_unidic_tagger_if_available", lambda: object()
+    )
     monkeypatch.setattr(
         player_util,
         "_is_unidic_aligned_ruby_reading",
@@ -184,7 +194,9 @@ def test_reading_overrides_get_prefills_unidic_mismatch_comments(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["overrides"] == [{"base": "善", "reading": "ぜん", "mode": "isolated"}]
+    assert payload["overrides"] == [
+        {"base": "善", "reading": "ぜん", "mode": "isolated"}
+    ]
     assert "善=ぜん" in payload["text"]
     assert "# 事件=ヤマ" in payload["text"]
     assert "# 検事=けんじ" not in payload["text"]
@@ -208,7 +220,12 @@ def test_reading_overrides_get_skips_stem_ruby_mismatch_with_okurigana_surface(
                     "chapters": {
                         "c1": {
                             "raw_spans": [
-                                {"start": 0, "end": 2, "base": "微笑", "reading": "ほほえ"}
+                                {
+                                    "start": 0,
+                                    "end": 2,
+                                    "base": "微笑",
+                                    "reading": "ほほえ",
+                                }
                             ]
                         }
                     },
@@ -218,7 +235,9 @@ def test_reading_overrides_get_skips_stem_ruby_mismatch_with_okurigana_surface(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(player_util, "_load_unidic_tagger_if_available", lambda: object())
+    monkeypatch.setattr(
+        player_util, "_load_unidic_tagger_if_available", lambda: object()
+    )
     monkeypatch.setattr(
         player_util,
         "_is_unidic_aligned_ruby_reading",
@@ -258,7 +277,9 @@ def test_is_unidic_aligned_ruby_reading_accepts_alternate_surface_candidate(
     monkeypatch.setattr(
         player_util,
         "_surface_reading_candidates_kata",
-        lambda surface, _tagger, **_kwargs: {"ジャコ", "ザコ"} if surface == "雑魚" else set(),
+        lambda surface, _tagger, **_kwargs: (
+            {"ジャコ", "ザコ"} if surface == "雑魚" else set()
+        ),
     )
 
     assert player_util._is_unidic_aligned_ruby_reading("雑魚", "ざこ", object()) is True
@@ -287,7 +308,9 @@ def test_parse_clone_time_accepts_seconds_and_timecode() -> None:
     assert player_util._parse_clone_time("0", "start", allow_zero=True) == "0"
     assert player_util._parse_clone_time("1.250", "start", allow_zero=True) == "1.25"
     assert player_util._parse_clone_time("01:02", "start", allow_zero=True) == "62"
-    assert player_util._parse_clone_time("00:01:02.5", "start", allow_zero=True) == "62.5"
+    assert (
+        player_util._parse_clone_time("00:01:02.5", "start", allow_zero=True) == "62.5"
+    )
 
 
 @pytest.mark.parametrize(
@@ -346,7 +369,12 @@ def test_clone_preview_and_save_reuses_preview(
 
     preview = client.post(
         "/api/voices/clone/preview",
-        json={"source": source_path, "start": "1", "duration": "3.5", "gender": "female"},
+        json={
+            "source": source_path,
+            "start": "1",
+            "duration": "3.5",
+            "gender": "female",
+        },
     )
     assert preview.status_code == 200
     preview_payload = preview.json()
@@ -433,7 +461,9 @@ def test_run_clone_ffmpeg_raises_when_normalization_fails(
         raise RuntimeError("bad normalize")
 
     monkeypatch.setattr(player_util.subprocess, "run", fake_run)
-    monkeypatch.setattr(player_util.audio_norm_util, "normalize_clone_wav", fail_normalize)
+    monkeypatch.setattr(
+        player_util.audio_norm_util, "normalize_clone_wav", fail_normalize
+    )
 
     with pytest.raises(RuntimeError, match="Failed to normalize clone audio"):
         player_util._run_clone_ffmpeg(input_path, output_path, "0", "2")
@@ -491,7 +521,9 @@ def test_voice_metadata_update_and_delete(tmp_path: Path) -> None:
     assert not (voices_dir / "Sample2.json").exists()
 
 
-def test_synth_chunk_passes_selected_voice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_synth_chunk_passes_selected_voice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _, root_dir = _make_repo(tmp_path)
     _make_book(root_dir)
     captured: dict = {}
@@ -520,11 +552,15 @@ def test_synth_chunk_passes_selected_voice(tmp_path: Path, monkeypatch: pytest.M
     assert captured["voice_map_path"] is None
 
 
-def test_synth_chunk_passes_voice_map_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_synth_chunk_passes_voice_map_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _, root_dir = _make_repo(tmp_path)
     book_dir = _make_book(root_dir)
     (book_dir / "voice-map.json").write_text(
-        json.dumps({"default": "advanced-default", "chapters": {"c1": "chapter-voice"}}),
+        json.dumps(
+            {"default": "advanced-default", "chapters": {"c1": "chapter-voice"}}
+        ),
         encoding="utf-8",
     )
     captured: dict = {}
@@ -587,7 +623,9 @@ def test_synth_chunk_allowed_while_tts_running(
         lambda **_kwargs: SimpleNamespace(),
     )
     monkeypatch.setattr(player_util.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
-    monkeypatch.setattr(player_util.subprocess, "Popen", lambda *_args, **_kwargs: DummyProcess())
+    monkeypatch.setattr(
+        player_util.subprocess, "Popen", lambda *_args, **_kwargs: DummyProcess()
+    )
 
     app = player_util.create_app(root_dir)
     client = TestClient(app)
@@ -691,7 +729,11 @@ def test_clear_tts_forces_rechunk_with_manifest_settings(
     response = client.post("/api/tts/clear", json={"book_id": "book"})
 
     assert response.status_code == 200
-    assert response.json() == {"status": "cleared", "book_id": "book", "tts_cleared": True}
+    assert response.json() == {
+        "status": "cleared",
+        "book_id": "book",
+        "tts_cleared": True,
+    }
     assert captured["book_dir"] == book_dir
     assert captured["max_chars"] == 321
     assert captured["pad_ms"] == 444
@@ -718,14 +760,21 @@ def test_chapter_text_prefers_overrides_over_propagated_ruby(tmp_path: Path) -> 
         json.dumps(
             {
                 "global": [{"base": "事件", "reading": "じけん"}],
-                "chapters": {"c1": {"replacements": [{"base": "事件", "reading": "ヤマ"}]}},
+                "chapters": {
+                    "c1": {"replacements": [{"base": "事件", "reading": "ヤマ"}]}
+                },
                 "ruby": {
                     "global": [{"base": "事件", "reading": "ヤマ"}],
                     "chapters": {
                         "c1": {
                             "clean_sha256": chapter_hash,
                             "clean_spans": [
-                                {"start": 0, "end": 2, "base": "事件", "reading": "ヤマ"}
+                                {
+                                    "start": 0,
+                                    "end": 2,
+                                    "base": "事件",
+                                    "reading": "ヤマ",
+                                }
                             ],
                         }
                     },
@@ -787,14 +836,29 @@ def test_ruby_review_endpoint_returns_groups(
             {
                 "ruby": {
                     "global": [
-                        {"base": "天愛星", "reading": "ていあら", "count": 2, "total": 2}
+                        {
+                            "base": "天愛星",
+                            "reading": "ていあら",
+                            "count": 2,
+                            "total": 2,
+                        }
                     ],
                     "chapters": {
                         "c1": {
                             "clean_sha256": chapter_hash,
                             "clean_spans": [
-                                {"start": 0, "end": 3, "base": "天愛星", "reading": "ていあら"},
-                                {"start": 8, "end": 11, "base": "天愛星", "reading": "ていあら"},
+                                {
+                                    "start": 0,
+                                    "end": 3,
+                                    "base": "天愛星",
+                                    "reading": "ていあら",
+                                },
+                                {
+                                    "start": 8,
+                                    "end": 11,
+                                    "base": "天愛星",
+                                    "reading": "ていあら",
+                                },
                             ],
                         }
                     },
@@ -840,7 +904,9 @@ def test_ruby_review_decisions_endpoint_saves_and_refreshes(
         "/api/ruby-review/decisions",
         json={
             "book_id": "book",
-            "decisions": {"天愛星|ていあら": {"reading": "てぃあら", "scope": "global"}},
+            "decisions": {
+                "天愛星|ていあら": {"reading": "てぃあら", "scope": "global"}
+            },
         },
     )
 
@@ -850,7 +916,5 @@ def test_ruby_review_decisions_endpoint_saves_and_refreshes(
     assert body["decisions"]["天愛星|ていあら"]["reading"] == "てぃあら"
     assert body["tts_cleared"] is True
     assert called["book_dir"] == book_dir
-    data = json.loads(
-        (book_dir / "reading-overrides.json").read_text(encoding="utf-8")
-    )
+    data = json.loads((book_dir / "reading-overrides.json").read_text(encoding="utf-8"))
     assert data["ruby"]["decisions"]["天愛星|ていあら"]["scope"] == "global"

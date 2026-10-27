@@ -156,7 +156,9 @@ def _load_json(path: Path) -> dict:
 
 def _atomic_write_json(path: Path, payload: dict) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     tmp.replace(path)
 
 
@@ -371,9 +373,7 @@ def _ensure_merge_inputs(tts_dir: Path, metadata: dict) -> tuple[Path, Path, int
 
     if missing:
         sample = "\n".join(str(path) for path in missing[:5])
-        raise FileNotFoundError(
-            f"Missing {len(missing)} segment(s). Sample:\n{sample}"
-        )
+        raise FileNotFoundError(f"Missing {len(missing)} segment(s). Sample:\n{sample}")
 
     _build_concat_file(segment_paths, concat_path, base_dir=tts_dir)
     _build_chapters_ffmeta(chapter_meta, chapters_path, metadata=metadata)
@@ -475,7 +475,9 @@ def _plan_chapter_splits(chapters: Sequence[dict], parts: int) -> list[list[dict
             remaining_parts -= 1
             current = []
             current_ms = 0
-            target_ms = remaining_ms / remaining_parts if remaining_parts else remaining_ms
+            target_ms = (
+                remaining_ms / remaining_parts if remaining_parts else remaining_ms
+            )
 
         duration_ms = int(entry.get("duration_ms") or 0)
         if (
@@ -678,7 +680,10 @@ def merge_book(
 
     for idx, part in enumerate(parts, start=1):
         concat_path, chapters_path, part_ms = _build_part_inputs(
-            part, out_dir=parts_dir / f"part{idx:02d}", tts_dir=tts_dir, metadata=metadata
+            part,
+            out_dir=parts_dir / f"part{idx:02d}",
+            tts_dir=tts_dir,
+            metadata=metadata,
         )
         part_output = _part_output_path(output_path, idx, len(parts))
         part_progress = (
@@ -710,4 +715,6 @@ def merge_book(
         if code != 0:
             return code
     return 0
+
+
 AUTO_SPLIT_HOURS = 12.0

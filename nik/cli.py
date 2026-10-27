@@ -66,7 +66,9 @@ def _load_unidic_tagger_if_available() -> object | None:
         return None
 
 
-def _reading_rank(reading: str, counts: dict[str, int], order: dict[str, int]) -> tuple[int, int]:
+def _reading_rank(
+    reading: str, counts: dict[str, int], order: dict[str, int]
+) -> tuple[int, int]:
     return (-counts.get(reading, 0), order.get(reading, len(order)))
 
 
@@ -234,13 +236,17 @@ def _build_global_ruby_entries_for_base(
         return []
 
     entries: list[dict] = []
-    for surface, reading_counts in sorted(context_counts.items(), key=lambda item: item[0]):
+    for surface, reading_counts in sorted(
+        context_counts.items(), key=lambda item: item[0]
+    ):
         if not surface or not reading_counts:
             continue
         surface_total = sum(count for count in reading_counts.values() if count > 0)
         if surface_total <= 0:
             continue
-        surface_order = {reading: order.get(reading, 1 << 30) for reading in reading_counts}
+        surface_order = {
+            reading: order.get(reading, 1 << 30) for reading in reading_counts
+        }
         surface_majority = _majority_ruby_reading(reading_counts, surface_order)
         surface_majority_count = reading_counts.get(surface_majority, 0)
         if surface_majority_count * 2 <= surface_total:
@@ -379,7 +385,9 @@ def _ingest_epub(input_path: Path, out_dir: Path, raw_dir: Path) -> int:
         ruby_global: list[dict] = []
         ruby_conflicts: list[dict] = []
         for base, counts in sorted(ruby_counts.items(), key=lambda item: item[0]):
-            order = {reading: idx for idx, reading in enumerate(ruby_order.get(base, []))}
+            order = {
+                reading: idx for idx, reading in enumerate(ruby_order.get(base, []))
+            }
             majority_reading = _majority_ruby_reading(counts, order)
             selected_reading, selected_count = _select_preferred_ruby_reading(
                 base=base,
@@ -796,17 +804,19 @@ def _synth(args: argparse.Namespace) -> int:
         sys.stderr.write(f"{exc}\n")
         return 2
 
-    return int(tts_util.synthesize_book(
-        book_dir=book_dir,
-        voice=voice_config,
-        out_dir=out_dir,
-        max_chars=args.max_chars,
-        pad_ms=args.pad_ms,
-        rechunk=args.rechunk,
-        voice_map_path=voice_map_path,
-        base_dir=Path.cwd(),
-        min_chars=args.min_chars,
-    ))
+    return int(
+        tts_util.synthesize_book(
+            book_dir=book_dir,
+            voice=voice_config,
+            out_dir=out_dir,
+            max_chars=args.max_chars,
+            pad_ms=args.pad_ms,
+            rechunk=args.rechunk,
+            voice_map_path=voice_map_path,
+            base_dir=Path.cwd(),
+            min_chars=args.min_chars,
+        )
+    )
 
 
 def _sample(args: argparse.Namespace) -> int:
@@ -827,17 +837,19 @@ def _sample(args: argparse.Namespace) -> int:
         sys.stderr.write(f"{exc}\n")
         return 2
 
-    return int(tts_util.synthesize_book_sample(
-        book_dir=book_dir,
-        voice=voice_config,
-        out_dir=out_dir,
-        max_chars=args.max_chars,
-        pad_ms=args.pad_ms,
-        rechunk=args.rechunk,
-        voice_map_path=voice_map_path,
-        base_dir=Path.cwd(),
-        min_chars=args.min_chars,
-    ))
+    return int(
+        tts_util.synthesize_book_sample(
+            book_dir=book_dir,
+            voice=voice_config,
+            out_dir=out_dir,
+            max_chars=args.max_chars,
+            pad_ms=args.pad_ms,
+            rechunk=args.rechunk,
+            voice_map_path=voice_map_path,
+            base_dir=Path.cwd(),
+            min_chars=args.min_chars,
+        )
+    )
 
 
 def _jsonl_entries(path: Path) -> list[dict]:
@@ -1167,9 +1179,7 @@ def build_parser() -> argparse.ArgumentParser:
     synth.add_argument("--rechunk", action="store_true")
     synth.set_defaults(func=_synth)
 
-    sample = subparsers.add_parser(
-        "sample", help="Generate a sample (first chapter)"
-    )
+    sample = subparsers.add_parser("sample", help="Generate a sample (first chapter)")
     sample.add_argument("--book", required=True, help="Book output directory")
     sample.add_argument(
         "--out",

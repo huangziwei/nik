@@ -98,9 +98,12 @@ def _filter_overlapping_spans(spans: list[dict], reserved: list[dict]) -> list[d
 def _no_store(data: dict) -> JSONResponse:
     return JSONResponse(data, headers={"Cache-Control": "no-store"})
 
+
 def _atomic_write_json(path: Path, payload: dict) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     tmp.replace(path)
 
 
@@ -1013,7 +1016,9 @@ def _span_surface_with_okurigana(text: str, start: int, end: int) -> str:
     return surface + "".join(suffix)
 
 
-def _collect_ruby_surface_candidates(book_dir: Path, raw: object) -> dict[tuple[str, str], set[str]]:
+def _collect_ruby_surface_candidates(
+    book_dir: Path, raw: object
+) -> dict[tuple[str, str], set[str]]:
     if not isinstance(raw, dict):
         return {}
     ruby_data = raw.get("ruby")
@@ -1074,7 +1079,9 @@ def _collect_ruby_surface_candidates(book_dir: Path, raw: object) -> dict[tuple[
             literal_surface = chapter_text[start:end].strip()
             if literal_surface:
                 add_surface(base, reading, literal_surface)
-            with_okurigana = _span_surface_with_okurigana(chapter_text, start, end).strip()
+            with_okurigana = _span_surface_with_okurigana(
+                chapter_text, start, end
+            ).strip()
             if with_okurigana:
                 add_surface(base, reading, with_okurigana)
     return surface_map
@@ -1274,6 +1281,7 @@ def _book_details(book_dir: Path, repo_root: Path) -> dict:
         "chapters": chapters,
         "audio_base": f"/audio/{book_dir.name}/tts/segments",
     }
+
 
 def _playback_path(book_dir: Path) -> Path:
     return book_dir / "playback.json"
@@ -1514,7 +1522,6 @@ def _sanitize_boundary_log_entries(entries: list[dict]) -> list[dict]:
             entry["audio_context_state"] = audio_context_state[:32]
         cleaned.append(entry)
     return cleaned
-
 
 
 def _compute_progress(manifest: dict) -> dict:
@@ -1759,11 +1766,62 @@ class VoiceClonePreview:
 # this allowlisted set is accepted (mirrored in templates/player.html EMOTIONS)
 # so arbitrary text can't be injected into synth input. Empty = neutral.
 STYLE_EMOJI_ALLOWED = {
-    "😌", "🫶", "😊", "😆", "😎", "😏", "🤔", "😲", "😮", "😟", "😰", "🥺", "🥹", "🙏",
-    "😭", "😖", "😠", "😱", "💥", "💪", "🙄", "🫣", "😒", "🥴", "😴", "😪", "🥱", "👂",
-    "🐢", "⏩", "📖", "🎵", "🤭", "🤐", "📢", "📞", "⏱️", "⏸️", "🌬️", "🍭", "🎛️",
-    "🎭", "🐱", "👃", "👅", "👌", "👏", "💋", "💦", "📄", "📣", "😮‍💨", "🤢", "🤧",
-    "🥤", "🥵",
+    "😌",
+    "🫶",
+    "😊",
+    "😆",
+    "😎",
+    "😏",
+    "🤔",
+    "😲",
+    "😮",
+    "😟",
+    "😰",
+    "🥺",
+    "🥹",
+    "🙏",
+    "😭",
+    "😖",
+    "😠",
+    "😱",
+    "💥",
+    "💪",
+    "🙄",
+    "🫣",
+    "😒",
+    "🥴",
+    "😴",
+    "😪",
+    "🥱",
+    "👂",
+    "🐢",
+    "⏩",
+    "📖",
+    "🎵",
+    "🤭",
+    "🤐",
+    "📢",
+    "📞",
+    "⏱️",
+    "⏸️",
+    "🌬️",
+    "🍭",
+    "🎛️",
+    "🎭",
+    "🐱",
+    "👃",
+    "👅",
+    "👌",
+    "👏",
+    "💋",
+    "💦",
+    "📄",
+    "📣",
+    "😮‍💨",
+    "🤢",
+    "🤧",
+    "🥤",
+    "🥵",
 }
 
 
@@ -1957,6 +2015,7 @@ def create_app(root_dir: Path) -> FastAPI:
             if not toc_path.exists():
                 continue
             books.append(_book_summary(child))
+
         def sort_key(entry: dict) -> str:
             title = str(entry.get("title") or "").strip().lower()
             if title.startswith(("the ", "a ", "an ")):
@@ -2053,9 +2112,7 @@ def create_app(root_dir: Path) -> FastAPI:
                     tts_util._reading_override_spans(clean_text, ruby_global),
                     "propagated",
                 )
-                ruby_prop_spans = _filter_overlapping_spans(
-                    ruby_prop_spans, ruby_spans
-                )
+                ruby_prop_spans = _filter_overlapping_spans(ruby_prop_spans, ruby_spans)
                 ruby_prop_spans = _filter_overlapping_spans(
                     ruby_prop_spans, override_spans
                 )
@@ -2305,7 +2362,7 @@ def create_app(root_dir: Path) -> FastAPI:
                         raise HTTPException(
                             status_code=500,
                             detail=f"Unable to rename voice: {exc}",
-                    ) from exc
+                        ) from exc
                     next_config_path = next_dir / "voice.json"
             else:
                 next_config_path = config_path.with_name(f"{next_stem}.json")
@@ -2526,7 +2583,9 @@ def create_app(root_dir: Path) -> FastAPI:
         except RuntimeError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except OSError as exc:
-            raise HTTPException(status_code=500, detail=f"Unable to write voice: {exc}") from exc
+            raise HTTPException(
+                status_code=500, detail=f"Unable to write voice: {exc}"
+            ) from exc
 
         try:
             text = _resolve_clone_text(payload, output_path)
@@ -2564,14 +2623,10 @@ def create_app(root_dir: Path) -> FastAPI:
         if chunk < 1:
             return _no_store({"exists": False})
         book_dir = _resolve_book_dir(root_dir, book_id)
-        wav_path = (
-            book_dir
-            / "tts"
-            / "segments"
-            / chapter_id
-            / f"{chunk:06d}.wav"
+        wav_path = book_dir / "tts" / "segments" / chapter_id / f"{chunk:06d}.wav"
+        exists = (
+            wav_path.exists() and wav_path.is_file() and wav_path.stat().st_size > 0
         )
-        exists = wav_path.exists() and wav_path.is_file() and wav_path.stat().st_size > 0
         return _no_store({"exists": exists})
 
     @app.get("/api/playback")
@@ -2609,7 +2664,9 @@ def create_app(root_dir: Path) -> FastAPI:
         return _no_store({"logged": len(cleaned), "path": log_ref})
 
     @app.post("/api/ingest")
-    def ingest_file(file: UploadFile = File(...), override: bool = False) -> JSONResponse:
+    def ingest_file(
+        file: UploadFile = File(...), override: bool = False
+    ) -> JSONResponse:
         filename = file.filename or ""
         suffix = Path(filename).suffix.lower()
         if suffix not in {".epub", ".txt"}:
@@ -2740,9 +2797,7 @@ def create_app(root_dir: Path) -> FastAPI:
                 tmp_path.unlink()
 
     @app.get("/api/sanitize/preview")
-    def sanitize_preview(
-        book_id: str, chapter: int | None = None
-    ) -> JSONResponse:
+    def sanitize_preview(book_id: str, chapter: int | None = None) -> JSONResponse:
         book_dir = _resolve_book_dir(root_dir, book_id)
         clean_toc = _load_json(book_dir / "clean" / "toc.json")
         raw_toc = _load_json(book_dir / "toc.json")
@@ -2900,7 +2955,9 @@ def create_app(root_dir: Path) -> FastAPI:
             raise HTTPException(status_code=409, detail="Stop TTS before editing text.")
         merge_job = merge_jobs.get(payload.book_id)
         if merge_job and merge_job.process.poll() is None:
-            raise HTTPException(status_code=409, detail="Stop merge before editing text.")
+            raise HTTPException(
+                status_code=409, detail="Stop merge before editing text."
+            )
 
         clean_toc = _load_json(book_dir / "clean" / "toc.json")
         if not clean_toc:
@@ -2918,7 +2975,11 @@ def create_app(root_dir: Path) -> FastAPI:
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return _no_store(
-            {"status": "ok", "chapter_index": payload.chapter_index, "tts_cleared": tts_cleared}
+            {
+                "status": "ok",
+                "chapter_index": payload.chapter_index,
+                "tts_cleared": tts_cleared,
+            }
         )
 
     @app.get("/api/reading-overrides")
@@ -3078,9 +3139,7 @@ def create_app(root_dir: Path) -> FastAPI:
         if manifest and mode == "sample" and sample_chapter:
             progress = _compute_chapter_progress(manifest, sample_chapter) or None
 
-        ffmpeg_status = (
-            "installed" if shutil.which("ffmpeg") is not None else "missing"
-        )
+        ffmpeg_status = "installed" if shutil.which("ffmpeg") is not None else "missing"
         ffmpeg_log = ""
         if ffmpeg_job:
             ffmpeg_log = str(ffmpeg_job.log_path.relative_to(repo_root))
@@ -3096,9 +3155,7 @@ def create_app(root_dir: Path) -> FastAPI:
                 if ffmpeg_exit != 0:
                     ffmpeg_status = "error"
                     if not ffmpeg_error:
-                        ffmpeg_error = (
-                            f"ffmpeg install failed. Check {ffmpeg_log}."
-                        )
+                        ffmpeg_error = f"ffmpeg install failed. Check {ffmpeg_log}."
         if ffmpeg_status == "installed":
             ffmpeg_error = None
 
@@ -3135,7 +3192,11 @@ def create_app(root_dir: Path) -> FastAPI:
                 payload["stage"] = "sampling" if mode == "sample" else "synthesizing"
         elif mode == "sample" and job and job.exit_code == 0:
             payload["stage"] = "sampled"
-        elif progress and progress.get("total") and progress.get("done") >= progress.get("total"):
+        elif (
+            progress
+            and progress.get("total")
+            and progress.get("done") >= progress.get("total")
+        ):
             payload["stage"] = "done"
         return _no_store(payload)
 
@@ -3273,7 +3334,9 @@ def create_app(root_dir: Path) -> FastAPI:
         sample_id, sample_title = _sample_chapter_info(book_dir)
         if not sample_id:
             log_handle.close()
-            raise HTTPException(status_code=404, detail="No chapters available to sample.")
+            raise HTTPException(
+                status_code=404, detail="No chapters available to sample."
+            )
 
         sample_seg_dir = tts_dir / "segments" / sample_id
         if sample_seg_dir.exists():
@@ -3399,7 +3462,11 @@ def create_app(root_dir: Path) -> FastAPI:
             job.log_handle = None
 
         return _no_store(
-            {"status": "stopped", "book_id": payload.book_id, "exit_code": job.exit_code}
+            {
+                "status": "stopped",
+                "book_id": payload.book_id,
+                "exit_code": job.exit_code,
+            }
         )
 
     @app.post("/api/tts/clear")
@@ -3407,10 +3474,14 @@ def create_app(root_dir: Path) -> FastAPI:
         book_dir = _resolve_book_dir(root_dir, payload.book_id)
         synth_job = jobs.get(payload.book_id)
         if synth_job and synth_job.process.poll() is None:
-            raise HTTPException(status_code=409, detail="Stop TTS before clearing cache.")
+            raise HTTPException(
+                status_code=409, detail="Stop TTS before clearing cache."
+            )
         merge_job = merge_jobs.get(payload.book_id)
         if merge_job and merge_job.process.poll() is None:
-            raise HTTPException(status_code=409, detail="Stop merge before clearing cache.")
+            raise HTTPException(
+                status_code=409, detail="Stop merge before clearing cache."
+            )
         tts_dir = book_dir / "tts"
         manifest_path = tts_dir / "manifest.json"
         max_chars = 0
@@ -3443,9 +3514,15 @@ def create_app(root_dir: Path) -> FastAPI:
                 min_chars=min_chars,
             )
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"Rechunk failed: {exc}") from exc
+            raise HTTPException(
+                status_code=400, detail=f"Rechunk failed: {exc}"
+            ) from exc
         return _no_store(
-            {"status": "cleared", "book_id": payload.book_id, "tts_cleared": tts_cleared}
+            {
+                "status": "cleared",
+                "book_id": payload.book_id,
+                "tts_cleared": tts_cleared,
+            }
         )
 
     @app.get("/api/merge/status")
@@ -3512,7 +3589,9 @@ def create_app(root_dir: Path) -> FastAPI:
                 detail="No synthesized chunks yet. Generate at least one chunk first.",
             )
 
-        if (output_path.exists() or _list_m4b_parts(book_dir)) and not payload.overwrite:
+        if (
+            output_path.exists() or _list_m4b_parts(book_dir)
+        ) and not payload.overwrite:
             raise HTTPException(status_code=409, detail="Output file already exists.")
 
         if ffmpeg_job and ffmpeg_job.process.poll() is None:

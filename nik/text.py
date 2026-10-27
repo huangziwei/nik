@@ -5,7 +5,7 @@ import unicodedata
 from collections.abc import Iterable
 from pathlib import Path
 
-SECTION_BREAK = "\uE000"
+SECTION_BREAK = "\ue000"
 
 
 _RUBY_READING_PHONETIC_RANGES = (
@@ -25,8 +25,8 @@ def _is_phonetic_reading_char(ch: str) -> bool:
 
     Mora-bearing kana (hiragana/katakana, including halfwidth and the phonetic
     extensions) plus latin letters and digits count. Deliberately excluded:
-    iteration marks (\u309D\u309E\u30FD\u30FE), the katakana middle dot \u30FB, the prolonged sound
-    mark \u30FC, and standalone/combining sound marks \u2014 none spell out a reading on
+    iteration marks (\u309d\u309e\u30fd\u30fe), the katakana middle dot \u30fb, the prolonged sound
+    mark \u30fc, and standalone/combining sound marks \u2014 none spell out a reading on
     their own.
     """
     if not ch:
@@ -43,7 +43,7 @@ def _is_phonetic_reading_char(ch: str) -> bool:
 def reading_is_unpronounceable(reading: str) -> bool:
     """True when a ruby reading carries no speakable content.
 
-    Some EPUBs abuse ruby for emphasis, placing repetition marks (e.g. \u30FD\u30FD\u30FD)
+    Some EPUBs abuse ruby for emphasis, placing repetition marks (e.g. \u30fd\u30fd\u30fd)
     or sesame/emphasis dots in <rt> instead of an actual reading. Such a span
     must not be extracted as a reading, or it would feed unpronounceable glyphs
     straight to the TTS model.

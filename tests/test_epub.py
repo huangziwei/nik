@@ -395,7 +395,9 @@ def test_extract_chapters_uses_body_text_title_when_toc_title_is_filename(
     assert not title.startswith("Chapter ")
 
 
-def test_extract_chapters_merges_title_only_page_into_following_body(tmp_path: Path) -> None:
+def test_extract_chapters_merges_title_only_page_into_following_body(
+    tmp_path: Path,
+) -> None:
     epub_path = tmp_path / "split-title-page.epub"
     _write_split_title_page_epub(epub_path, next_title="body.xhtml")
     book = epub_util.read_epub(epub_path)
@@ -418,9 +420,13 @@ def test_extract_chapters_keeps_title_only_page_when_next_starts_with_structural
     assert chapters[1].title == "１"
 
 
-def test_extract_chapters_inherits_toc_title_from_empty_title_page(tmp_path: Path) -> None:
+def test_extract_chapters_inherits_toc_title_from_empty_title_page(
+    tmp_path: Path,
+) -> None:
     epub_path = tmp_path / "toc-title-then-body.epub"
-    _write_toc_title_page_then_body_epub(epub_path, toc_title="第一章 さくら荘へようこそ")
+    _write_toc_title_page_then_body_epub(
+        epub_path, toc_title="第一章 さくら荘へようこそ"
+    )
     book = epub_util.read_epub(epub_path)
     chapters = epub_util.extract_chapters(book, prefer_toc=True)
     assert len(chapters) == 1
@@ -428,7 +434,9 @@ def test_extract_chapters_inherits_toc_title_from_empty_title_page(tmp_path: Pat
     assert chapters[0].text.startswith("第一章 さくら荘へようこそ\n\n１")
 
 
-def test_extract_chapters_does_not_inherit_non_content_toc_title(tmp_path: Path) -> None:
+def test_extract_chapters_does_not_inherit_non_content_toc_title(
+    tmp_path: Path,
+) -> None:
     epub_path = tmp_path / "toc-non-content-then-body.epub"
     _write_toc_title_page_then_body_epub(epub_path, toc_title="目次")
     book = epub_util.read_epub(epub_path)
@@ -463,7 +471,9 @@ def test_extract_chapters_merges_toc_split_fragments_from_spine(tmp_path: Path) 
     assert chapters[1].title == "第二章"
 
 
-def test_extract_chapters_keeps_non_toc_structural_section_starts(tmp_path: Path) -> None:
+def test_extract_chapters_keeps_non_toc_structural_section_starts(
+    tmp_path: Path,
+) -> None:
     epub_path = tmp_path / "toc-missing-section-starts.epub"
     _write_toc_missing_section_starts_epub(epub_path)
     book = epub_util.read_epub(epub_path)
@@ -486,9 +496,7 @@ def test_html_to_text_with_ruby_spans() -> None:
     html = "<p>前<ruby>漢字<rt>かんじ</rt></ruby>後</p>".encode()
     text, spans = epub_util.html_to_text_with_ruby(html)
     assert text == "前漢字後"
-    assert spans == [
-        {"start": 1, "end": 3, "base": "漢字", "reading": "かんじ"}
-    ]
+    assert spans == [{"start": 1, "end": 3, "base": "漢字", "reading": "かんじ"}]
 
 
 def test_html_to_text_with_ruby_drops_emphasis_mark_reading() -> None:
@@ -555,10 +563,7 @@ def test_html_to_text_renders_image_alt_text() -> None:
 
 def test_html_to_text_skips_empty_alt_image() -> None:
     html = (
-        "<html><body>"
-        "<p><img src='deco.jpg' alt=''/></p>"
-        "<p>本文です。</p>"
-        "</body></html>"
+        "<html><body><p><img src='deco.jpg' alt=''/></p><p>本文です。</p></body></html>"
     ).encode()
     text = epub_util.html_to_text(html)
     assert text == "本文です。"
@@ -614,9 +619,7 @@ def _write_toc_chapter_with_intro_followup_epub(epub_path: Path) -> None:
         file_name="ch1-title.xhtml",
         lang="ja",
     )
-    chapter_title_page.content = (
-        "<html><body><p>第一章 幼い頃の話</p></body></html>"
-    )
+    chapter_title_page.content = "<html><body><p>第一章 幼い頃の話</p></body></html>"
 
     chapter_intro = epub.EpubHtml(
         title="ch1-intro.xhtml",
@@ -690,9 +693,7 @@ def _write_pagelist_nav_epub(epub_path: Path) -> None:
         book.add_item(chapter)
         chapters.append(chapter)
 
-    page_list = epub.EpubHtml(
-        title="pages", file_name="pages.xhtml", lang="ja"
-    )
+    page_list = epub.EpubHtml(title="pages", file_name="pages.xhtml", lang="ja")
     page_list.content = (
         '<nav epub:type="page-list" hidden="hidden"><ol>'
         + "".join(
@@ -737,9 +738,7 @@ def _write_inline_page_links_epub(epub_path: Path) -> None:
             file_name=f"ch-{idx}.xhtml",
             lang="ja",
         )
-        chapter.content = (
-            f'<section id="s{idx}"><h2>{idx}</h2><p>{body}</p></section>'
-        )
+        chapter.content = f'<section id="s{idx}"><h2>{idx}</h2><p>{body}</p></section>'
         book.add_item(chapter)
         chapters.append(chapter)
 
@@ -781,10 +780,7 @@ def _write_footnote_backref_epub(epub_path: Path) -> None:
         '<p>これは本文です<a href="notes.xhtml#note-1">1</a>。本文の続きです。</p>'
     )
     notes = epub.EpubHtml(title="注記", file_name="notes.xhtml", lang="ja")
-    notes.content = (
-        "<h2>注記</h2>"
-        '<p id="note-1">1 これは注釈のテキストです。</p>'
-    )
+    notes.content = '<h2>注記</h2><p id="note-1">1 これは注釈のテキストです。</p>'
     book.add_item(chapter)
     book.add_item(notes)
     book.toc = (chapter, notes)
@@ -809,7 +805,9 @@ def test_extract_chapters_still_strips_footnote_bodies_and_markers(
         assert "注釈のテキスト" not in chapter.text
 
 
-def _write_untitled_scene_after_contents_epub(epub_path: Path, scene_lines: int) -> None:
+def _write_untitled_scene_after_contents_epub(
+    epub_path: Path, scene_lines: int
+) -> None:
     book = epub.EpubBook()
     book.set_identifier("untitled-scene-after-contents-book")
     book.set_title("Untitled Scene After Contents")
@@ -832,9 +830,12 @@ def _write_untitled_scene_after_contents_epub(epub_path: Path, scene_lines: int)
 
     chapters = []
     for idx, title in enumerate(
-        ("～１敗目～　断じて下心はありません", "～２敗目～　肩の重みに揺らされて"), start=1
+        ("～１敗目～　断じて下心はありません", "～２敗目～　肩の重みに揺らされて"),
+        start=1,
     ):
-        chapter = epub.EpubHtml(title=title, file_name=f"chapter-{idx}.xhtml", lang="ja")
+        chapter = epub.EpubHtml(
+            title=title, file_name=f"chapter-{idx}.xhtml", lang="ja"
+        )
         chapter.content = (
             f"<html><body><h1>{title}</h1>"
             + "".join(f"<p>　本文{idx}です。</p>" for _ in range(200))
@@ -866,7 +867,9 @@ def test_extract_chapters_keeps_long_untitled_scene_out_of_contents_page(
     epub_path = tmp_path / "long-untitled-scene.epub"
     _write_untitled_scene_after_contents_epub(epub_path, scene_lines=120)
     book = epub_util.read_epub(epub_path)
-    _assert_scene_survives_contents_drop(epub_util.extract_chapters(book, prefer_toc=True))
+    _assert_scene_survives_contents_drop(
+        epub_util.extract_chapters(book, prefer_toc=True)
+    )
 
 
 def test_extract_chapters_recovers_short_untitled_scene_after_contents_page(
@@ -875,7 +878,9 @@ def test_extract_chapters_recovers_short_untitled_scene_after_contents_page(
     epub_path = tmp_path / "short-untitled-scene.epub"
     _write_untitled_scene_after_contents_epub(epub_path, scene_lines=3)
     book = epub_util.read_epub(epub_path)
-    _assert_scene_survives_contents_drop(epub_util.extract_chapters(book, prefer_toc=True))
+    _assert_scene_survives_contents_drop(
+        epub_util.extract_chapters(book, prefer_toc=True)
+    )
 
 
 def _write_unlisted_structural_section_epub(epub_path: Path) -> None:
@@ -943,7 +948,9 @@ def _write_calibre_split_series_epub(epub_path: Path) -> None:
             + "</body></html>"
         )
         items.append(item)
-    ending = epub.EpubHtml(uid="ending", title="第二話", file_name="part0009.xhtml", lang="ja")
+    ending = epub.EpubHtml(
+        uid="ending", title="第二話", file_name="part0009.xhtml", lang="ja"
+    )
     ending.content = (
         "<html><body><h1>第二話</h1>"
         + "".join("<p>最後の本文です。</p>" for _ in range(40))
@@ -982,7 +989,9 @@ def _write_image_only_story_before_title_page_epub(epub_path: Path) -> None:
         page = epub.EpubHtml(title=name, file_name=name, lang="ja")
         page.content = "<html><body><img src='missing.jpg' alt=''/></body></html>"
         pages.append(page)
-    body = epub.EpubHtml(title="story-body.xhtml", file_name="story-body.xhtml", lang="ja")
+    body = epub.EpubHtml(
+        title="story-body.xhtml", file_name="story-body.xhtml", lang="ja"
+    )
     body.content = (
         "<html><body>"
         + "".join("<p>　物語の本文です。</p>" for _ in range(80))
@@ -1019,7 +1028,9 @@ def test_read_epub_recovers_toc_from_malformed_ncx(tmp_path: Path) -> None:
     book.set_language("ja")
     chapters = []
     for idx, title in enumerate(("序章", "第一章", "終章"), start=1):
-        chapter = epub.EpubHtml(title=title, file_name=f"chapter-{idx}.xhtml", lang="ja")
+        chapter = epub.EpubHtml(
+            title=title, file_name=f"chapter-{idx}.xhtml", lang="ja"
+        )
         chapter.content = f"<h1>{title}</h1><p>本文{idx}です。</p>"
         book.add_item(chapter)
         chapters.append(chapter)
@@ -1035,13 +1046,17 @@ def test_read_epub_recovers_toc_from_malformed_ncx(tmp_path: Path) -> None:
             data = zin.read(info.filename)
             if info.filename.endswith(".ncx"):
                 data = data.replace(
-                    b"<text>Malformed NCX</text>", "<text>業物語 <物語></text>".encode(), 1
+                    b"<text>Malformed NCX</text>",
+                    "<text>業物語 <物語></text>".encode(),
+                    1,
                 )
             zout.writestr(info, data)
     book = epub_util.read_epub(broken)
     titles = [entry.title for entry in epub_util.build_toc_entries(book)]
     assert titles == ["序章", "第一章", "終章"]
-    assert [ch.title for ch in epub_util.extract_chapters(book, prefer_toc=True)] == titles
+    assert [
+        ch.title for ch in epub_util.extract_chapters(book, prefer_toc=True)
+    ] == titles
 
 
 def _write_numbered_contents_link_epub(epub_path: Path) -> None:
@@ -1066,14 +1081,19 @@ def _write_numbered_contents_link_epub(epub_path: Path) -> None:
     )
     for item in (contents, story):
         book.add_item(item)
-    book.toc = (contents, epub.Link("story.xhtml", "１．中古品の子供たちを育てる人々", "s1"))
+    book.toc = (
+        contents,
+        epub.Link("story.xhtml", "１．中古品の子供たちを育てる人々", "s1"),
+    )
     book.spine = [contents, story]
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())
     epub.write_epub(str(epub_path), book)
 
 
-def test_extract_chapters_keeps_target_of_numbered_contents_link(tmp_path: Path) -> None:
+def test_extract_chapters_keeps_target_of_numbered_contents_link(
+    tmp_path: Path,
+) -> None:
     epub_path = tmp_path / "numbered-contents-link.epub"
     _write_numbered_contents_link_epub(epub_path)
     book = epub_util.read_epub(epub_path)
@@ -1099,7 +1119,9 @@ def _write_numbered_section_heading_epub(epub_path: Path) -> None:
     )
     sections = []
     for idx, label in ((1, "１"), (2, "２")):
-        section = epub.EpubHtml(title=label, file_name=f"section-{idx}.xhtml", lang="ja")
+        section = epub.EpubHtml(
+            title=label, file_name=f"section-{idx}.xhtml", lang="ja"
+        )
         section.content = (
             f"<html><body><p id='heading-{idx}'>　　<span>"
             f"<a href='contents.xhtml#mokuji'>{label}</a></span></p>"

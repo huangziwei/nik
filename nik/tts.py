@@ -1107,16 +1107,22 @@ def _is_protectable_quote_span(text: str, start: int, end: int, max_chars: int) 
     prev_ch = text[start - 1] if start > 0 else ""
     next_ch = text[end] if end < len(text) else ""
 
-    inline_before = (prev_ch.isalnum() or _is_japanese_char(prev_ch)) and not prev_ch.isspace()
+    inline_before = (
+        prev_ch.isalnum() or _is_japanese_char(prev_ch)
+    ) and not prev_ch.isspace()
     if not inline_before and prev_ch in {"、", "，", ",", ":", "：", ";", "；"}:
         idx = start - 2
         while idx >= 0 and text[idx].isspace():
             idx -= 1
         if idx >= 0:
             prev_prev = text[idx]
-            inline_before = (prev_prev.isalnum() or _is_japanese_char(prev_prev)) and not prev_prev.isspace()
+            inline_before = (
+                prev_prev.isalnum() or _is_japanese_char(prev_prev)
+            ) and not prev_prev.isspace()
 
-    inline_after = (next_ch.isalnum() or _is_japanese_char(next_ch)) and not next_ch.isspace()
+    inline_after = (
+        next_ch.isalnum() or _is_japanese_char(next_ch)
+    ) and not next_ch.isspace()
     has_sentence_punct = any(ch in "。！？!?…⋯" for ch in inner)
     if inline_before and inline_after and not has_sentence_punct:
         # Inline short quotes are often emphasis/term markers, not dialogue.
@@ -1980,7 +1986,7 @@ def _ensure_line_tail_punct(text: str) -> str:
     out: list[str] = []
     for line in lines:
         stripped_right = line.rstrip()
-        trailing = line[len(stripped_right):]
+        trailing = line[len(stripped_right) :]
         if not stripped_right or not _line_needs_tail_punct(stripped_right):
             out.append(line)
             continue
@@ -3355,9 +3361,10 @@ def _extract_token_attrs(token: Any) -> dict[str, str]:
     attrs["pos4"] = _pick(("pos4",))
     attrs["type"] = _pick(("type",))
 
-    raw = str(feature)
-    if raw and "," in raw:
-        parts = [p.strip() for p in raw.split(",")]
+    # Positional fallback for raw CSV features only: str() of fugashi's UniDic
+    # namedtuple is a repr, whose split pieces ("pos4='*'") are not values.
+    if isinstance(feature, str) and "," in feature:
+        parts = ["" if p.strip() == "*" else p.strip() for p in feature.split(",")]
         if not attrs["pos1"] and len(parts) > 0:
             attrs["pos1"] = parts[0]
         if not attrs["pos2"] and len(parts) > 1:
@@ -3664,6 +3671,95 @@ def _silence_audio(duration_ms: int, sample_rate: int) -> np.ndarray:
     return np.zeros(sample_count, dtype=np.float32)
 
 
+_HONORIFIC_KUN = "くん"
+# Same length as 君, so ruby offsets into the source chunk stay valid until
+# the overrides have run.
+_HONORIFIC_KUN_PLACEHOLDER = ""
+# Kin/rank nouns UniDic splits from a following suffix 君 although the
+# compound reads ぎみ (姫君, 父君, 叔父君) or is a word of its own (夫君).
+_HONORIFIC_KUN_EXCLUDED_PREV = frozenset(
+    {
+        "父",
+        "母",
+        "兄",
+        "姉",
+        "弟",
+        "妹",
+        "夫",
+        "姫",
+        "女",
+        "男",
+        "宮",
+        "叔父",
+        "伯父",
+        "叔母",
+        "伯母",
+        "祖父",
+        "祖母",
+    }
+)
+
+
+def _honorific_kun_offsets(text: str) -> list[int]:
+    """Offsets of 君 that UniDic tags as the name suffix (桜井君, ジョン君).
+
+    Left as 君, Irodori guesses from the surface and reads some names as きみ,
+    notably kana names that end like an i-adjective (さくらい君 ~ かわいい君).
+    The pronoun (君は, かわいい君) is tagged 代名詞 and lexical compounds
+    (主君, 若君, 諸君) are single tokens, so neither is returned.
+    """
+    if "君" not in text:
+        return []
+    try:
+        tagger = _get_kana_tagger()
+    except Exception:
+        return []
+    offsets: list[int] = []
+    cursor = 0
+    prev_surface = ""
+    prev_pos1 = ""
+    prev_end = -1
+    for token in tagger(text):
+        surface = str(getattr(token, "surface", "") or "")
+        if not surface:
+            continue
+        start = text.find(surface, cursor)
+        if start < 0:
+            break
+        cursor = start + len(surface)
+        pos1 = _extract_token_attrs(token)["pos1"]
+        if (
+            surface == "君"
+            and pos1 == "接尾辞"
+            and start == prev_end
+            and prev_pos1 in {"名詞", "接尾辞"}
+            and prev_surface not in _HONORIFIC_KUN_EXCLUDED_PREV
+        ):
+            offsets.append(start)
+        prev_surface, prev_pos1, prev_end = surface, pos1, cursor
+    return offsets
+
+
+def _mark_honorific_kun(
+    text: str, offsets: Sequence[int], guard_spans: Sequence[dict]
+) -> str:
+    """Swap suffix 君 for the placeholder unless a ruby span or reading
+    override covers it; those keep authority over the reading."""
+    if _HONORIFIC_KUN_PLACEHOLDER in text:
+        return text
+    guarded: set[int] = set()
+    for span in guard_spans:
+        try:
+            guarded.update(range(int(span.get("start")), int(span.get("end"))))
+        except (TypeError, ValueError):
+            continue
+    chars = list(text)
+    for offset in offsets:
+        if offset not in guarded:
+            chars[offset] = _HONORIFIC_KUN_PLACEHOLDER
+    return "".join(chars)
+
+
 def _prepare_tts_pipeline(
     chunk_text: str,
     *,
@@ -3673,38 +3769,40 @@ def _prepare_tts_pipeline(
     ruby_data: dict | None = None,
     merged_overrides: Sequence[dict] | None = None,
     skip_bases: set[str] | None = None,
-    allow_full_ruby: bool = False,
     add_short_punct: bool = True,
 ) -> TtsPipeline:
     text = chunk_text
-    if ruby_data:
-        spans = chapter_ruby_spans or []
-        if allow_full_ruby and chunk_span is None and not spans:
-            text = _apply_ruby_evidence(
-                text,
-                chapter_id,
-                ruby_data,
-                skip_bases=skip_bases,
-            )
-        else:
-            # Run unconditionally — `_apply_ruby_evidence_to_chunk` applies
-            # both per-chunk ruby spans *and* the global ruby overrides.
-            # Previously this was gated on `spans` being non-empty, which
-            # silently dropped globals for chapters with no per-chapter
-            # ruby evidence (e.g. when `clean_sha256` is missing).
-            text = _apply_ruby_evidence_to_chunk(
-                text,
-                chunk_span,
-                spans,
-                ruby_data,
-                skip_bases=skip_bases,
-            )
+    spans = chapter_ruby_spans or []
     overrides = list(merged_overrides) if merged_overrides else []
-    after_overrides = _apply_reading_overrides_for_tts(text, overrides)
+    kun_offsets = _honorific_kun_offsets(text)
+    if kun_offsets:
+        guard_spans: list[dict] = [*_reading_override_spans(text, overrides)]
+        if ruby_data:
+            guard_spans += _chunk_ruby_spans(chunk_span, spans)
+            guard_spans += _reading_override_spans(
+                text, _ruby_global_overrides(ruby_data)
+            )
+        text = _mark_honorific_kun(text, kun_offsets, guard_spans)
+    if ruby_data:
+        # Run unconditionally — `_apply_ruby_evidence_to_chunk` applies
+        # both per-chunk ruby spans *and* the global ruby overrides.
+        # Previously this was gated on `spans` being non-empty, which
+        # silently dropped globals for chapters with no per-chapter
+        # ruby evidence (e.g. when `clean_sha256` is missing).
+        text = _apply_ruby_evidence_to_chunk(
+            text,
+            chunk_span,
+            spans,
+            ruby_data,
+            skip_bases=skip_bases,
+        )
+    after_overrides = _apply_reading_overrides_for_tts(text, overrides).replace(
+        _HONORIFIC_KUN_PLACEHOLDER, _HONORIFIC_KUN
+    )
     after_numbers = _normalize_numbers(after_overrides)
     prepared = prepare_tts_text(after_numbers, add_short_punct=add_short_punct)
     return TtsPipeline(
-        ruby_text=text,
+        ruby_text=text.replace(_HONORIFIC_KUN_PLACEHOLDER, _HONORIFIC_KUN),
         after_overrides=after_overrides,
         after_numbers=after_numbers,
         after_kana=after_numbers,
@@ -3737,49 +3835,6 @@ def _select_ruby_spans(
         spans = spans if isinstance(spans, list) else []
         return _filter_ruby_spans(spans)
     return []
-
-
-def _apply_ruby_evidence(
-    text: str,
-    chapter_id: str | None,
-    ruby_data: dict,
-    skip_bases: set[str] | None = None,
-) -> str:
-    if not ruby_data:
-        return text
-    decisions = _load_ruby_decisions(ruby_data)
-    spans = _select_ruby_spans(chapter_id, text, ruby_data)
-    if spans:
-        # Coalesce before applying decisions so keys match review groups
-        # (mis-split names arrive as adjacent single-kanji spans).
-        spans = _coalesce_adjacent_single_kanji_ruby_spans(spans)
-        spans = _apply_ruby_decisions_to_spans(spans, decisions)
-        spans = _filter_ruby_spans(spans)
-        if spans:
-            spans = _maybe_normalize_ruby_entries(spans)
-            spans = _katakanize_reading_entries(
-                spans,
-                prefer_hiragana=True,
-                preserve_explicit_katakana=True,
-            )
-            text = apply_ruby_spans(text, spans)
-    ruby_global = _ruby_global_overrides(ruby_data)
-    if ruby_global:
-        ruby_global = _maybe_normalize_ruby_entries(ruby_global)
-        ruby_global = _katakanize_reading_entries(
-            ruby_global,
-            prefer_hiragana=True,
-            preserve_explicit_katakana=True,
-        )
-        if skip_bases:
-            ruby_global = [
-                item
-                for item in ruby_global
-                if str(item.get("base") or "").strip() not in skip_bases
-            ]
-        if ruby_global:
-            text = apply_reading_overrides(text, ruby_global)
-    return text
 
 
 def _coalesce_adjacent_single_kanji_ruby_spans(spans: Sequence[dict]) -> list[dict]:
@@ -3817,11 +3872,7 @@ def _coalesce_adjacent_single_kanji_ruby_spans(spans: Sequence[dict]) -> list[di
         span = prepared[idx]
         base = str(span.get("base") or "")
         reading = str(span.get("reading") or "")
-        if (
-            len(base) != 1
-            or not _is_kanji_only(base)
-            or not _is_kana_reading(reading)
-        ):
+        if len(base) != 1 or not _is_kanji_only(base) or not _is_kana_reading(reading):
             out.append(span)
             idx += 1
             continue
@@ -3962,7 +4013,9 @@ def load_book_chapters(book_dir: Path) -> list[ChapterInput]:
             for raw_entry in raw_entries:
                 if not isinstance(raw_entry, dict):
                     continue
-                normalized_headings = _normalize_heading_lines(raw_entry.get("headings"))
+                normalized_headings = _normalize_heading_lines(
+                    raw_entry.get("headings")
+                )
                 if not normalized_headings:
                     normalized_headings = []
                 normalized_categories = _normalize_heading_categories(
@@ -4416,9 +4469,7 @@ def _is_unidic_aligned_ruby_reading(
         return False
     try:
         normalized = _normalize_ruby_reading(base, reading_text, tagger)
-        reading_kata = _hiragana_to_katakana(
-            unicodedata.normalize("NFKC", normalized)
-        )
+        reading_kata = _hiragana_to_katakana(unicodedata.normalize("NFKC", normalized))
         base_kata = _base_reading_kata(base, tagger)
     except Exception:
         return False
@@ -4665,7 +4716,9 @@ def _ruby_chapter_compound_overrides(
         if isinstance(selected, dict):
             chapter_entries.append(selected)
     else:
-        chapter_entries = [entry for entry in chapters.values() if isinstance(entry, dict)]
+        chapter_entries = [
+            entry for entry in chapters.values() if isinstance(entry, dict)
+        ]
 
     counts: dict[str, dict[str, int]] = {}
     order: dict[str, list[str]] = {}
@@ -4700,9 +4753,7 @@ def _ruby_chapter_compound_overrides(
         coalesced = _coalesce_adjacent_single_kanji_ruby_spans(spans)
         # Drop decision-rejected evidence before counting, but keep original
         # readings so emission below can look decisions up by evidence key.
-        coalesced = _apply_ruby_decisions_to_spans(
-            coalesced, decisions, correct=False
-        )
+        coalesced = _apply_ruby_decisions_to_spans(coalesced, decisions, correct=False)
         for item in coalesced:
             entry = _normalize_reading_override_entry(item)
             if not entry:
@@ -4738,7 +4789,9 @@ def _ruby_chapter_compound_overrides(
         total = sum(count for count in reading_counts.values() if count > 0)
         if total <= 0:
             continue
-        reading_order = {reading: idx for idx, reading in enumerate(order.get(base, []))}
+        reading_order = {
+            reading: idx for idx, reading in enumerate(order.get(base, []))
+        }
         majority = min(
             reading_counts.keys(),
             key=lambda reading: (
@@ -4755,7 +4808,10 @@ def _ruby_chapter_compound_overrides(
                 or base in person_name_surfaces
             )
         )
-        if majority_count < _RUBY_CHAPTER_COMPOUND_MIN_COUNT and not allow_singleton_name:
+        if (
+            majority_count < _RUBY_CHAPTER_COMPOUND_MIN_COUNT
+            and not allow_singleton_name
+        ):
             continue
         # Require strict majority to avoid propagating ambiguous chapter-only ruby.
         if majority_count * 2 <= total:
@@ -5071,7 +5127,9 @@ def _ruby_global_overrides_uncached(ruby_data: dict) -> list[dict[str, str]]:
             corrected = str(decision.get("reading") or "").strip()
             if corrected:
                 reading_out = corrected
-        entry = _normalize_reading_override_entry({"base": base, "reading": reading_out})
+        entry = _normalize_reading_override_entry(
+            {"base": base, "reading": reading_out}
+        )
         if not entry:
             continue
         add_entry(entry)
@@ -5121,7 +5179,9 @@ def _ruby_propagated_reading_map(
         if isinstance(selected, dict):
             chapter_entries.append(selected)
     else:
-        chapter_entries = [entry for entry in chapters.values() if isinstance(entry, dict)]
+        chapter_entries = [
+            entry for entry in chapters.values() if isinstance(entry, dict)
+        ]
 
     for chapter_entry in chapter_entries:
         clean_spans = chapter_entry.get("clean_spans")
@@ -5160,11 +5220,7 @@ def _merge_reading_overrides(
             key = key_for(entry)
             if not key:
                 continue
-            if (
-                source == "chapter"
-                and chapter_propagated_readings
-                and key in merged
-            ):
+            if source == "chapter" and chapter_propagated_readings and key in merged:
                 base = str(entry.get("base") or "").strip()
                 reading = str(entry.get("reading") or "").strip()
                 if (
@@ -5360,9 +5416,9 @@ def _should_replace_isolated_single_kanji(prev: str, next_ch: str) -> bool:
         prev
     ):
         return True
-    prev_blocks = _is_japanese_char(prev) and not _is_isolated_single_kanji_boundary_char(
+    prev_blocks = _is_japanese_char(
         prev
-    )
+    ) and not _is_isolated_single_kanji_boundary_char(prev)
     next_blocks = _is_japanese_char(
         next_ch
     ) and not _is_isolated_single_kanji_boundary_char(next_ch)

@@ -48,7 +48,9 @@ def test_sanitize_book_preserves_epub_headings_in_clean_toc(tmp_path: Path) -> N
     toc_path.write_text(json.dumps(toc, ensure_ascii=False), encoding="utf-8")
 
     sanitize_util.sanitize_book(book_dir=book_dir, overwrite=True)
-    clean_toc = json.loads((book_dir / "clean" / "toc.json").read_text(encoding="utf-8"))
+    clean_toc = json.loads(
+        (book_dir / "clean" / "toc.json").read_text(encoding="utf-8")
+    )
     headings = clean_toc["chapters"][0]["headings"]
     assert "CHAPTER FIRST" in headings
     assert "SUBTITLE" in headings
@@ -174,7 +176,9 @@ def test_normalize_all_caps_only_titlecases_explicit_heading_lines() -> None:
     assert no_heading == "Chapter first"
 
 
-def test_sanitize_book_uses_toc_heading_lines_for_all_caps_heading(tmp_path: Path) -> None:
+def test_sanitize_book_uses_toc_heading_lines_for_all_caps_heading(
+    tmp_path: Path,
+) -> None:
     book_dir = tmp_path / "book"
     raw_dir = book_dir / "raw" / "chapters"
     raw_dir.mkdir(parents=True)
@@ -199,9 +203,9 @@ def test_sanitize_book_uses_toc_heading_lines_for_all_caps_heading(tmp_path: Pat
     )
 
     sanitize_util.sanitize_book(book_dir=book_dir, overwrite=True)
-    cleaned = (
-        book_dir / "clean" / "chapters" / "0001-chapter.txt"
-    ).read_text(encoding="utf-8")
+    cleaned = (book_dir / "clean" / "chapters" / "0001-chapter.txt").read_text(
+        encoding="utf-8"
+    )
     assert cleaned.startswith("Chapter First")
 
 
@@ -259,17 +263,10 @@ def test_collect_clean_ruby_spans_from_raw_tracks_span_identity() -> None:
     )
 
     assert spans is not None
-    assert any(
-        span["base"] == "可笑" and span["reading"] == "おか"
-        for span in spans
-    )
-    assert any(
-        span["base"] == "嬉" and span["reading"] == "うれ"
-        for span in spans
-    )
+    assert any(span["base"] == "可笑" and span["reading"] == "おか" for span in spans)
+    assert any(span["base"] == "嬉" and span["reading"] == "うれ" for span in spans)
     assert not any(
-        span["base"] == "可" and span["reading"] == "おかしそうに女は"
-        for span in spans
+        span["base"] == "可" and span["reading"] == "おかしそうに女は" for span in spans
     )
 
 
@@ -399,12 +396,10 @@ def test_sanitize_book_preserves_ruby_span_identity_for_dialogue_excerpt(
     clean_spans = updated["ruby"]["chapters"]["0001-chapter"]["clean_spans"]
 
     assert any(
-        span["base"] == "可笑" and span["reading"] == "おか"
-        for span in clean_spans
+        span["base"] == "可笑" and span["reading"] == "おか" for span in clean_spans
     )
     assert any(
-        span["base"] == "嬉" and span["reading"] == "うれ"
-        for span in clean_spans
+        span["base"] == "嬉" and span["reading"] == "うれ" for span in clean_spans
     )
     assert not any(
         span["base"] == "可" and span["reading"] == "おかしそうに女は"

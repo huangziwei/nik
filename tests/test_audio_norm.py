@@ -62,7 +62,9 @@ def test_normalize_clone_wav_runs_ffmpeg_volume_filter(
     assert clip.read_bytes() == b"RIFFOUT"
 
 
-def test_normalize_clone_wav_skips_when_gain_is_tiny(tmp_path: Path, monkeypatch) -> None:
+def test_normalize_clone_wav_skips_when_gain_is_tiny(
+    tmp_path: Path, monkeypatch
+) -> None:
     clip = tmp_path / "clip.wav"
     clip.write_bytes(b"RIFF")
 

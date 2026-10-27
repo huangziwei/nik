@@ -87,9 +87,7 @@ def _write_review_book(book_dir: Path) -> dict:
 def test_build_review_groups_counts_flags_and_impact(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        tts_util, "_ruby_reading_aligned", lambda base, reading: False
-    )
+    monkeypatch.setattr(tts_util, "_ruby_reading_aligned", lambda base, reading: False)
     book_dir = tmp_path / "book"
     _write_review_book(book_dir)
 
@@ -121,9 +119,7 @@ def test_build_review_groups_counts_flags_and_impact(
 def test_build_review_groups_reflects_decisions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        tts_util, "_ruby_reading_aligned", lambda base, reading: False
-    )
+    monkeypatch.setattr(tts_util, "_ruby_reading_aligned", lambda base, reading: False)
     book_dir = tmp_path / "book"
     _write_review_book(book_dir)
 
@@ -161,16 +157,12 @@ def test_update_decisions_roundtrip_and_delete(tmp_path: Path) -> None:
     assert stored["一|はじめ"]["mode"] == "isolated"
     assert "updated_unix" in stored["一|はじめ"]
 
-    data = json.loads(
-        (book_dir / "reading-overrides.json").read_text(encoding="utf-8")
-    )
+    data = json.loads((book_dir / "reading-overrides.json").read_text(encoding="utf-8"))
     assert data["ruby"]["decisions"]["一|はじめ"]["scope"] == "global"
 
     stored = ruby_review.update_decisions(book_dir, {"一|はじめ": None})
     assert stored == {}
-    data = json.loads(
-        (book_dir / "reading-overrides.json").read_text(encoding="utf-8")
-    )
+    data = json.loads((book_dir / "reading-overrides.json").read_text(encoding="utf-8"))
     assert "decisions" not in data["ruby"]
 
 
@@ -191,9 +183,7 @@ def test_update_decisions_ignores_malformed_keys(tmp_path: Path) -> None:
 def test_build_review_groups_flags_repeated_single_kanji_as_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        tts_util, "_ruby_reading_aligned", lambda base, reading: False
-    )
+    monkeypatch.setattr(tts_util, "_ruby_reading_aligned", lambda base, reading: False)
     book_dir = tmp_path / "book"
     raw_dir = book_dir / "raw" / "chapters"
     raw_dir.mkdir(parents=True)
@@ -252,9 +242,7 @@ def test_build_review_groups_flags_repeated_single_kanji_as_name(
 def test_build_review_groups_does_not_flag_singleton_context_reading(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(
-        tts_util, "_ruby_reading_aligned", lambda base, reading: False
-    )
+    monkeypatch.setattr(tts_util, "_ruby_reading_aligned", lambda base, reading: False)
     book_dir = tmp_path / "book"
     raw_dir = book_dir / "raw" / "chapters"
     raw_dir.mkdir(parents=True)

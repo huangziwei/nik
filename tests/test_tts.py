@@ -1,4 +1,5 @@
 import json
+from collections import namedtuple
 from pathlib import Path
 
 import pytest
@@ -129,7 +130,9 @@ def test_chunking_min_chars_folds_trailing_fragment_within_paragraph() -> None:
 def test_chunking_min_chars_never_emits_below_min_chunk() -> None:
     # A 1-char heading line followed by a dialogue line must not be emitted on
     # its own: the floor is a hard guarantee the TTS model relies on.
-    text = "一\n\n「夢みたいなことをね。ちょっと」\n\n病院だったんだ。昼過ぎだったんだ。"
+    text = (
+        "一\n\n「夢みたいなことをね。ちょっと」\n\n病院だったんだ。昼過ぎだったんだ。"
+    )
     spans = tts_util.make_chunk_spans(
         text, max_chars=100, chunk_mode="japanese", min_chars=15
     )
@@ -173,11 +176,16 @@ def test_chunking_keeps_dialogue_quote_after_comma_with_attribution() -> None:
     assert chunks == ["彼は、", "「はい」", "と言った。"]
 
 
-def test_chunking_does_not_isolate_quote_adjacent_chunk_across_paragraph_boundary() -> None:
+def test_chunking_does_not_isolate_quote_adjacent_chunk_across_paragraph_boundary() -> (
+    None
+):
     text = "「夢みたいなことをね。ちょっと」\n\n病院だったんだ。昼過ぎだったんだ。"
     spans = tts_util.make_chunk_spans(text, max_chars=220, chunk_mode="japanese")
     chunks = [text[start:end] for start, end in spans]
-    assert chunks == ["「夢みたいなことをね。ちょっと」", "病院だったんだ。昼過ぎだったんだ。"]
+    assert chunks == [
+        "「夢みたいなことをね。ちょっと」",
+        "病院だったんだ。昼過ぎだったんだ。",
+    ]
 
 
 def test_chunking_splits_long_quote_when_over_max_chars() -> None:
@@ -226,12 +234,93 @@ def test_prepare_tts_pipeline_keeps_ellipsis_without_short_tail_full_stop() -> N
     assert pipeline.prepared == "⋯"
 
 
+def test_extract_token_attrs_reads_unidic_star_fields_as_empty() -> None:
+    features = namedtuple(
+        "UnidicFeatures29", ["pos1", "pos2", "pos3", "pos4", "goshu", "type"]
+    )
+
+    class Token:
+        surface = "温水"
+        feature = features("名詞", "普通名詞", "一般", "*", "漢", "体")
+
+    assert tts_util._extract_token_attrs(Token()) == {
+        "goshu": "漢",
+        "pos1": "名詞",
+        "pos2": "普通名詞",
+        "pos3": "一般",
+        "pos4": "",
+        "type": "体",
+    }
+
+
+def test_extract_token_attrs_falls_back_to_csv_feature_strings() -> None:
+    class Token:
+        surface = "君"
+        feature = "接尾辞,名詞的,一般,*,*,*,クン"
+
+    assert tts_util._extract_token_attrs(Token()) == {
+        "goshu": "",
+        "pos1": "接尾辞",
+        "pos2": "名詞的",
+        "pos3": "一般",
+        "pos4": "",
+        "type": "",
+    }
+
+
+@requires_unidic
+def test_honorific_kun_offsets_select_name_suffix_only() -> None:
+    text = "「君は桜井君と温水君の味方？」姫君も主君も、かわいい君も。"
+    offsets = tts_util._honorific_kun_offsets(text)
+    assert [text[offset - 2 : offset + 1] for offset in offsets] == ["桜井君", "温水君"]
+
+
+@requires_unidic
+def test_prepare_tts_pipeline_spells_out_kun_after_ruby_propagated_name() -> None:
+    # 負けヒロインが多すぎる！９: ruby propagates 桜井=さくらい book-wide, and
+    # Irodori read the resulting さくらい君 as さくらいきみ.
+    ruby_data = {
+        "global": [{"base": "桜井", "reading": "さくらい", "count": 100, "total": 100}]
+    }
+    pipeline = tts_util._prepare_tts_pipeline(
+        "たしか桜井君の彼女って、君は知ってる？",
+        ruby_data=ruby_data,
+    )
+    assert pipeline.after_overrides == "たしかさくらいくんの彼女って、君は知ってる？"
+
+
+@requires_unidic
+def test_prepare_tts_pipeline_spells_out_kun_without_ruby_and_skips_kin_nouns() -> None:
+    pipeline = tts_util._prepare_tts_pipeline(
+        "橘君と佐藤君と姫君が来た。",
+        merged_overrides=[{"base": "橘", "reading": "たちばな", "mode": "isolated"}],
+    )
+    assert pipeline.after_overrides == "たちばなくんと佐藤くんと姫君が来た。"
+
+
+@requires_unidic
+def test_prepare_tts_pipeline_keeps_ruby_and_overrides_that_cover_kun() -> None:
+    text = "温水君と桜井君だ。"
+    pipeline = tts_util._prepare_tts_pipeline(
+        text,
+        chunk_span=[0, len(text)],
+        chapter_ruby_spans=[
+            {"start": 0, "end": 3, "base": "温水君", "reading": "ぬっくん"}
+        ],
+        ruby_data={"chapters": {}},
+        merged_overrides=[{"base": "桜井君", "reading": "さくらいさま"}],
+    )
+    assert pipeline.after_overrides == "ぬっくんとさくらいさまだ。"
+
+
 def test_ellipsis_only_run_length_ignores_quotes() -> None:
     assert tts_util._ellipsis_only_run_length("「……」") == 2
     assert tts_util._ellipsis_only_run_length("……三ケ月前") == 0
 
 
-def test_compute_chunk_pause_multipliers_uses_section_pause_for_explicit_headings() -> None:
+def test_compute_chunk_pause_multipliers_uses_section_pause_for_explicit_headings() -> (
+    None
+):
     text = f"序章\n\n本文一。\n\n{SECTION_BREAK}\n\n本文二。"
     spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
     chunks = [text[start:end] for start, end in spans]
@@ -247,7 +336,9 @@ def test_compute_chunk_pause_multipliers_uses_section_pause_for_explicit_heading
     assert multipliers[2] == 1
 
 
-def test_compute_chunk_pause_multipliers_keeps_same_category_pause_for_numbered_headings() -> None:
+def test_compute_chunk_pause_multipliers_keeps_same_category_pause_for_numbered_headings() -> (
+    None
+):
     text = "Ⅰ．\n\n１\n\n本文。\n\n２\n\n続き。"
     spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
     chunks = [text[start:end] for start, end in spans]
@@ -278,7 +369,9 @@ def test_compute_chunk_pause_multipliers_uses_title_pause_for_title_category() -
     assert multipliers[1] == 1
 
 
-def test_compute_chunk_pause_multipliers_does_not_infer_heading_without_epub_data() -> None:
+def test_compute_chunk_pause_multipliers_does_not_infer_heading_without_epub_data() -> (
+    None
+):
     text = "序章\n\n本文。"
     spans = tts_util.make_chunk_spans(text, max_chars=100, chunk_mode="japanese")
     chunks = [text[start:end] for start, end in spans]
@@ -320,7 +413,9 @@ def test_compute_chunk_pause_multipliers_does_not_promote_dialogue_lines(
     assert multipliers == [1, 1, 1]
 
 
-def test_compute_chunk_pause_multipliers_does_not_promote_split_dialogue_fragments() -> None:
+def test_compute_chunk_pause_multipliers_does_not_promote_split_dialogue_fragments() -> (
+    None
+):
     text = (
         "前の段落。\n\n"
         "「いいえ。もしお嫌じゃなかったら、一度どうぞ、のみにいらして下さい」\n\n"
@@ -331,7 +426,9 @@ def test_compute_chunk_pause_multipliers_does_not_promote_split_dialogue_fragmen
     chunks = [text[start:end] for start, end in spans]
     multipliers = tts_util.compute_chunk_pause_multipliers(text, spans)
 
-    assert "「いいえ。もしお嫌じゃなかったら、一度どうぞ、のみにいらして下さい」" in chunks
+    assert (
+        "「いいえ。もしお嫌じゃなかったら、一度どうぞ、のみにいらして下さい」" in chunks
+    )
     assert "「ありがとうございます。はずかしいわ」" in chunks
     for chunk, pause in zip(chunks, multipliers):
         if chunk in {
@@ -341,7 +438,9 @@ def test_compute_chunk_pause_multipliers_does_not_promote_split_dialogue_fragmen
             assert pause == 1
 
 
-def test_compute_chunk_pause_multipliers_does_not_promote_dialogue_bridge_between_quotes() -> None:
+def test_compute_chunk_pause_multipliers_does_not_promote_dialogue_bridge_between_quotes() -> (
+    None
+):
     text = (
         "前文。\n\n"
         "「実をいうとちょっと面白いことがあったんだ。いいか。こいつはここだけの話だぜ」\n"
@@ -362,7 +461,9 @@ def test_compute_chunk_pause_multipliers_does_not_promote_dialogue_bridge_betwee
         assert multipliers[idx] == 1
 
 
-def test_compute_chunk_pause_multipliers_only_promotes_standalone_paragraph_chunks() -> None:
+def test_compute_chunk_pause_multipliers_only_promotes_standalone_paragraph_chunks() -> (
+    None
+):
     text = (
         "前の段落。\n\n"
         "医師の口にした「念のため」にさまざまな解釈をくわえ、悲観的な想像をふくらませた。\n\n"
@@ -379,7 +480,9 @@ def test_compute_chunk_pause_multipliers_only_promotes_standalone_paragraph_chun
     assert multipliers == [1, 1, 1]
 
 
-def test_compute_chunk_pause_multipliers_does_not_promote_sentence_continuation_line() -> None:
+def test_compute_chunk_pause_multipliers_does_not_promote_sentence_continuation_line() -> (
+    None
+):
     text = (
         "どれだけ自分を、歪めていたんだろう。\n"
         "それはきっと悲しいことだ。なのに、\n"
@@ -396,7 +499,9 @@ def test_compute_chunk_pause_multipliers_does_not_promote_sentence_continuation_
     assert multipliers == [1, 1, 1]
 
 
-def test_compute_chunk_pause_multipliers_does_not_promote_continuation_before_dash_line() -> None:
+def test_compute_chunk_pause_multipliers_does_not_promote_continuation_before_dash_line() -> (
+    None
+):
     text = "それと、\n──応援してるから"
     spans = tts_util.make_chunk_spans(text, max_chars=220, chunk_mode="japanese")
     chunks = [text[start:end] for start, end in spans]
@@ -405,7 +510,9 @@ def test_compute_chunk_pause_multipliers_does_not_promote_continuation_before_da
     assert multipliers == [1, 1]
 
 
-def test_compute_chunk_pause_multipliers_does_not_promote_continuation_before_plain_line() -> None:
+def test_compute_chunk_pause_multipliers_does_not_promote_continuation_before_plain_line() -> (
+    None
+):
     text = "歌詞を見るととても日本語とは思えない。これが実はヘブライ語だと提唱したのは神学博士で、翻訳すれば、\n聖前に主を讃えよ"
     spans = tts_util.make_chunk_spans(text, max_chars=220, chunk_mode="japanese")
     chunks = [text[start:end] for start, end in spans]
@@ -417,7 +524,9 @@ def test_compute_chunk_pause_multipliers_does_not_promote_continuation_before_pl
     assert multipliers == [1, 1]
 
 
-def test_compute_chunk_pause_multipliers_keeps_section_break_after_continuation() -> None:
+def test_compute_chunk_pause_multipliers_keeps_section_break_after_continuation() -> (
+    None
+):
     text = f"それと、\n\n{SECTION_BREAK}\n\n次。"
     spans = tts_util.make_chunk_spans(text, max_chars=220, chunk_mode="japanese")
     chunks = [text[start:end] for start, end in spans]
@@ -588,8 +697,7 @@ def test_apply_reading_overrides() -> None:
         {"base": "東京", "reading": "とうきょう"},
     ]
     assert (
-        tts_util.apply_reading_overrides(text, overrides)
-        == "私はかんじととうきょう。"
+        tts_util.apply_reading_overrides(text, overrides) == "私はかんじととうきょう。"
     )
 
 
@@ -635,7 +743,9 @@ def test_apply_reading_overrides_isolated_kanji_allows_particle_boundary() -> No
     assert tts_util.apply_reading_overrides(text, overrides) == "せみの声とせみは。"
 
 
-def test_apply_reading_overrides_isolated_kanji_still_blocks_non_particle_kana() -> None:
+def test_apply_reading_overrides_isolated_kanji_still_blocks_non_particle_kana() -> (
+    None
+):
     text = "蟬たち"
     overrides = [{"base": "蟬", "reading": "せみ", "mode": "isolated"}]
     assert tts_util.apply_reading_overrides(text, overrides) == text
@@ -703,7 +813,10 @@ def test_parse_reading_overrides_text_single_kanji_defaults_isolated() -> None:
 def test_apply_reading_overrides_regex() -> None:
     text = "御存知でした。御迷惑でした。"
     overrides = [{"base": "re:御(存知|迷惑)", "reading": r"ご\1"}]
-    assert tts_util.apply_reading_overrides(text, overrides) == "ご存知でした。ご迷惑でした。"
+    assert (
+        tts_util.apply_reading_overrides(text, overrides)
+        == "ご存知でした。ご迷惑でした。"
+    )
 
 
 def test_apply_reading_overrides_for_tts_formats_readings() -> None:
@@ -723,7 +836,10 @@ def test_apply_reading_overrides_for_tts_preserves_mixed_script_readings() -> No
     text = "母は"
     overrides = [{"base": "母は", "reading": "ハハは"}]
     sep = ""
-    assert tts_util._apply_reading_overrides_for_tts(text, overrides) == f"{sep}ハハは{sep}"
+    assert (
+        tts_util._apply_reading_overrides_for_tts(text, overrides)
+        == f"{sep}ハハは{sep}"
+    )
 
 
 def test_apply_ruby_spans() -> None:
@@ -822,7 +938,9 @@ def test_apply_ruby_evidence_to_chunk_drops_suspicious_span() -> None:
         {},
     )
     sep = ""
-    assert out == f"{sep}ほんちょう{sep}に西田医院という耳鼻科があったのを覚えているか。"
+    assert (
+        out == f"{sep}ほんちょう{sep}に西田医院という耳鼻科があったのを覚えているか。"
+    )
 
 
 def test_is_suspicious_ruby_span_rejects_kanji_in_reading() -> None:
@@ -994,9 +1112,7 @@ def test_apply_ruby_evidence_to_chunk_decision_corrects_coalesced_split_name() -
 def test_ruby_global_overrides_drops_singleton_nonaligned(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        tts_util, "_ruby_reading_aligned", lambda base, reading: False
-    )
+    monkeypatch.setattr(tts_util, "_ruby_reading_aligned", lambda base, reading: False)
     ruby_data = {
         "global": [
             {"base": "人生", "reading": "クソゲー", "count": 1, "total": 1},
@@ -1012,9 +1128,7 @@ def test_ruby_global_overrides_drops_singleton_nonaligned(
 def test_ruby_global_overrides_keeps_singleton_aligned(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        tts_util, "_ruby_reading_aligned", lambda base, reading: True
-    )
+    monkeypatch.setattr(tts_util, "_ruby_reading_aligned", lambda base, reading: True)
     ruby_data = {
         "global": [{"base": "明後日", "reading": "あさって", "count": 1, "total": 1}]
     }
@@ -1025,9 +1139,7 @@ def test_ruby_global_overrides_keeps_singleton_aligned(
 def test_ruby_global_overrides_drops_wordplay_bases(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        tts_util, "_ruby_reading_aligned", lambda base, reading: False
-    )
+    monkeypatch.setattr(tts_util, "_ruby_reading_aligned", lambda base, reading: False)
     ruby_data = {
         "global": [
             {"base": "スマートフォン", "reading": "ケータイ", "count": 3, "total": 3},
@@ -1047,9 +1159,7 @@ def test_ruby_global_overrides_keeps_handwritten_entry_without_counts() -> None:
 def test_ruby_global_overrides_decision_scope_global_forces_singleton(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        tts_util, "_ruby_reading_aligned", lambda base, reading: False
-    )
+    monkeypatch.setattr(tts_util, "_ruby_reading_aligned", lambda base, reading: False)
     ruby_data = {
         "global": [{"base": "小鳥遊", "reading": "たかなし", "count": 1, "total": 1}],
         "decisions": {"小鳥遊|たかなし": {"scope": "global"}},
@@ -1063,7 +1173,9 @@ def test_ruby_global_overrides_decision_scope_global_forces_singleton(
 
 def test_ruby_global_overrides_decision_correction_rewrites_reading() -> None:
     ruby_data = {
-        "global": [{"base": "天愛星", "reading": "ていあら", "count": 101, "total": 101}],
+        "global": [
+            {"base": "天愛星", "reading": "ていあら", "count": 101, "total": 101}
+        ],
         "decisions": {"天愛星|ていあら": {"reading": "てぃあら"}},
     }
     overrides = tts_util._ruby_global_overrides(ruby_data)
@@ -1075,7 +1187,9 @@ def test_ruby_global_overrides_decision_correction_rewrites_reading() -> None:
 
 def test_ruby_global_overrides_decision_off_removes_entry() -> None:
     ruby_data = {
-        "global": [{"base": "天愛星", "reading": "ていあら", "count": 101, "total": 101}],
+        "global": [
+            {"base": "天愛星", "reading": "ていあら", "count": 101, "total": 101}
+        ],
         "decisions": {"天愛星|ていあら": {"scope": "off"}},
     }
     assert tts_util._ruby_global_overrides(ruby_data) == []
@@ -1107,9 +1221,7 @@ def test_ruby_global_overrides_decision_gates_conflict_majority() -> None:
 def test_augment_chapter_overrides_gates_ruby_seeded_singletons(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        tts_util, "_ruby_reading_aligned", lambda base, reading: False
-    )
+    monkeypatch.setattr(tts_util, "_ruby_reading_aligned", lambda base, reading: False)
     ruby_data = {
         "chapters": {
             "0001-chapter": {
@@ -1203,7 +1315,12 @@ def _normalize_ruby_reading_with_stub(
         ("豪奢", "ごうしや", "ゴウシャ", "ごうしゃ"),
         ("呪詛", "じゆそ", "ジュソ", "じゅそ"),
         ("几帳面", "きちようめん", "キチョウメン", "きちょうめん"),
-        ("戦々恐々", "せんせんきようきよう", "センセンキヨウキョウ", "せんせんきようきょう"),
+        (
+            "戦々恐々",
+            "せんせんきようきよう",
+            "センセンキヨウキョウ",
+            "せんせんきようきょう",
+        ),
         # 【合本版】さくら荘のペットな彼女 全13巻（電子特典付き）
         ("表情", "ひようじよう", "ヒョウジョウ", "ひょうじょう"),
         ("一緒", "いつしよ", "イッショ", "いっしょ"),
@@ -1219,7 +1336,12 @@ def _normalize_ruby_reading_with_stub(
         ("臆病", "おくびよう", "オクビョウ", "おくびょう"),
         ("信憑性", "しんぴようせい", "シンピョウセイ", "しんぴょうせい"),
         # 異人たちとの夏
-        ("南無妙法蓮華経", "なむみようほうれんげきよう", "ナムミョウホウレンゲキョウ", "なむみょうほうれんげきょう"),
+        (
+            "南無妙法蓮華経",
+            "なむみようほうれんげきよう",
+            "ナムミョウホウレンゲキョウ",
+            "なむみょうほうれんげきょう",
+        ),
         # Ｖシリーズ全10冊合本版
         ("洒落", "しやれ", "シャレ", "しゃれ"),
         ("自重", "じちよう", "ジチョウ", "じちょう"),
@@ -1302,11 +1424,16 @@ def test_synthesize_chunk_prefers_explicit_voice_over_manifest_entry(
             x_vector_only_mode=False,
         )
 
-    monkeypatch.setattr(tts_util.synth_irodori, "get_runtime", lambda **_kwargs: object())
+    monkeypatch.setattr(
+        tts_util.synth_irodori, "get_runtime", lambda **_kwargs: object()
+    )
     monkeypatch.setattr(
         tts_util.synth_irodori,
         "generate_chunk",
-        lambda *_args, **_kwargs: (tts_util.np.zeros(1, dtype=tts_util.np.float32), 48000),
+        lambda *_args, **_kwargs: (
+            tts_util.np.zeros(1, dtype=tts_util.np.float32),
+            48000,
+        ),
     )
     monkeypatch.setattr(tts_util, "_load_ruby_data", lambda _book_dir: {"chapters": {}})
     monkeypatch.setattr(tts_util, "_load_reading_overrides", lambda _book_dir: ([], {}))
@@ -1322,7 +1449,9 @@ def test_synthesize_chunk_prefers_explicit_voice_over_manifest_entry(
         ),
     )
     monkeypatch.setattr(tts_util, "_write_wav", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(tts_util.voice_util, "resolve_voice_config", fake_resolve_voice_config)
+    monkeypatch.setattr(
+        tts_util.voice_util, "resolve_voice_config", fake_resolve_voice_config
+    )
 
     result = tts_util.synthesize_chunk(
         out_dir=out_dir,
@@ -1369,7 +1498,9 @@ def test_synthesize_chunk_ellipsis_only_writes_silence(
     def fake_write_wav(path: Path, audio, sample_rate: int) -> None:
         calls["written"] = (path, int(audio.shape[0]), sample_rate)
 
-    monkeypatch.setattr(tts_util.synth_irodori, "get_runtime", lambda **_kwargs: object())
+    monkeypatch.setattr(
+        tts_util.synth_irodori, "get_runtime", lambda **_kwargs: object()
+    )
     monkeypatch.setattr(tts_util.synth_irodori, "generate_chunk", fake_generate_chunk)
     monkeypatch.setattr(tts_util, "_load_ruby_data", lambda _book_dir: {"chapters": {}})
     monkeypatch.setattr(tts_util, "_load_reading_overrides", lambda _book_dir: ([], {}))
@@ -1649,11 +1780,23 @@ def test_normalize_numbers_slash_date_year() -> None:
         ("方法① 校舎裏に呼び出してみる", "方法一 校舎裏に呼び出してみる"),
         ("ver.1.0", "ver.一てんゼロ"),
         # 【合本版】さくら荘のペットな彼女 全13巻（電子特典付き）...epub
-        ("【合本版】さくら荘のペットな彼女 全13冊（電子特典付き）", "【合本版】さくら荘のペットな彼女 全じゅうさんさつ(電子特典付き)"),
+        (
+            "【合本版】さくら荘のペットな彼女 全13冊（電子特典付き）",
+            "【合本版】さくら荘のペットな彼女 全じゅうさんさつ(電子特典付き)",
+        ),
         # サクラダリセット（角川文庫）【全7冊 合本版】...epub
-        ("サクラダリセット（角川文庫）【全7冊 合本版】", "サクラダリセット(角川文庫)【全ななさつ 合本版】"),
-        ("１ 八月一三日（金曜日）──スタート地点", "いち はちがつじゅうさんにち(金曜日)──スタート地点"),
-        ("受付時間 9：00～17：00（土日 祝日 年末年始を除く）", "受付時間 きゅうじぜろふんからじゅうななじぜろふん(土日 祝日 年末年始を除く)"),
+        (
+            "サクラダリセット（角川文庫）【全7冊 合本版】",
+            "サクラダリセット(角川文庫)【全ななさつ 合本版】",
+        ),
+        (
+            "１ 八月一三日（金曜日）──スタート地点",
+            "いち はちがつじゅうさんにち(金曜日)──スタート地点",
+        ),
+        (
+            "受付時間 9：00～17：00（土日 祝日 年末年始を除く）",
+            "受付時間 きゅうじぜろふんからじゅうななじぜろふん(土日 祝日 年末年始を除く)",
+        ),
         # Ｖシリーズ全１０冊合本版 - 森博嗣.epub
         ("Ｖシリーズ全１０冊合本版", "Vシリーズ全じゅっさつ合本版"),
         ("0.9×0.8＝0.72", "零てんきゅう×零てんはち=零てんななに"),
@@ -1723,13 +1866,24 @@ def test_prepare_tts_text_normalizes_dash_runs() -> None:
     ("text", "expected"),
     [
         # Real lines from: 【合本版】さくら荘のペットな彼女 全13巻（電子特典付き）
-        ("「こまち、これが新幹線だぞ。早いだろ〜」", "こまち、これが新幹線だぞ。早いだろー"),
+        (
+            "「こまち、これが新幹線だぞ。早いだろ〜」",
+            "こまち、これが新幹線だぞ。早いだろー",
+        ),
         ("「あ〜ん」", "あーん"),
-        ("不機嫌な声を出した七海が、目をす〜っと細めて睨んでくる。", "不機嫌な声を出した七海が、目をすーっと細めて睨んでくる。"),
-        ("「食事にする？ お風呂？ それとも〜、ま・わ・し？」", "食事にする? お風呂? それともー、ま・わ・し?"),
+        (
+            "不機嫌な声を出した七海が、目をす〜っと細めて睨んでくる。",
+            "不機嫌な声を出した七海が、目をすーっと細めて睨んでくる。",
+        ),
+        (
+            "「食事にする？ お風呂？ それとも〜、ま・わ・し？」",
+            "食事にする? お風呂? それともー、ま・わ・し?",
+        ),
     ],
 )
-def test_prepare_tts_text_wave_dash_real_dataset_cases(text: str, expected: str) -> None:
+def test_prepare_tts_text_wave_dash_real_dataset_cases(
+    text: str, expected: str
+) -> None:
     assert tts_util.prepare_tts_text(text) == expected
 
 
@@ -1788,7 +1942,7 @@ def test_load_reading_overrides(tmp_path: Path) -> None:
                 "replacements": [{"base": "漢字", "reading": "かんじ"}],
                 "conflicts": [{"base": "生", "readings": ["せい", "なま"]}],
             }
-        }
+        },
     }
     path = tmp_path / "reading-overrides.json"
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
@@ -1910,7 +2064,9 @@ def test_ruby_chapter_compound_overrides_skips_ambiguous_readings() -> None:
     assert {"base": "緑生", "reading": "りょくせい"} not in overrides
 
 
-def test_augment_chapter_overrides_with_ruby_compounds_keeps_explicit_override() -> None:
+def test_augment_chapter_overrides_with_ruby_compounds_keeps_explicit_override() -> (
+    None
+):
     ruby_data = {
         "chapters": {
             "0005-chapter": {
@@ -1933,7 +2089,9 @@ def test_augment_chapter_overrides_with_ruby_compounds_keeps_explicit_override()
 
 
 @requires_unidic
-def test_augment_chapter_overrides_with_ruby_compounds_allows_singleton_name_context() -> None:
+def test_augment_chapter_overrides_with_ruby_compounds_allows_singleton_name_context() -> (
+    None
+):
     ruby_data = {
         "chapters": {
             "0005-chapter": {
@@ -1954,7 +2112,9 @@ def test_augment_chapter_overrides_with_ruby_compounds_allows_singleton_name_con
 
 
 @requires_unidic
-def test_augment_chapter_overrides_with_ruby_compounds_allows_singleton_kun_honorific() -> None:
+def test_augment_chapter_overrides_with_ruby_compounds_allows_singleton_kun_honorific() -> (
+    None
+):
     ruby_data = {
         "chapters": {
             "0005-chapter": {
@@ -2227,7 +2387,9 @@ def test_ruby_propagated_reading_map_coalesces_adjacent_single_kanji_spans() -> 
     assert chapter_map["生"] == {"お"}
 
 
-def test_merge_reading_overrides_prefers_global_over_single_kanji_ruby_chapter_entry() -> None:
+def test_merge_reading_overrides_prefers_global_over_single_kanji_ruby_chapter_entry() -> (
+    None
+):
     global_overrides = [{"base": "蟬", "reading": "セミ"}]
     chapter_overrides = [{"base": "蟬", "reading": "せみ"}]
     ruby_data = {
@@ -2260,7 +2422,9 @@ def test_load_reading_overrides_includes_template(
     book_dir = tmp_path / "book"
     book_dir.mkdir()
     (book_dir / "reading-overrides.json").write_text(
-        json.dumps({"global": [{"base": "妻子", "reading": "つまこ"}]}, ensure_ascii=False),
+        json.dumps(
+            {"global": [{"base": "妻子", "reading": "つまこ"}]}, ensure_ascii=False
+        ),
         encoding="utf-8",
     )
     global_overrides, overrides = tts_util._load_reading_overrides(book_dir)
@@ -2268,14 +2432,10 @@ def test_load_reading_overrides_includes_template(
     assert tts_util.apply_reading_overrides("妻子", global_overrides) == "つまこ"
 
 
-
-
 def test_ruby_global_overrides_derives_compound_names_from_spans(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        tts_util, "_ruby_reading_aligned", lambda base, reading: False
-    )
+    monkeypatch.setattr(tts_util, "_ruby_reading_aligned", lambda base, reading: False)
     ruby_data = {
         "chapters": {
             "0001-chapter": {

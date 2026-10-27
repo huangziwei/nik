@@ -67,10 +67,22 @@ def suggest_small_kana_reading(reading: str) -> str:
             continue
         prev = chars[idx - 1]
         convert = False
-        if ch in "やゆよヤユヨ" and prev in _PALATAL_TRIGGERS or ch in "いイ" and prev in _TE_DE or ch in "えエ" and prev in (_SHI_JI_CHI | _TE_DE | _FU) or ch in "あいえおアイエオ" and prev in _FU or ch in "イエオ" and prev in _KATAKANA_U or (
-            ch in _TSU
-            and idx + 1 < len(chars)
-            and chars[idx + 1] in _GEMINATION_FOLLOWERS
+        if (
+            ch in "やゆよヤユヨ"
+            and prev in _PALATAL_TRIGGERS
+            or ch in "いイ"
+            and prev in _TE_DE
+            or ch in "えエ"
+            and prev in (_SHI_JI_CHI | _TE_DE | _FU)
+            or ch in "あいえおアイエオ"
+            and prev in _FU
+            or ch in "イエオ"
+            and prev in _KATAKANA_U
+            or (
+                ch in _TSU
+                and idx + 1 < len(chars)
+                and chars[idx + 1] in _GEMINATION_FOLLOWERS
+            )
         ):
             convert = True
         if convert:
@@ -94,7 +106,8 @@ def _context_payload(
         "kind": kind,
         "before": ("…" if left > 0 else "") + text[left:start].replace("\n", " "),
         "hit": text[start:end],
-        "after": text[end:right].replace("\n", " ") + ("…" if right < len(text) else ""),
+        "after": text[end:right].replace("\n", " ")
+        + ("…" if right < len(text) else ""),
     }
 
 
@@ -192,9 +205,7 @@ def build_review_groups(book_dir: Path) -> dict:
     effective_map = _literal_override_map(tts_util._ruby_global_overrides(ruby_data))
     baseline_data = dict(ruby_data) if isinstance(ruby_data, dict) else {}
     baseline_data.pop("decisions", None)
-    baseline_map = _literal_override_map(
-        tts_util._ruby_global_overrides(baseline_data)
-    )
+    baseline_map = _literal_override_map(tts_util._ruby_global_overrides(baseline_data))
 
     payload_groups: list[dict] = []
     for key, group in groups.items():

@@ -124,7 +124,10 @@ def test_load_chapter_segments_skips_missing_zero_duration_chunks(
     chapters, total_ms = merge._load_chapter_segments(tts_dir)
 
     assert [entry["title"] for entry in chapters] == ["Chapter 1", "Chapter 2"]
-    assert [path.name for path in chapters[0]["segments"]] == ["000001.wav", "000003.wav"]
+    assert [path.name for path in chapters[0]["segments"]] == [
+        "000001.wav",
+        "000003.wav",
+    ]
     assert chapters[0]["duration_ms"] == 240
     assert chapters[1]["duration_ms"] == 120
     assert total_ms == 360

@@ -417,7 +417,9 @@ def _is_number_link_list(root: object) -> bool:
     labels = [anchor.get_text(strip=True) for anchor in anchors]
     if not all(_looks_like_note_marker(label) for label in labels):
         return False
-    return _compact_heading_text(root.get_text()) == _compact_heading_text("".join(labels))
+    return _compact_heading_text(root.get_text()) == _compact_heading_text(
+        "".join(labels)
+    )
 
 
 def _collect_footnote_index(
@@ -433,9 +435,7 @@ def _collect_footnote_index(
             continue
         head = content.lstrip()[:512].lower()
         parser = (
-            "lxml-xml"
-            if (head.startswith(b"<?xml") or b"xmlns=" in head)
-            else "lxml"
+            "lxml-xml" if (head.startswith(b"<?xml") or b"xmlns=" in head) else "lxml"
         )
         soup = BeautifulSoup(content, parser)
         for tag in soup.find_all(attrs={"epub:type": "footnote"}):
@@ -446,7 +446,9 @@ def _collect_footnote_index(
             note_id = _normalize_id(str(tag.get("id") or ""))
             if note_id:
                 note_ids.add(note_id)
-        for tag in soup.find_all(["p", "section", "div", "aside", "ol", "ul", "li", "td"]):
+        for tag in soup.find_all(
+            ["p", "section", "div", "aside", "ol", "ul", "li", "td"]
+        ):
             attrs = getattr(tag, "attrs", None)
             if attrs is None:
                 continue
@@ -490,13 +492,13 @@ def _parse_html_soup(html: bytes | str) -> BeautifulSoup:
     if isinstance(html, bytes):
         head = html.lstrip()[:512].lower()
         parser = (
-            "lxml-xml"
-            if (head.startswith(b"<?xml") or b"xmlns=" in head)
-            else "lxml"
+            "lxml-xml" if (head.startswith(b"<?xml") or b"xmlns=" in head) else "lxml"
         )
     else:
         head = str(html).lstrip()[:512].lower()
-        parser = "lxml-xml" if (head.startswith("<?xml") or "xmlns=" in head) else "lxml"
+        parser = (
+            "lxml-xml" if (head.startswith("<?xml") or "xmlns=" in head) else "lxml"
+        )
     return BeautifulSoup(html, parser)
 
 
@@ -571,7 +573,9 @@ def _soup_to_text(
     _render_blank_base_ruby(soup)
     for tag in soup.find_all(["rt", "rp"]):
         tag.decompose()
-    for tag in soup(["script", "style", "nav", "header", "footer", "aside", "noscript"]):
+    for tag in soup(
+        ["script", "style", "nav", "header", "footer", "aside", "noscript"]
+    ):
         tag.decompose()
     for tag in soup.find_all("sup"):
         tag.decompose()
@@ -602,11 +606,11 @@ def _soup_to_text(
         if note_ids or backref_ids:
             for anchor in soup.find_all("a"):
                 text = anchor.get_text(strip=True)
-                if not _looks_like_note_marker(text) or _is_whole_block_anchor(anchor, text):
+                if not _looks_like_note_marker(text) or _is_whole_block_anchor(
+                    anchor, text
+                ):
                     continue
-                fragment = _normalize_id(
-                    _href_fragment(str(anchor.get("href") or ""))
-                )
+                fragment = _normalize_id(_href_fragment(str(anchor.get("href") or "")))
                 if fragment and (fragment in note_ids or fragment in backref_ids):
                     anchor.decompose()
     for tag in soup.find_all(["p", "section", "div", "aside", "ol", "ul", "li"]):
@@ -657,7 +661,9 @@ def _soup_to_text(
     def _top_level_blocks(name: str) -> list[object]:
         out: list[object] = []
         for elem in root.find_all(name):
-            if any(getattr(parent, "name", None) in block_tags for parent in elem.parents):
+            if any(
+                getattr(parent, "name", None) in block_tags for parent in elem.parents
+            ):
                 continue
             out.append(elem)
         return out
@@ -786,7 +792,9 @@ def _html_to_text_with_ruby_tokens(
         # An unpronounceable reading (傍点 marks such as ヽヽヽ) leaves `base`
         # as plain text with no ruby token.
         if base and reading and not reading_is_unpronounceable(reading):
-            token = f"{_RUBY_TOKEN_START}{base}{_RUBY_TOKEN_MID}{reading}{_RUBY_TOKEN_END}"
+            token = (
+                f"{_RUBY_TOKEN_START}{base}{_RUBY_TOKEN_MID}{reading}{_RUBY_TOKEN_END}"
+            )
             ruby.replace_with(token)
         elif base:
             ruby.replace_with(base)
@@ -877,7 +885,9 @@ _NON_CONTENT_TOC_TITLES = {
     "広告",
     "内容紹介",
 }
-_NON_CONTENT_TOC_TITLES_CASEFOLD = {value.casefold() for value in _NON_CONTENT_TOC_TITLES}
+_NON_CONTENT_TOC_TITLES_CASEFOLD = {
+    value.casefold() for value in _NON_CONTENT_TOC_TITLES
+}
 _INLINE_TOC_MIN_LINKS = 3
 _TOC_SPINE_COVERAGE_MIN_RATIO = 0.9
 
@@ -1152,14 +1162,15 @@ def _collect_structural_heading_classes(book: epub.EpubBook) -> set[str]:
             classes = getattr(node, "get", lambda *_args, **_kwargs: [])("class", [])
             if isinstance(classes, str):
                 classes = [classes]
-            cleaned_classes = [str(cls).strip().lower() for cls in classes if str(cls).strip()]
+            cleaned_classes = [
+                str(cls).strip().lower() for cls in classes if str(cls).strip()
+            ]
             if not cleaned_classes:
                 continue
             text = _normalized_node_text(node)
-            heading_like = (
-                _looks_like_short_structural_heading(text)
-                and _is_standalone_heading_node(node, text)
-            )
+            heading_like = _looks_like_short_structural_heading(
+                text
+            ) and _is_standalone_heading_node(node, text)
             for cls in cleaned_classes:
                 class_totals[cls] = class_totals.get(cls, 0) + 1
                 if heading_like:
@@ -1202,7 +1213,9 @@ def _extract_html_heading_entries(
     heading_class_markers: set[str] | None = None,
     heading_id_markers: set[str] | None = None,
 ) -> list[tuple[str, str]]:
-    class_markers = {marker.strip().lower() for marker in (heading_class_markers or set())}
+    class_markers = {
+        marker.strip().lower() for marker in (heading_class_markers or set())
+    }
     id_markers = {marker.strip().lower() for marker in (heading_id_markers or set())}
 
     soup = _parse_html_soup(html)
@@ -1480,12 +1493,16 @@ def _prepend_title_to_text_and_ruby_spans(
     return prefix + text, _shift_ruby_spans(ruby_spans, len(prefix))
 
 
-def _merge_title_only_chapter_with_next(chapter: Chapter, next_chapter: Chapter) -> Chapter:
+def _merge_title_only_chapter_with_next(
+    chapter: Chapter, next_chapter: Chapter
+) -> Chapter:
     chapter_headings = list(chapter.headings)
     chapter_heading_categories = dict(chapter.heading_categories)
     title_key = _normalize_heading_key(chapter.title)
     if title_key:
-        if title_key not in {_normalize_heading_key(value) for value in chapter_headings}:
+        if title_key not in {
+            _normalize_heading_key(value) for value in chapter_headings
+        }:
             chapter_headings.insert(0, chapter.title)
         chapter_heading_categories[title_key] = _merge_heading_category(
             chapter_heading_categories.get(title_key, _HEADING_CATEGORY_SECTION),
@@ -1515,7 +1532,9 @@ def _merge_title_only_chapter_with_next(chapter: Chapter, next_chapter: Chapter)
     )
 
 
-def _merge_chapter_with_continuation(chapter: Chapter, continuation: Chapter) -> Chapter:
+def _merge_chapter_with_continuation(
+    chapter: Chapter, continuation: Chapter
+) -> Chapter:
     left_text = chapter.text
     right_text = continuation.text
     if left_text and right_text:
@@ -1547,7 +1566,9 @@ def _merge_chapter_with_continuation(chapter: Chapter, continuation: Chapter) ->
     )
 
 
-def _chapter_start_hrefs_from_title_overrides(title_overrides: dict[str, str]) -> set[str]:
+def _chapter_start_hrefs_from_title_overrides(
+    title_overrides: dict[str, str],
+) -> set[str]:
     starts: set[str] = set()
     for href, title in title_overrides.items():
         cleaned = str(title or "").strip()
@@ -1618,16 +1639,13 @@ def _augment_toc_chapters_with_followups(
             augmented.append(chapter)
             continue
         chapter_title = chapter.title or ""
-        if (
-            _is_non_content_toc_title(chapter_title)
-            or _looks_like_filename(chapter_title, source)
+        if _is_non_content_toc_title(chapter_title) or _looks_like_filename(
+            chapter_title, source
         ):
             augmented.append(chapter)
             continue
 
-        next_pos = next(
-            (p for p in sorted_boundaries if p > pos), len(spine_items)
-        )
+        next_pos = next((p for p in sorted_boundaries if p > pos), len(spine_items))
         last_held_pos = max(
             (spine_index[href] for href in chapter.spine_hrefs if href in spine_index),
             default=pos,
@@ -1739,7 +1757,9 @@ def _merge_title_only_chapters(chapters: list[Chapter]) -> list[Chapter]:
         if idx + 1 < len(chapters):
             next_chapter = chapters[idx + 1]
             if _should_merge_title_only_chapter_with_next(chapter, next_chapter):
-                merged.append(_merge_title_only_chapter_with_next(chapter, next_chapter))
+                merged.append(
+                    _merge_title_only_chapter_with_next(chapter, next_chapter)
+                )
                 idx += 2
                 continue
         merged.append(chapter)
@@ -1835,7 +1855,9 @@ def _build_spine_title_overrides_from_toc(
             next_href, next_item = spine_items[next_idx]
             if next_href in toc_hrefs:
                 next_toc_title = str(overrides.get(next_href, "")).strip()
-                if next_toc_title and not _looks_like_filename(next_toc_title, next_href):
+                if next_toc_title and not _looks_like_filename(
+                    next_toc_title, next_href
+                ):
                     break
             if not item_text(next_href, next_item):
                 continue
@@ -1983,11 +2005,7 @@ def _chapters_from_toc_entries(
                 if start_idx > 0
                 else None
             )
-            if (
-                key
-                and key != prev_key
-                and split_series_counts.get(key, 0) == 1
-            ):
+            if key and key != prev_key and split_series_counts.get(key, 0) == 1:
                 cur = start_idx
                 while cur < len(spine_items):
                     href, item = spine_items[cur]
@@ -2002,10 +2020,12 @@ def _chapters_from_toc_entries(
             )
             for merged in merged_items:
                 merged_content = merged.get_content()
-                merged_headings, merged_categories = _extract_html_headings_and_categories(
-                    merged_content,
-                    heading_class_markers=heading_class_markers,
-                    heading_id_markers=heading_id_markers,
+                merged_headings, merged_categories = (
+                    _extract_html_headings_and_categories(
+                        merged_content,
+                        heading_class_markers=heading_class_markers,
+                        heading_id_markers=heading_id_markers,
+                    )
                 )
                 headings, heading_categories = _merge_headings_with_categories(
                     headings,
@@ -2036,8 +2056,7 @@ def _chapters_from_toc_entries(
                 heading_id_markers=heading_id_markers,
             )
             ruby_pairs = [
-                (span.get("base", ""), span.get("reading", ""))
-                for span in ruby_spans
+                (span.get("base", ""), span.get("reading", "")) for span in ruby_spans
             ]
 
         if not text:
@@ -2181,7 +2200,9 @@ def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> list[Chapt
                 footnote_index=footnote_index,
             )
         )
-        spine_start_hrefs = _chapter_start_hrefs_from_title_overrides(spine_title_overrides)
+        spine_start_hrefs = _chapter_start_hrefs_from_title_overrides(
+            spine_title_overrides
+        )
 
     def build_spine_chapters() -> list[Chapter]:
         title_overrides = spine_title_overrides if spine_title_overrides else None
@@ -2200,6 +2221,7 @@ def extract_chapters(book: epub.EpubBook, prefer_toc: bool = True) -> list[Chapt
                 chapters_out, spine_start_hrefs
             )
         return chapters_out
+
     chapters = (
         _chapters_from_toc_entries(
             book,

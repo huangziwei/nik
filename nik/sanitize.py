@@ -56,6 +56,7 @@ def template_rules_path() -> Path:
 def book_rules_path(book_dir: Path) -> Path:
     return book_dir / RULES_FILENAME
 
+
 _WORD_RE = re.compile(r"[^\W\d_](?:[^\W\d_]|['\u2019\-]|\u0300-\u036F)*")
 _ROMAN_NUMERAL_RE = re.compile(r"^[IVXLCDM]+$")
 _DIALOGUE_START_RE = re.compile(r"^[ \t\u3000]*[「『（(【［[｢“‘〈《]")
@@ -259,9 +260,7 @@ def compile_patterns(patterns: Iterable[str]) -> list[re.Pattern]:
                 category=FutureWarning,
                 message="Possible nested set.*",
             )
-            compiled.append(
-                re.compile(pattern, flags=re.IGNORECASE | re.MULTILINE)
-            )
+            compiled.append(re.compile(pattern, flags=re.IGNORECASE | re.MULTILINE))
     return compiled
 
 
@@ -352,9 +351,7 @@ def _normalize_small_caps_word(
     return _titlecase_token(word) if is_first else lower
 
 
-def _normalize_small_caps_paragraph(
-    paragraph: str, case_map: dict[str, str]
-) -> str:
+def _normalize_small_caps_paragraph(paragraph: str, case_map: dict[str, str]) -> str:
     if not re.search(r"[a-z]", paragraph):
         return paragraph
     matches = list(_WORD_RE.finditer(paragraph))
@@ -392,7 +389,7 @@ def _normalize_small_caps_paragraph(
     pieces: list[str] = []
     last = 0
     for idx, match in enumerate(run):
-        pieces.append(paragraph[last:match.start()])
+        pieces.append(paragraph[last : match.start()])
         replacement = _normalize_small_caps_word(
             match.group(0), case_map=case_map, is_first=idx == 0
         )
@@ -402,9 +399,7 @@ def _normalize_small_caps_paragraph(
     return "".join(pieces)
 
 
-def normalize_small_caps(
-    text: str, extra_words: Iterable[str] | None = None
-) -> str:
+def normalize_small_caps(text: str, extra_words: Iterable[str] | None = None) -> str:
     if not text:
         return text
     case_map = _build_case_map(text, extra_words or [])
@@ -481,7 +476,7 @@ def _normalize_all_caps_title_line(
     pieces: list[str] = []
     last = 0
     for idx, match in enumerate(matches):
-        pieces.append(line[last:match.start()])
+        pieces.append(line[last : match.start()])
         replacement = _normalize_all_caps_title_word(
             match.group(0), case_map=case_map, is_first=idx == 0
         )
@@ -498,7 +493,7 @@ def _normalize_all_caps_sentence_line(
     last = 0
     sentence_start = True
     for idx, match in enumerate(matches):
-        pieces.append(line[last:match.start()])
+        pieces.append(line[last : match.start()])
         replacement = _normalize_all_caps_sentence_word(
             match.group(0), case_map=case_map, is_first=sentence_start
         )
@@ -558,7 +553,9 @@ def normalize_all_caps(
 
 def _case_context_words(metadata: dict, chapter_title: str) -> list[str]:
     extra: list[str] = []
-    title = str(metadata.get("title") or "").strip() if isinstance(metadata, dict) else ""
+    title = (
+        str(metadata.get("title") or "").strip() if isinstance(metadata, dict) else ""
+    )
     if title:
         extra.append(title)
     authors = metadata.get("authors") if isinstance(metadata, dict) else []
@@ -660,9 +657,7 @@ def normalize_text(text: str) -> str:
     return text.strip()
 
 
-def apply_section_cutoff(
-    text: str, patterns: list[re.Pattern]
-) -> tuple[str, str]:
+def apply_section_cutoff(text: str, patterns: list[re.Pattern]) -> tuple[str, str]:
     for pattern in patterns:
         match = pattern.search(text)
         if match:
@@ -707,9 +702,7 @@ def _ruby_marker_token(span_id: int, is_start: bool) -> str:
     return f"{marker}{span_id}{marker}"
 
 
-def _prepare_tracked_ruby_spans(
-    text: str, raw_spans: Sequence[dict]
-) -> list[dict]:
+def _prepare_tracked_ruby_spans(text: str, raw_spans: Sequence[dict]) -> list[dict]:
     prepared: list[dict] = []
     for item in raw_spans:
         if not isinstance(item, dict):
@@ -759,9 +752,7 @@ def _prepare_tracked_ruby_spans(
     return tracked
 
 
-def _inject_ruby_markers(
-    text: str, spans: Sequence[dict], use_reading: bool
-) -> str:
+def _inject_ruby_markers(text: str, spans: Sequence[dict], use_reading: bool) -> str:
     if not spans:
         return text
     parts: list[str] = []
@@ -827,7 +818,10 @@ def _collect_clean_ruby_spans_from_raw(
 ) -> list[dict] | None:
     if not raw_spans:
         return []
-    if _RUBY_MARKER_OPEN in raw_text_original or _RUBY_MARKER_CLOSE in raw_text_original:
+    if (
+        _RUBY_MARKER_OPEN in raw_text_original
+        or _RUBY_MARKER_CLOSE in raw_text_original
+    ):
         return None
 
     tracked = _prepare_tracked_ruby_spans(raw_text_original, raw_spans)
@@ -1008,9 +1002,7 @@ def _diff_ruby_spans(plain: str, ruby: str) -> list[dict]:
                 for span in split_spans:
                     span_base = str(span.get("base") or "")
                     span_reading = str(span.get("reading") or "")
-                    if tts_util._is_suspicious_ruby_span(
-                        span_base, span_reading
-                    ):
+                    if tts_util._is_suspicious_ruby_span(span_base, span_reading):
                         continue
                     spans.append(span)
             continue
@@ -1020,9 +1012,7 @@ def _diff_ruby_spans(plain: str, ruby: str) -> list[dict]:
     return spans
 
 
-def should_drop_title(
-    title: str, patterns: list[re.Pattern]
-) -> str:
+def should_drop_title(title: str, patterns: list[re.Pattern]) -> str:
     for pattern in patterns:
         if pattern.search(title):
             return pattern.pattern
@@ -1092,7 +1082,6 @@ def sanitize_book(
     dropped = 0
     clean_entries: list[dict] = []
 
-
     for entry in chapters:
         title = str(entry.get("title") or "").strip()
         raw_rel = entry.get("path")
@@ -1160,9 +1149,7 @@ def sanitize_book(
 
         raw_text_original = raw_path.read_text(encoding="utf-8")
         raw_text = normalize_text(raw_text_original)
-        cutoff_text, cutoff_reason = apply_section_cutoff(
-            raw_text, cutoff_patterns
-        )
+        cutoff_text, cutoff_reason = apply_section_cutoff(raw_text, cutoff_patterns)
         cleaned, stats = apply_remove_patterns(cutoff_text, remove_patterns)
         cleaned = normalize_text(cleaned)
         case_words = _case_context_words(metadata, title)
@@ -1671,7 +1658,9 @@ def restore_chapter(
             ]
             insert_at = len(existing)
             for idx, entry in enumerate(existing):
-                if positions.get(entry.get("id") or "", 0) > positions.get(chapter_id, 0):
+                if positions.get(entry.get("id") or "", 0) > positions.get(
+                    chapter_id, 0
+                ):
                     insert_at = idx
                     break
             existing.insert(insert_at, restored_entry)
