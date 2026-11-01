@@ -37,7 +37,7 @@ from . import voice as voice_util
 
 _TTS_ADAPTERS = {"mlx": _synth_mlx, "torch": _synth_torch}
 # Every segment written before manifests recorded `tts_model` came from this
-# checkpoint at 20 steps (nik's default from 2026-06-05 until the v4 upgrade).
+# checkpoint at 20 steps.
 _LEGACY_TTS_MODEL = {
     "backend": "mlx",
     "repo": "mlx-community/Irodori-TTS-500M-v3-8bit",
@@ -64,8 +64,8 @@ def _book_tts_model(manifest: dict, seg_dir: Path) -> dict:
 
     A book with audio sticks to what produced it (recorded in the manifest, or
     `_LEGACY_TTS_MODEL` for books made before that was recorded); a book
-    without audio takes the active backend's model. `num_steps` is pinned only
-    when it was pinned at synthesis time (NIK_NUM_STEPS or the legacy default).
+    without audio takes the active backend's model and step count, both
+    recorded so a later change of defaults cannot alter it half-way.
     """
     if _has_segments(seg_dir):
         recorded = manifest.get("tts_model")
@@ -78,11 +78,11 @@ def _book_tts_model(manifest: dict, seg_dir: Path) -> dict:
         return dict(_LEGACY_TTS_MODEL)
     backend = _tts_backend_name()
     adapter = _TTS_ADAPTERS[backend]
-    spec: dict = {"backend": backend, "repo": adapter.resolve_hf_repo()}
-    num_steps = adapter.env_num_steps()
-    if num_steps is not None:
-        spec["num_steps"] = num_steps
-    return spec
+    return {
+        "backend": backend,
+        "repo": adapter.resolve_hf_repo(),
+        "num_steps": adapter.default_num_steps(),
+    }
 
 
 def _load_tts_model(spec: dict) -> tuple[Any, Any]:

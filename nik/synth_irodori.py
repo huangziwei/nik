@@ -1,20 +1,21 @@
 """Adapter for Irodori-TTS via the upstream PyTorch code (fallback backend).
 
 The default backend is MLX (`synth_irodori_mlx`); `NIK_BACKEND=torch` opts in
-here, with the same surface: `resolve_hf_repo`, `env_num_steps`, `get_runtime`,
-`generate_chunk`.
+here, with the same surface: `resolve_hf_repo`, `default_num_steps`,
+`get_runtime`, `generate_chunk`.
 
 Irodori-TTS upstream is not pip-installable (its setuptools flat-layout discovers
 both `configs/` and `irodori_tts/` as top-level packages and fails to build).
 This backend imports a clone at `.cache/Irodori-TTS` via `sys.path`
-(`git clone https://github.com/Aratako/Irodori-TTS .cache/Irodori-TTS`; v4-Large
-needs a checkout from 2026-09-12 or later). The clone is only required when this
-backend is selected — see `_ensure_vendor_on_path`.
+(`git clone https://github.com/Aratako/Irodori-TTS .cache/Irodori-TTS`). The
+clone is only required when this backend is selected — see
+`_ensure_vendor_on_path`.
 
-Default checkpoint: `Aratako/Irodori-TTS-v4-Large` (override with
-`NIK_TORCH_HF_REPO`). Apple Silicon only: device auto-picks `mps` when available
-(CPU otherwise), and precision is fixed at `fp32` — Irodori rejects `bf16`/`fp16`
-outside CUDA and we don't ship any other platforms.
+Default checkpoint: `Aratako/Irodori-TTS-500M-v3` at 20 steps, the same model
+and step count as the MLX default (override with `NIK_TORCH_HF_REPO` /
+`NIK_NUM_STEPS`). Apple Silicon only: device auto-picks `mps` when available
+(CPU otherwise), and precision is fixed at `fp32` — Irodori rejects
+`bf16`/`fp16` outside CUDA and we don't ship any other platforms.
 """
 
 from __future__ import annotations
@@ -33,7 +34,8 @@ ENV_STYLE_EMOJI = "NIK_STYLE_EMOJI"
 
 _VENDOR_PATH = CACHE_DIR / "Irodori-TTS"
 
-DEFAULT_HF_REPO = "Aratako/Irodori-TTS-v4-Large"
+DEFAULT_HF_REPO = "Aratako/Irodori-TTS-500M-v3"
+DEFAULT_NUM_STEPS = 20
 
 
 def _ensure_vendor_on_path() -> None:
@@ -56,14 +58,14 @@ def resolve_hf_repo(explicit: str | None = None) -> str:
     return explicit or os.environ.get(ENV_HF_REPO) or DEFAULT_HF_REPO
 
 
-def env_num_steps() -> int | None:
+def default_num_steps() -> int:
     raw = os.environ.get(ENV_NUM_STEPS)
     if raw:
         try:
             return max(1, int(raw))
         except ValueError:
             pass
-    return None
+    return DEFAULT_NUM_STEPS
 
 
 def _checkpoint_path(repo_id: str) -> str:
@@ -116,16 +118,15 @@ def generate_chunk(
 ) -> tuple[np.ndarray, int]:
     """Synthesize one chunk; returns (audio_float32_1d, sample_rate).
 
-    Arguments left as None keep upstream's defaults: `num_steps` falls back to
-    NIK_NUM_STEPS, then to the checkpoint's recommendation. `style_emoji`
-    overrides the NIK_STYLE_EMOJI env fallback when not None (pass "" to force
-    neutral); mirrors the MLX backend.
+    `num_steps` defaults to `default_num_steps()`; the CFG scales left as None
+    keep upstream's defaults. `style_emoji` overrides the NIK_STYLE_EMOJI env
+    fallback when not None (pass "" to force neutral); mirrors the MLX backend.
     """
     _ensure_vendor_on_path()
     from irodori_tts.inference_runtime import SamplingRequest
 
     if num_steps is None:
-        num_steps = env_num_steps()
+        num_steps = default_num_steps()
     prefix = _style_prefix() if style_emoji is None else style_emoji.strip()
     gen_text = f"{prefix}{text}" if prefix else text
     overrides: dict[str, float] = {}

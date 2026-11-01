@@ -1582,7 +1582,14 @@ def test_book_tts_model_without_audio_takes_active_model(
     assert spec == {
         "backend": "mlx",
         "repo": tts_util._synth_mlx.DEFAULT_HF_REPO,
+        "num_steps": tts_util._synth_mlx.DEFAULT_NUM_STEPS,
     }
+    # The default is the v3 model at 20 steps that the legacy books were made with.
+    assert spec == tts_util._LEGACY_TTS_MODEL
+
+    monkeypatch.setenv("NIK_NUM_STEPS", "32")
+    spec = tts_util._book_tts_model({}, tmp_path / "segments")
+    assert spec["num_steps"] == 32
 
 
 def test_book_tts_model_keeps_recorded_model_once_audio_exists(

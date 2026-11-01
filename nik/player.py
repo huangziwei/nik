@@ -1964,9 +1964,9 @@ class VoiceCloneTextPayload(BaseModel):
     gender: str | None = None
 
 
-# Irodori v4 clones far closer with ~30 s of reference speech than with one
-# short clip (v4-Large card: CAM++ 0.67 → 0.76); it accepts up to 120 s.
-_CLONE_DEFAULT_SECONDS = 30
+# Clip length the voices were made with for Irodori v3. Every chunk attends
+# over the whole reference, so a longer clip makes every chunk slower.
+_CLONE_DEFAULT_SECONDS = 12
 
 
 class VoiceClonePreviewPayload(VoiceCloneTextPayload):
