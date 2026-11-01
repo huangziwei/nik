@@ -1,4 +1,5 @@
 import json
+import zipfile
 from collections import namedtuple
 from pathlib import Path
 from types import SimpleNamespace
@@ -2637,3 +2638,25 @@ def test_apply_ruby_evidence_to_chunk_single_kanji_decision_isolated() -> None:
     assert out.startswith("はじめが")
     assert "第一" in out
     assert "一つ" in out
+
+
+def test_ensure_mecabrc_rewrites_a_moved_dictionary_path(tmp_path: Path) -> None:
+    (tmp_path / "mecabrc").write_text("dicdir = /old/place/unidic\n", encoding="utf-8")
+    path = tts_util._ensure_mecabrc(tmp_path)
+    assert path.read_text(encoding="utf-8") == f"dicdir = {tmp_path}\n"
+
+
+def test_unidic_install_keeps_only_the_unpacked_dictionary(tmp_path: Path) -> None:
+    source = tmp_path / "src" / "unidic-test.zip"
+    source.parent.mkdir()
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("unidic-test/dicrc", "")
+        archive.writestr("unidic-test/sys.dic", "dictionary")
+    cache = tmp_path / "cache"
+    target = cache / "unidic-test"
+
+    tts_util._download_unidic_archive(source.as_uri(), target)
+
+    assert (target / "dicrc").exists()
+    assert (target / "sys.dic").read_text() == "dictionary"
+    assert sorted(p.name for p in cache.iterdir()) == ["unidic-test"]

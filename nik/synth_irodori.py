@@ -21,18 +21,17 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
 
 import numpy as np
 
+from . import CACHE_DIR
 from .voice import VoiceConfig
 
 ENV_NUM_STEPS = "NIK_NUM_STEPS"
 ENV_HF_REPO = "NIK_TORCH_HF_REPO"
 ENV_STYLE_EMOJI = "NIK_STYLE_EMOJI"
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-_VENDOR_PATH = _REPO_ROOT / ".cache" / "Irodori-TTS"
+_VENDOR_PATH = CACHE_DIR / "Irodori-TTS"
 
 DEFAULT_HF_REPO = "Aratako/Irodori-TTS-v4-Large"
 

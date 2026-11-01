@@ -29,6 +29,7 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
+from . import CACHE_DIR
 from . import latin as latin_util
 from . import synth_irodori as _synth_torch
 from . import synth_irodori_mlx as _synth_mlx
@@ -3314,7 +3315,7 @@ def _is_kana_reading(text: str) -> bool:
 
 
 def _default_unidic_dir() -> Path:
-    return Path.home() / ".cache" / "nik" / UNIDIC_DIRNAME
+    return CACHE_DIR / UNIDIC_DIRNAME
 
 
 def _resolve_unidic_dir() -> Path:
@@ -3343,6 +3344,9 @@ def _download_unidic_archive(url: str, target_dir: Path) -> None:
         if target_dir.exists():
             shutil.rmtree(target_dir)
         shutil.move(str(source_dir), str(target_dir))
+    # The unpacked dictionary is all nik reads; keeping the zip would leave a
+    # second multi-GB copy in the cache.
+    archive_path.unlink(missing_ok=True)
 
 
 def _ensure_unidic_dir(path: Path) -> Path:
@@ -3360,10 +3364,12 @@ def _ensure_unidic_dir(path: Path) -> Path:
 
 def _ensure_mecabrc(dict_dir: Path) -> Path:
     mecabrc_path = dict_dir / "mecabrc"
-    if mecabrc_path.exists():
+    expected = f"dicdir = {dict_dir}\n"
+    # Rewritten when the dictionary moved, so the file never names a stale path.
+    if mecabrc_path.exists() and mecabrc_path.read_text(encoding="utf-8") == expected:
         return mecabrc_path
     try:
-        mecabrc_path.write_text(f"dicdir = {dict_dir}\n", encoding="utf-8")
+        mecabrc_path.write_text(expected, encoding="utf-8")
         return mecabrc_path
     except Exception:
         return Path("/dev/null")

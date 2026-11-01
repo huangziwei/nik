@@ -30,6 +30,8 @@ from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
+from . import CACHE_DIR
+
 LETTER_NAMES = {
     "a": "エー",
     "b": "ビー",
@@ -204,9 +206,7 @@ def _lexicon() -> _Lexicon:
     from . import tts
 
     dict_dir = tts._ensure_unidic_dir(tts._resolve_unidic_dir())
-    cache_path = (
-        dict_dir.parent / f"latin-katakana-{dict_dir.name}-v{_LEXICON_VERSION}.json"
-    )
+    cache_path = CACHE_DIR / f"latin-katakana-{dict_dir.name}-v{_LEXICON_VERSION}.json"
     if cache_path.exists():
         data = json.loads(cache_path.read_text(encoding="utf-8"))
         return _Lexicon(exact=data["exact"], folded=data["folded"])
@@ -214,6 +214,7 @@ def _lexicon() -> _Lexicon:
     if not lex_csv.exists():
         return _Lexicon(exact={}, folded={})
     lexicon = _build_lexicon(lex_csv)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = cache_path.with_suffix(f".{os.getpid()}.tmp")
     tmp_path.write_text(
         json.dumps(
