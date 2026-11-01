@@ -1,6 +1,7 @@
 import json
 from collections import namedtuple
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -167,6 +168,29 @@ def test_chunking_does_not_protect_inline_emphasis_quote_after_comma() -> None:
     spans = tts_util.make_chunk_spans(text, max_chars=220, chunk_mode="japanese")
     chunks = [text[start:end] for start, end in spans]
     assert chunks == [text]
+
+
+def test_chunking_keeps_bracketed_citation_quote_inline() -> None:
+    # Real sentence from: 「自傷的自己愛」の精神分析 — the chunker used to cut at 「,
+    # leaving …あります（ as a chunk ending in an open bracket (TTS: あります(。).
+    text = (
+        "私は二〇一四年に、ある雑誌の企画で大ヒット漫画『進撃の巨人』の作者である"
+        "諫山創氏にインタビュー取材をしたことがあります"
+        "（「brutus」二〇一四年十二月一日号、マガジンハウス）。"
+    )
+    chunks = tts_util.make_chunks(text, max_chars=100, min_chars=15)
+    assert chunks == [text]
+
+
+def test_chunking_protected_quote_keeps_wrapping_brackets() -> None:
+    text = "彼は（「待って！」）と叫んだ。"
+    chunks = tts_util.make_chunks(text, max_chars=100)
+    assert chunks == ["彼は", "（「待って！」）", "と叫んだ。"]
+
+
+def test_chunking_does_not_protect_bracketed_inline_title() -> None:
+    text = "その本（「ノルウェイの森」）を読んだ。"
+    assert tts_util.make_chunks(text, max_chars=100) == [text]
 
 
 def test_chunking_keeps_dialogue_quote_after_comma_with_attribution() -> None:
@@ -1424,16 +1448,14 @@ def test_synthesize_chunk_prefers_explicit_voice_over_manifest_entry(
             x_vector_only_mode=False,
         )
 
-    monkeypatch.setattr(
-        tts_util.synth_irodori, "get_runtime", lambda **_kwargs: object()
-    )
-    monkeypatch.setattr(
-        tts_util.synth_irodori,
-        "generate_chunk",
-        lambda *_args, **_kwargs: (
+    fake_adapter = SimpleNamespace(
+        generate_chunk=lambda *_args, **_kwargs: (
             tts_util.np.zeros(1, dtype=tts_util.np.float32),
             48000,
-        ),
+        )
+    )
+    monkeypatch.setattr(
+        tts_util, "_load_tts_model", lambda _spec: (fake_adapter, object())
     )
     monkeypatch.setattr(tts_util, "_load_ruby_data", lambda _book_dir: {"chapters": {}})
     monkeypatch.setattr(tts_util, "_load_reading_overrides", lambda _book_dir: ([], {}))
@@ -1498,10 +1520,10 @@ def test_synthesize_chunk_ellipsis_only_writes_silence(
     def fake_write_wav(path: Path, audio, sample_rate: int) -> None:
         calls["written"] = (path, int(audio.shape[0]), sample_rate)
 
+    fake_adapter = SimpleNamespace(generate_chunk=fake_generate_chunk)
     monkeypatch.setattr(
-        tts_util.synth_irodori, "get_runtime", lambda **_kwargs: object()
+        tts_util, "_load_tts_model", lambda _spec: (fake_adapter, object())
     )
-    monkeypatch.setattr(tts_util.synth_irodori, "generate_chunk", fake_generate_chunk)
     monkeypatch.setattr(tts_util, "_load_ruby_data", lambda _book_dir: {"chapters": {}})
     monkeypatch.setattr(tts_util, "_load_reading_overrides", lambda _book_dir: ([], {}))
     monkeypatch.setattr(
@@ -1541,6 +1563,96 @@ def test_synthesize_chunk_ellipsis_only_writes_silence(
     assert written[1] > 0
     assert written[2] == 48000
     assert result["duration_ms"] >= 1000
+
+
+def _write_segment(seg_dir: Path) -> None:
+    (seg_dir / "c1").mkdir(parents=True, exist_ok=True)
+    (seg_dir / "c1" / "000001.wav").write_bytes(b"RIFF")
+
+
+def test_book_tts_model_without_audio_takes_active_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("NIK_BACKEND", raising=False)
+    monkeypatch.delenv("NIK_MLX_HF_REPO", raising=False)
+    monkeypatch.delenv("NIK_NUM_STEPS", raising=False)
+    old = {"backend": "mlx", "repo": "old/repo", "num_steps": 20}
+    spec = tts_util._book_tts_model({"tts_model": old}, tmp_path / "segments")
+    assert spec == {
+        "backend": "mlx",
+        "repo": tts_util._synth_mlx.DEFAULT_HF_REPO,
+    }
+
+
+def test_book_tts_model_keeps_recorded_model_once_audio_exists(
+    tmp_path: Path,
+) -> None:
+    seg_dir = tmp_path / "segments"
+    _write_segment(seg_dir)
+    recorded = {"backend": "mlx", "repo": "some/repo"}
+    assert tts_util._book_tts_model({"tts_model": recorded}, seg_dir) == recorded
+    # Books synthesized before the manifest recorded a model are v3-8bit.
+    assert tts_util._book_tts_model({}, seg_dir) == tts_util._LEGACY_TTS_MODEL
+
+
+def test_synthesize_chunk_rerenders_legacy_book_with_its_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    out_dir = tmp_path / "book" / "tts"
+    out_dir.mkdir(parents=True)
+    _write_segment(out_dir / "segments")
+    manifest = {
+        "voice": "高橋一生",
+        "chapters": [
+            {
+                "id": "c1",
+                "voice": "高橋一生",
+                "chunks": ["こんにちは"],
+                "chunk_spans": [[0, 5]],
+                "durations_ms": [None],
+            }
+        ],
+    }
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False), encoding="utf-8"
+    )
+    loaded: list[dict] = []
+    steps: list[object] = []
+
+    def fake_load(spec: dict):
+        loaded.append(spec)
+        return (
+            SimpleNamespace(
+                generate_chunk=lambda *_a, **kw: (
+                    steps.append(kw.get("num_steps"))
+                    or tts_util.np.zeros(1, dtype=tts_util.np.float32),
+                    48000,
+                )
+            ),
+            object(),
+        )
+
+    monkeypatch.setattr(tts_util, "_load_tts_model", fake_load)
+    monkeypatch.setattr(tts_util, "_load_ruby_data", lambda _book_dir: {"chapters": {}})
+    monkeypatch.setattr(tts_util, "_load_reading_overrides", lambda _book_dir: ([], {}))
+    monkeypatch.setattr(tts_util, "_write_wav", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        tts_util.voice_util,
+        "resolve_voice_config",
+        lambda **_kwargs: voice_util.VoiceConfig(
+            name="高橋一生", ref_audio="dummy.wav", ref_text=None
+        ),
+    )
+
+    result = tts_util.synthesize_chunk(
+        out_dir=out_dir, chapter_id="c1", chunk_index=0, base_dir=tmp_path
+    )
+
+    assert result["status"] == "ok"
+    assert loaded == [tts_util._LEGACY_TTS_MODEL]
+    assert steps == [20]
+    saved = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert saved["tts_model"] == tts_util._LEGACY_TTS_MODEL
 
 
 def test_normalize_numbers_standalone_digits() -> None:
@@ -1885,6 +1997,58 @@ def test_prepare_tts_text_wave_dash_real_dataset_cases(
     text: str, expected: str
 ) -> None:
     assert tts_util.prepare_tts_text(text) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # Real line from: 「自傷的自己愛」の精神分析 (read にじゅうだいーさんじゅうだい before).
+        (
+            "私が診察している二十代～三十代のひきこもりの男性に",
+            "私が診察しているにじゅうだいからさんじゅうだいのひきこもりの男性に",
+        ),
+        ("二十代〜三十代", "にじゅうだいからさんじゅうだい"),
+        ("3歳〜5歳", "さんさいからごさい"),
+        ("10時〜12時", "じゅうじからじゅうにじ"),
+        ("10%～20%", "十パーセントから二十パーセント"),
+        ("第1話～第3話", "第いちわから第さんわ"),
+        ("十一月～翌年三月", "じゅういちがつから翌年さんがつ"),
+        ("3か月〜半年", "さんかげつから半年"),
+        # U+301C between bare digits was read digit by digit (いちゼローにゼロ).
+        ("10〜20", "十から二十"),
+        # Elongation after kana stays a long vowel, even next to a later number.
+        ("すご〜い", "すごーい"),
+        ("2時間待ってね～3分", "にじかん待ってねーさんぷん"),
+    ],
+)
+def test_prepare_tts_pipeline_reads_numeric_range_tilde_as_kara(
+    text: str, expected: str
+) -> None:
+    pipeline = tts_util._prepare_tts_pipeline(text, add_short_punct=False)
+    assert pipeline.prepared == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # Real line from: 家事代行のアルバイトを始めたら…３ — v4-Large dropped 口調 on
+        # every seed; spelled in kana it is read.
+        (
+            "ありがと、無理しないでね。 笑顔を崩さず、優しい口調で。",
+            "ありがと、無理しないでね。 笑顔を崩さず、優しいくちょうで。",
+        ),
+        (
+            "低い声で、落ち着いた様子で話している。",
+            "低い声で、落ち着いたようすで話している。",
+        ),
+        ("様子見だ", "ようす見だ"),
+    ],
+)
+def test_prepare_tts_pipeline_spells_caption_cue_words_in_kana(
+    text: str, expected: str
+) -> None:
+    pipeline = tts_util._prepare_tts_pipeline(text, add_short_punct=False)
+    assert pipeline.prepared == expected
 
 
 def test_prepare_tts_text_quote_boundary_preserves_question() -> None:

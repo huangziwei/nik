@@ -5,6 +5,7 @@ import html
 import json
 import os
 import re
+import secrets
 import shlex
 import shutil
 import subprocess
@@ -26,6 +27,7 @@ from pydantic import BaseModel
 from . import asr as asr_util
 from . import audio_norm as audio_norm_util
 from . import epub as epub_util
+from . import latin as latin_util
 from . import ruby_review, sanitize
 from . import tts as tts_util
 from . import voice as voice_util
@@ -211,8 +213,10 @@ def _build_clone_ffmpeg_cmd(
         "-1",
         "-ac",
         "1",
+        # Irodori encodes the reference with its 48 kHz codec; a 24 kHz clip
+        # loses the top half of the band the model clones the timbre from.
         "-ar",
-        "24000",
+        "48000",
         "-c:a",
         "pcm_s16le",
         str(output_path),
@@ -1960,16 +1964,21 @@ class VoiceCloneTextPayload(BaseModel):
     gender: str | None = None
 
 
+# Irodori v4 clones far closer with ~30 s of reference speech than with one
+# short clip (v4-Large card: CAM++ 0.67 → 0.76); it accepts up to 120 s.
+_CLONE_DEFAULT_SECONDS = 30
+
+
 class VoiceClonePreviewPayload(VoiceCloneTextPayload):
     source: str
     start: str | None = None
-    duration: str | float | int = 12
+    duration: str | float | int = _CLONE_DEFAULT_SECONDS
 
 
 class VoiceCloneSavePayload(VoiceCloneTextPayload):
     source: str
     start: str | None = None
-    duration: str | float | int = 12
+    duration: str | float | int = _CLONE_DEFAULT_SECONDS
     name: str | None = None
     overwrite: bool = False
 
@@ -2118,8 +2127,16 @@ def create_app(root_dir: Path) -> FastAPI:
                 )
         else:
             override_spans = _filter_overlapping_spans(override_spans, ruby_spans)
+        # Show the katakana TTS will speak for Latin words. Ruby and overrides
+        # claim their text first in the pipeline, so they win overlaps here too.
+        latin_spans = _tag_ruby_spans(
+            latin_util.latin_reading_spans(clean_text), "propagated"
+        )
+        latin_spans = _filter_overlapping_spans(
+            latin_spans, ruby_spans + override_spans + ruby_prop_spans
+        )
         ruby_prop_spans = sorted(
-            override_spans + ruby_prop_spans,
+            override_spans + ruby_prop_spans + latin_spans,
             key=lambda span: (
                 int(span.get("start", 0)),
                 int(span.get("end", 0)),
@@ -3434,6 +3451,9 @@ def create_app(root_dir: Path) -> FastAPI:
                 voice_map_path=voice_map_path,
                 base_dir=repo_root,
                 style_emoji=_resolve_style_emoji(payload.emotion),
+                # A manual re-render asks for a new take: with the default seed
+                # unchanged text would come back identical, garbles included.
+                seed=secrets.randbelow(2**31),
             )
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

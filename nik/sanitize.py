@@ -351,8 +351,16 @@ def _normalize_small_caps_word(
     return _titlecase_token(word) if is_first else lower
 
 
+def _has_japanese(text: str) -> bool:
+    return any(tts_util._is_japanese_char(ch) for ch in text)
+
+
 def _normalize_small_caps_paragraph(paragraph: str, case_map: dict[str, str]) -> str:
     if not re.search(r"[a-z]", paragraph):
+        return paragraph
+    # Case heuristics target English prose. In Japanese text capitals mark
+    # acronyms and names (ＬＩＮＥ, ＳＮＳ) whose case must survive for TTS.
+    if _has_japanese(paragraph):
         return paragraph
     matches = list(_WORD_RE.finditer(paragraph))
     if not matches:
@@ -509,7 +517,9 @@ def _normalize_all_caps_sentence_line(
 def _normalize_all_caps_line(
     line: str, case_map: dict[str, str], heading_line_keys: set[str]
 ) -> str:
-    if not _is_all_caps_block(line):
+    # A Japanese line has no lowercase letters, so one acronym (ＬＩＮＥ) made it
+    # look all-caps and title-casing the kana run lowercased the acronym.
+    if not _is_all_caps_block(line) or _has_japanese(line):
         return line
     matches = list(_WORD_RE.finditer(line))
     if not matches:

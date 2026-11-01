@@ -30,7 +30,7 @@ dependencies = [
     # discovery); we vendor a clone into .cache/Irodori-TTS and import via
     # sys.path. Its transitive deps go here:
     "dacvae",
-    # mlx-audio 0.4.3 needs hub>=1.0; both nik and upstream Irodori only call
+    # mlx-audio needs hub>=1.0; both nik and upstream Irodori only call
     # hf_hub_download, which is stable across the 0.x→1.0 boundary.
     "huggingface-hub>=1.0,<2",
     "llvmlite>=0.40",
@@ -42,13 +42,17 @@ dependencies = [
     "torch>=2.10",
     "torchaudio>=2.10",
     "torchcodec>=0.10",
-    # mlx-audio>=0.4.3 (used as the optional NIK_BACKEND=mlx path) pins
-    # transformers>=5.5; upstream Irodori only calls AutoTokenizer.from_pretrained,
-    # which is API-stable across 4.x and 5.x, so we bump in lockstep.
-    "transformers>=5.5,<6",
-    # MLX backend (optional via NIK_BACKEND=mlx). Bundles the Irodori port at
-    # mlx_audio.tts.models.irodori_tts; weights pulled from mlx-community.
-    "mlx-audio>=0.4.3",
+    # mlx-audio>=0.6.3 pins transformers>=5.14; upstream Irodori only calls
+    # AutoTokenizer.from_pretrained, which is API-stable across 4.x and 5.x, so
+    # we bump in lockstep.
+    "transformers>=5.14,<6",
+    # Default MLX backend. Bundles the Irodori port at
+    # mlx_audio.tts.models.irodori_tts (v4/v4.1/v4-Large since 0.5.9, the
+    # speaker-KV CFG rollback fix since 0.6.1); weights come from mlx-community.
+    "mlx-audio>=0.6.3",
+    # English→katakana character model (numpy only) for Latin words that the
+    # UniDic loanword lexicon does not cover; see nik/latin.py.
+    "e2k>=0.8.1",
 ]
 readme = {file = "README.md", content-type = "text/markdown"}
 
@@ -63,7 +67,6 @@ environments = ["sys_platform == 'darwin' and platform_machine == 'arm64'"]
 
 [tool.uv.sources]
 dacvae = { git = "https://github.com/facebookresearch/dacvae" }
-mlx-audio = { git = "https://github.com/Blaizzy/mlx-audio", rev = "1ded4f4" }
 
 [tool.setuptools]
 packages = {find = {}}

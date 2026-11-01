@@ -176,6 +176,16 @@ def test_normalize_all_caps_only_titlecases_explicit_heading_lines() -> None:
     assert no_heading == "Chapter first"
 
 
+def test_case_normalization_keeps_latin_caps_in_japanese_lines() -> None:
+    # Real line from: 平場の月 (光文社文庫) — ＬＩＮＥ came out as ｌｉｎｅ.
+    line = "「こないだハコにＬＩＮＥしたんだって。久しぶり、元気？　みたいな」"
+    assert sanitize_util.normalize_all_caps(line) == line
+    assert sanitize_util.normalize_small_caps(line) == line
+    # Without the Japanese guard the small-caps pass rewrote this to "The line news".
+    paragraph = "THE LINE news を見た"
+    assert sanitize_util.normalize_small_caps(paragraph) == paragraph
+
+
 def test_sanitize_book_uses_toc_heading_lines_for_all_caps_heading(
     tmp_path: Path,
 ) -> None:

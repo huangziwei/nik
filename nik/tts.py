@@ -29,30 +29,66 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
+from . import latin as latin_util
 from . import synth_irodori as _synth_torch
 from . import synth_irodori_mlx as _synth_mlx
 from . import voice as voice_util
 
+_TTS_ADAPTERS = {"mlx": _synth_mlx, "torch": _synth_torch}
+# Every segment written before manifests recorded `tts_model` came from this
+# checkpoint at 20 steps (nik's default from 2026-06-05 until the v4 upgrade).
+_LEGACY_TTS_MODEL = {
+    "backend": "mlx",
+    "repo": "mlx-community/Irodori-TTS-500M-v3-8bit",
+    "num_steps": 20,
+}
 
-def _tts_backend():
-    """Return the active synthesis adapter module (NIK_BACKEND=mlx|torch).
 
-    MLX is the default (now Irodori v3-8bit) — ~2.2× faster wall-clock with
-    audible parity on the A/B test (see `bench_mlx.py`). `torch` remains as a
-    fallback that requires the upstream Irodori-TTS clone at `.cache/Irodori-TTS`.
+def _tts_backend_name() -> str:
+    """The active synthesis adapter (NIK_BACKEND=mlx|torch).
+
+    MLX (mlx-audio's Irodori port) is the default. `torch` runs upstream
+    Irodori-TTS and needs its clone at `.cache/Irodori-TTS`.
     """
     name = (os.environ.get("NIK_BACKEND") or "mlx").strip().lower()
-    return _synth_torch if name == "torch" else _synth_mlx
+    return name if name in _TTS_ADAPTERS else "mlx"
 
 
-# Existing call sites use `synth_irodori.<fn>`. Keep that name pointing at a
-# thin proxy that resolves the backend per attribute access.
-class _BackendProxy:
-    def __getattr__(self, name):
-        return getattr(_tts_backend(), name)
+def _has_segments(seg_dir: Path) -> bool:
+    return seg_dir.is_dir() and any(seg_dir.rglob("*.wav"))
 
 
-synth_irodori = _BackendProxy()
+def _book_tts_model(manifest: dict, seg_dir: Path) -> dict:
+    """The model spec a book must keep using so its audio never mixes engines.
+
+    A book with audio sticks to what produced it (recorded in the manifest, or
+    `_LEGACY_TTS_MODEL` for books made before that was recorded); a book
+    without audio takes the active backend's model. `num_steps` is pinned only
+    when it was pinned at synthesis time (NIK_NUM_STEPS or the legacy default).
+    """
+    if _has_segments(seg_dir):
+        recorded = manifest.get("tts_model")
+        if (
+            isinstance(recorded, dict)
+            and recorded.get("backend") in _TTS_ADAPTERS
+            and recorded.get("repo")
+        ):
+            return dict(recorded)
+        return dict(_LEGACY_TTS_MODEL)
+    backend = _tts_backend_name()
+    adapter = _TTS_ADAPTERS[backend]
+    spec: dict = {"backend": backend, "repo": adapter.resolve_hf_repo()}
+    num_steps = adapter.env_num_steps()
+    if num_steps is not None:
+        spec["num_steps"] = num_steps
+    return spec
+
+
+def _load_tts_model(spec: dict) -> tuple[Any, Any]:
+    adapter = _TTS_ADAPTERS[spec["backend"]]
+    return adapter, adapter.get_runtime(hf_repo=spec["repo"])
+
+
 from .text import (
     SECTION_BREAK,
     normalize_section_breaks,
@@ -130,6 +166,8 @@ _SENTENCE_END_RE = re.compile(
 )
 _JP_OPEN_QUOTES = {"「", "『", "《", "〈", "【", "〔", "［", "｢", "〝"}
 _JP_CLOSE_QUOTES = {"」", "』", "》", "〉", "】", "〕", "］", "｣", "〞", "〟"}
+_OPEN_BRACKET_CHARS = frozenset("（(［[｛{〔【〈《")
+_CLOSE_BRACKET_CHARS = frozenset("）)］]｝}〕】〉》")
 _OPEN_QUOTE_TO_CLOSES: dict[str, set[str]] = {
     "「": {"」"},
     "『": {"』"},
@@ -244,6 +282,20 @@ _ROMAN_NUMERAL_CHARS = "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫⅬⅭⅮⅯⅰⅱ�
 _ASCII_ROMAN_NUMERAL_CHARS = "IVXLCDM"
 _ASCII_ROMAN_MAX_VALUE = 50
 _KANJI_NUMERAL_RANGE_CHARS = "〇零一二三四五六七八九十百千万億兆京"
+# NFKC folds the fullwidth tilde (U+FF5E) to "~" but leaves the wave dash
+# (U+301C) alone, so range rules must accept both.
+_RANGE_TILDE_CHARS = "~〜"
+_RANGE_NUMERAL_CHARS = rf"\d{_KANJI_NUMERAL_RANGE_CHARS}"
+# A count plus its counter word before a range tilde reads から: 二十代～三十代,
+# 3歳〜5歳, 10%～20%, 第1話～第3話, 十一月～翌年三月, 3か月～半年. Hiragana is
+# limited to the counters つ/か月 so an elongated kana ending (…ね～) never matches.
+_NUMERIC_COUNTER_RANGE_RE = re.compile(
+    rf"(?P<lhs>[{_RANGE_NUMERAL_CHARS}]"
+    r"(?:[\u4e00-\u9fff々\u30a1-\u30ffA-Za-z%°]{1,6}|つ|か月))"
+    rf"\s*[{_RANGE_TILDE_CHARS}]\s*"
+    r"(?=(?:第|約|翌年|同年|来年|翌月|翌日|午前|午後)?"
+    rf"[{_RANGE_NUMERAL_CHARS}半])"
+)
 _LATIN_PHRASE_RE = re.compile(r"[A-Za-z]+(?:[ \t]+[A-Za-z]+)*")
 _STYLIZED_KANJI_SEPARATORS = "、，,・"
 _STYLIZED_KANJI_SEP_RE = re.compile(rf"[{re.escape(_STYLIZED_KANJI_SEPARATORS)}]")
@@ -1104,14 +1156,17 @@ def _is_protectable_quote_span(text: str, start: int, end: int, max_chars: int) 
     inner = segment[1:-1].strip() if len(segment) > 2 else ""
     if not inner:
         return False
-    prev_ch = text[start - 1] if start > 0 else ""
-    next_ch = text[end] if end < len(text) else ""
+    # Judge inline-ness from outside any brackets wrapping the quote: in
+    # …あります（「brutus」二〇一四年…） the quote is a cited title, not dialogue.
+    before, after = _widen_span_over_brackets(text, start, end)
+    prev_ch = text[before - 1] if before > 0 else ""
+    next_ch = text[after] if after < len(text) else ""
 
     inline_before = (
         prev_ch.isalnum() or _is_japanese_char(prev_ch)
     ) and not prev_ch.isspace()
     if not inline_before and prev_ch in {"、", "，", ",", ":", "：", ";", "；"}:
-        idx = start - 2
+        idx = before - 2
         while idx >= 0 and text[idx].isspace():
             idx -= 1
         if idx >= 0:
@@ -1127,10 +1182,19 @@ def _is_protectable_quote_span(text: str, start: int, end: int, max_chars: int) 
     if inline_before and inline_after and not has_sentence_punct:
         # Inline short quotes are often emphasis/term markers, not dialogue.
         # Keep protection only for explicit speech-attribution patterns.
-        next_tail = text[end : min(len(text), end + 4)].lstrip()
+        next_tail = text[after : min(len(text), after + 4)].lstrip()
         if not next_tail.startswith(("と", "って")):
             return False
     return True
+
+
+def _widen_span_over_brackets(text: str, start: int, end: int) -> tuple[int, int]:
+    """Extend a quote span over brackets directly wrapping it, e.g. （「…」）."""
+    while start > 0 and text[start - 1] in _OPEN_BRACKET_CHARS:
+        start -= 1
+    while end < len(text) and text[end] in _CLOSE_BRACKET_CHARS:
+        end += 1
+    return start, end
 
 
 def _split_spans_on_cut_points(
@@ -1202,8 +1266,10 @@ def _build_chunk_units(
     if not sentence_spans:
         return []
 
+    # Cutting at the quote itself would strand a wrapping bracket at a chunk
+    # edge (…あります（ | 「…」…）), so protected spans include those brackets.
     quote_spans = [
-        span
+        _widen_span_over_brackets(text, span[0], span[1])
         for span in _collect_quote_pair_spans(text)
         if _is_protectable_quote_span(text, span[0], span[1], max_chars)
     ]
@@ -2655,12 +2721,17 @@ def _normalize_numbers(text: str) -> str:
         text,
     )
     text = _nfkc_preserve_ellipsis(text)
-    text = re.sub(r"(?<=\d)\s*~\s*(?=\d)", "から", text)
+    # "No.1" / "NO・208": the number sign, before digits turn into kana and the
+    # Latin pass would spell it as エヌオー.
+    text = re.sub(r"(?<![A-Za-z])(?:No|NO|no)[.・]?\s*(?=\d)", "ナンバー", text)
+    text = re.sub(rf"(?<=\d)\s*[{_RANGE_TILDE_CHARS}]\s*(?=\d)", "から", text)
     text = re.sub(
-        rf"(?<=[{_KANJI_NUMERAL_RANGE_CHARS}])\s*~\s*(?=[{_KANJI_NUMERAL_RANGE_CHARS}])",
+        rf"(?<=[{_KANJI_NUMERAL_RANGE_CHARS}])\s*[{_RANGE_TILDE_CHARS}]\s*"
+        rf"(?=[{_KANJI_NUMERAL_RANGE_CHARS}])",
         "から",
         text,
     )
+    text = _NUMERIC_COUNTER_RANGE_RE.sub(r"\g<lhs>から", text)
 
     def _safe_int(raw: str) -> int | None:
         cleaned = raw.replace(",", "")
@@ -3760,6 +3831,20 @@ def _mark_honorific_kun(
     return "".join(chars)
 
 
+# Irodori v4 shares one encoder between the text and the voice-description
+# caption and takes some description words as style cues instead of text:
+# 「笑顔を崩さず、優しい口調で」 came out as 「優しいで」/「優しい久部」 on every seed
+# (upstream issue #41). Spelled in kana they are read normally; each has a
+# single reading, so the rewrite is safe for every model.
+_CAPTION_CUE_READINGS = {"口調": "くちょう", "様子": "ようす"}
+
+
+def _spell_caption_cues(text: str) -> str:
+    for word, reading in _CAPTION_CUE_READINGS.items():
+        text = text.replace(word, reading)
+    return text
+
+
 def _prepare_tts_pipeline(
     chunk_text: str,
     *,
@@ -3800,12 +3885,15 @@ def _prepare_tts_pipeline(
         _HONORIFIC_KUN_PLACEHOLDER, _HONORIFIC_KUN
     )
     after_numbers = _normalize_numbers(after_overrides)
-    prepared = prepare_tts_text(after_numbers, add_short_punct=add_short_punct)
+    # Latin words go to katakana last, so ruby, user overrides and number
+    # readings (No.1, MP3, VIII) have already claimed theirs.
+    after_kana = latin_util.latin_to_katakana(_spell_caption_cues(after_numbers))
+    prepared = prepare_tts_text(after_kana, add_short_punct=add_short_punct)
     return TtsPipeline(
         ruby_text=text.replace(_HONORIFIC_KUN_PLACEHOLDER, _HONORIFIC_KUN),
         after_overrides=after_overrides,
         after_numbers=after_numbers,
-        after_kana=after_numbers,
+        after_kana=after_kana,
         prepared=prepared,
     )
 
@@ -5867,6 +5955,8 @@ def synthesize_book(
     manifest["pad_ms"] = int(pad_ms)
     manifest["section_pad_ms"] = int(pad_ms) * _SECTION_PAD_MULT
     manifest["chapter_pad_ms"] = int(pad_ms) * _CHAPTER_PAD_MULT
+    tts_model = _book_tts_model(manifest, seg_dir)
+    manifest["tts_model"] = tts_model
     atomic_write_json(manifest_path, manifest)
 
     voice_configs: dict[str, VoiceConfig] = {}
@@ -5885,7 +5975,7 @@ def synthesize_book(
 
     write_status(out_dir, "loading_model", "Loading TTS model")
 
-    model = synth_irodori.get_runtime()
+    adapter, model = _load_tts_model(tts_model)
 
     write_status(out_dir, "synthesizing")
 
@@ -6082,8 +6172,11 @@ def synthesize_book(
                     progress.advance(chapter_task, 1)
                     progress.advance(overall_task, 1)
                     continue
-                audio, sample_rate = synth_irodori.generate_chunk(
-                    model, tts_text, voice_config
+                audio, sample_rate = adapter.generate_chunk(
+                    model,
+                    tts_text,
+                    voice_config,
+                    num_steps=tts_model.get("num_steps"),
                 )
                 if audio.size == 0:
                     sys.stderr.write(
@@ -6189,7 +6282,13 @@ def synthesize_chunk(
     voice_map_path: Path | None = None,
     base_dir: Path | None = None,
     style_emoji: str | None = None,
+    seed: int | None = None,
 ) -> dict:
+    """Re-render one chunk with the book's model.
+
+    `seed` None keeps the model's fixed default, so the same text renders the
+    same take; pass a fresh seed to get a different take of a bad render.
+    """
     if base_dir is None:
         base_dir = Path.cwd()
     if chunk_index < 0:
@@ -6307,7 +6406,10 @@ def synthesize_chunk(
             voice_id = _normalize_voice_id(entry.get("voice"), default_voice)
 
     config = voice_util.resolve_voice_config(voice=voice_id, base_dir=base_dir)
-    model = synth_irodori.get_runtime()
+    # Re-rendering one chunk must match the engine that made the rest of the book.
+    tts_model = _book_tts_model(manifest, out_dir / "segments")
+    manifest["tts_model"] = tts_model
+    adapter, model = _load_tts_model(tts_model)
 
     book_dir = out_dir.parent
     override_dir = book_dir
@@ -6404,8 +6506,13 @@ def synthesize_chunk(
             "duration_ms": dms,
         }
 
-    audio, sample_rate = synth_irodori.generate_chunk(
-        model, tts_text, config, style_emoji=style_emoji
+    audio, sample_rate = adapter.generate_chunk(
+        model,
+        tts_text,
+        config,
+        num_steps=tts_model.get("num_steps"),
+        seed=seed,
+        style_emoji=style_emoji,
     )
     if audio.size == 0:
         durations[chunk_index] = 0

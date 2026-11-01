@@ -153,11 +153,11 @@ wheels = [
 
 [[package]]
 name = "click"
-version = "8.3.3"
+version = "8.5.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/bb/63/f9e1ea081ce35720d8b92acde70daaedace594dc93b693c869e0d5910718/click-8.3.3.tar.gz", hash = "sha256:398329ad4837b2ff7cbe1dd166a4c0f8900c3ca3a218de04466f38f6497f18a2", size = 328061, upload-time = "2026-04-22T15:11:27.506Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c7/0e/7fa0ef50764b67090eca4114772a2abf8b6148198475e54c660b97caeee6/click-8.5.0.tar.gz", hash = "sha256:ba0d2089de75ea0310e2dde03160e6ca10009947fb95a182f9b54021bb272e34", size = 382235, upload-time = "2026-08-26T13:33:14.56Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ae/44/c1221527f6a71a01ec6fbad7fa78f1d50dfa02217385cf0fa3eec7087d59/click-8.3.3-py3-none-any.whl", hash = "sha256:a2bf429bb3033c89fa4936ffb35d5cb471e3719e1f3c8a7c3fff0b8314305613", size = 110502, upload-time = "2026-04-22T15:11:25.044Z" },
+    { url = "https://files.pythonhosted.org/packages/58/50/6c0d534c5f134586a8e1ba4e330569e32f057e33372ae556463212fb4cd3/click-8.5.0-py3-none-any.whl", hash = "sha256:255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360", size = 125251, upload-time = "2026-08-26T13:33:12.928Z" },
 ]
 
 [[package]]
@@ -266,6 +266,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ae/b6/03bb70946330e88ffec97aefd3ea75ba575cb2e762061e0e62a213befee8/docutils-0.22.4.tar.gz", hash = "sha256:4db53b1fde9abecbb74d91230d32ab626d94f6badfc575d6db9194a49df29968", size = 2291750, upload-time = "2025-12-18T19:00:26.443Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/02/10/5da547df7a391dcde17f59520a231527b8571e6f46fc8efb02ccb370ab12/docutils-0.22.4-py3-none-any.whl", hash = "sha256:d0013f540772d1420576855455d050a2180186c91c15779301ac2ccb3eeb68de", size = 633196, upload-time = "2025-12-18T19:00:18.077Z" },
+]
+
+[[package]]
+name = "e2k"
+version = "0.8.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/24/06/46e141c07e051b73d6184c64894fd0e8e5f5deae3a4779a15da0da6968a2/e2k-0.8.1.tar.gz", hash = "sha256:d6e446d229904d00548908776a6b17db21f6f341ac0858d854cf0c5465fd3d1a", size = 12521993, upload-time = "2026-10-25T10:09:08.9Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e8/34/9e845f9f6de15766b77a0bade2bc31b6d501283034ff49d34dfd449a2329/e2k-0.8.1-py3-none-any.whl", hash = "sha256:0092d4572b3c846a4e5a7492a179eb2c5ee4f198df3279f17e8cae232b09db9f", size = 12517986, upload-time = "2026-10-25T10:08:55.378Z" },
 ]
 
 [[package]]
@@ -406,11 +418,11 @@ wheels = [
 
 [[package]]
 name = "hf-xet"
-version = "1.4.3"
+version = "1.8.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/53/92/ec9ad04d0b5728dca387a45af7bc98fbb0d73b2118759f5f6038b61a57e8/hf_xet-1.4.3.tar.gz", hash = "sha256:8ddedb73c8c08928c793df2f3401ec26f95be7f7e516a7bee2fbb546f6676113", size = 670477, upload-time = "2026-03-31T22:40:07.874Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2f/18/d91c20f815df6cc496a5d0ad8db6d274dad5c0cfcd59babfa2440a9aba44/hf_xet-1.8.0.tar.gz", hash = "sha256:10ed23b51dacf7917d64f335c25048deb470efa755e9989b218fc0531386138e", size = 1013014, upload-time = "2026-10-30T10:04:33.741Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/f8/7aacb8e5f4a7899d39c787b5984e912e6c18b11be136ef13947d7a66d265/hf_xet-1.4.3-cp37-abi3-macosx_11_0_arm64.whl", hash = "sha256:e23717ce4186b265f69afa66e6f0069fe7efbf331546f5c313d00e123dc84583", size = 3562178, upload-time = "2026-03-31T22:39:51.295Z" },
+    { url = "https://files.pythonhosted.org/packages/d4/f2/ef25e2085e92dcaeaa675331e443923aed2006f6fe2d984e15d8b8d40766/hf_xet-1.8.0-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:3e8934784425781f0f779b91044df441f3a7af4dab47375d7e3aeaecbb8eecb4", size = 3600947, upload-time = "2026-10-30T10:04:20.906Z" },
 ]
 
 [[package]]
@@ -443,9 +455,10 @@ wheels = [
 
 [[package]]
 name = "huggingface-hub"
-version = "1.13.0"
+version = "1.33.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "click", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "filelock", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "fsspec", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "hf-xet", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
@@ -453,12 +466,11 @@ dependencies = [
     { name = "packaging", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "pyyaml", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "tqdm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "typer", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "typing-extensions", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/89/ff/ec7ed2eb43bd7ce8bb2233d109cc235c3e807ffe5e469dc09db261fac05e/huggingface_hub-1.13.0.tar.gz", hash = "sha256:f6df2dac5abe82ce2fe05873d10d5ff47bc677d616a2f521f4ee26db9415d9d0", size = 781788, upload-time = "2026-04-30T11:57:33.858Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/25/2a/484d112c0d8fc5f665d7b65137ac9cdb2953c982391598c3597968a12ee7/huggingface_hub-1.33.0.tar.gz", hash = "sha256:367be21a201db9523eddf8aeac7048f2602c1b308691c97640d5e72ed188007e", size = 1043548, upload-time = "2026-09-24T09:49:29.971Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/93/db/4b1cdae9460ae1f3ca020cd767f013430ce23eb1d9c890ae3a0609b38d26/huggingface_hub-1.13.0-py3-none-any.whl", hash = "sha256:e942cb50d6a08dd5306688b1ac05bda157fd2fcc88b63dae405f7bd0d3234005", size = 660643, upload-time = "2026-04-30T11:57:31.802Z" },
+    { url = "https://files.pythonhosted.org/packages/fc/16/963096d224b80909432dc16561a615fd33d2d13beef3ce4c63fa25e40867/huggingface_hub-1.33.0-py3-none-any.whl", hash = "sha256:04e434b06e100eddbce9a6e817d72693a7884b10a79bd67ab48080d5c07eb899", size = 846435, upload-time = "2026-09-24T09:49:28.059Z" },
 ]
 
 [[package]]
@@ -811,59 +823,46 @@ wheels = [
 
 [[package]]
 name = "mlx"
-version = "0.31.2"
+version = "0.32.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "mlx-metal", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c3/47/5f33906cb03d6a378a697cd2d2641a26b37dea17ee3d9124d7e39e8eca01/mlx-0.31.2-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:e5067aaf2be1f3d7bba5be52348775804f111173c1ed04639618fd713b1a530f", size = 584863, upload-time = "2026-04-22T03:14:38.211Z" },
-    { url = "https://files.pythonhosted.org/packages/08/e7/a851a451b1327af9fb4df3991b9ae87d066b6f6630e854af55c288b0995a/mlx-0.31.2-cp312-cp312-macosx_15_0_arm64.whl", hash = "sha256:edb9797db7d852477ca1c99708058654ee860d4148fe5765f0d55528e2b1aa22", size = 584860, upload-time = "2026-04-22T03:14:39.746Z" },
-    { url = "https://files.pythonhosted.org/packages/3b/15/0d1dc0597644e5e7b011ca954ba0c47e13cd880a3b909b0c3f1b4d8bf8f1/mlx-0.31.2-cp312-cp312-macosx_26_0_arm64.whl", hash = "sha256:51ca102db641b01e7cb083ce8ecb580e281530a141a7ca12544bb370641630ae", size = 584887, upload-time = "2026-04-22T03:14:41.585Z" },
+    { url = "https://files.pythonhosted.org/packages/69/b0/e726ce51e1b445e4ed08c2d0e036a01c7532f4d1a856328da546a6f883bd/mlx-0.32.4-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:ff1d7be54758ea3a875b8fe54eff13bed17ad9566505e301f5d7851bf869680f", size = 667597, upload-time = "2026-10-14T21:16:00.688Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/92/7a999dcf6460525a31e555905cdca2f835ec0d786c528e969e04cd00d158/mlx-0.32.4-cp312-cp312-macosx_15_0_arm64.whl", hash = "sha256:f0604cb3015091f285c79c7b7dbfcabcfa9948248728c7bab6e0263513c3d3fe", size = 667599, upload-time = "2026-10-14T21:16:02.467Z" },
+    { url = "https://files.pythonhosted.org/packages/af/44/90bbdc3cdd120e1181f7c4f617ff996530159f2ea3ba3c08b83b08314d21/mlx-0.32.4-cp312-cp312-macosx_26_0_arm64.whl", hash = "sha256:7928869076db6267ab3ebdb253b2c80be1e738b3032c783170bd1d59d460c578", size = 667622, upload-time = "2026-10-14T21:16:04.219Z" },
 ]
 
 [[package]]
 name = "mlx-audio"
-version = "0.4.3"
-source = { git = "https://github.com/Blaizzy/mlx-audio?rev=1ded4f4#1ded4f4954c3fcf30dbd174eb014d46b4bfd5d1c" }
-dependencies = [
-    { name = "huggingface-hub", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "miniaudio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "numpy", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "scipy", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "sounddevice", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "tqdm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "transformers", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-]
-
-[[package]]
-name = "mlx-lm"
-version = "0.31.3"
+version = "0.6.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "huggingface-hub", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "jinja2", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "miniaudio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "numpy", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "protobuf", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "pyyaml", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "scipy", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "sentencepiece", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "transformers", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "sounddevice", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "tqdm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "transformers", extra = ["chat-template"], marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/84/94/9a38d6b0c6fcca995b9136c94eb7da1e9c5165652edf228b96b29960fa7a/mlx_lm-0.31.3.tar.gz", hash = "sha256:61eb0e3ba09444f77f874aff295401d7ccd20b39495cbbce0c782a15474ce733", size = 304318, upload-time = "2026-04-22T07:37:27.922Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/bb/b7948154fce2ed21c0184407ccdec85ee91f44b4d41c91a625a2877ccaf8/mlx_audio-0.6.3.tar.gz", hash = "sha256:bed9a2801a4d500fd007b046bd0209ddcbe2cb0528a648ee7891486b30909df6", size = 2053047, upload-time = "2026-10-28T17:47:32.284Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/90/02/9a67b8e4f87e3e2e5cd7b1ad79304b93c09a0db6af34bee75e6551c06c60/mlx_lm-0.31.3-py3-none-any.whl", hash = "sha256:758cfddf1180053b7613db76fad3d246a331a2a905808e1164a275621fc983b8", size = 408890, upload-time = "2026-04-22T07:37:25.965Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/0a/5c948ee1445dcee873335e4821d91188547160e5fd2928400da54950c03a/mlx_audio-0.6.3-py3-none-any.whl", hash = "sha256:2cfaef542f29c0eb0f58bb3823eafbb9acf9df9b01a7f45a9bbf3b4b5d44dab9", size = 2464723, upload-time = "2026-10-28T17:47:30.589Z" },
 ]
 
 [[package]]
 name = "mlx-metal"
-version = "0.31.2"
+version = "0.32.4"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3f/69/fe3b783ebe999f3118234e1e940feb622518bfb1dea6ac5d13b1d36a8449/mlx_metal-0.31.2-py3-none-macosx_14_0_arm64.whl", hash = "sha256:b25385bcee18fc194092255b8b53b9a3d8489eb650e59160f1b57aadd07aa2dc", size = 40055588, upload-time = "2026-04-22T03:14:14.43Z" },
-    { url = "https://files.pythonhosted.org/packages/4f/5d/4c690d5b93c30ba002656c37363159d978705bf8eb801b8481840fb942c2/mlx_metal-0.31.2-py3-none-macosx_15_0_arm64.whl", hash = "sha256:e9d4e5fce6ca10a87a0e388597f99519ad594d09e674708b5312bd8bd4f5997d", size = 40053220, upload-time = "2026-04-22T03:14:18.048Z" },
-    { url = "https://files.pythonhosted.org/packages/99/82/11fd62a8d7a3e96e5c43220b17de0151e3f10101f8bb3b865f5bd9cdd074/mlx_metal-0.31.2-py3-none-macosx_26_0_arm64.whl", hash = "sha256:84ffb60ee503f03eb684f5fb168d5cff31e2a16b7f27c1731eaf7662bd6e9b46", size = 55792151, upload-time = "2026-04-22T03:14:22.059Z" },
+    { url = "https://files.pythonhosted.org/packages/77/24/7e5b7ed5d28abacab4577c7a8dd1fca6e9058504f5f95ae4333c09420e2e/mlx_metal-0.32.4-py3-none-macosx_14_0_arm64.whl", hash = "sha256:8019b2db622599267d66cc168b2f0dbf5af929790a6c3b3913e00eabc42a7947", size = 44958619, upload-time = "2026-10-14T21:14:45.727Z" },
+    { url = "https://files.pythonhosted.org/packages/54/8c/9754dd6c4db485037f59cc8be6495738e14cdeb8bf19d5bddb5e96da890f/mlx_metal-0.32.4-py3-none-macosx_15_0_arm64.whl", hash = "sha256:9f0a3cc26d89724434d9684932fc6f3e4e83669d2a895d858ed2c8a55eb84e8b", size = 44942974, upload-time = "2026-10-14T21:14:50.012Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/d6/4340ed6e184f71693d7f531c9ae55d677451351245760d71f8dd714dcbe5/mlx_metal-0.32.4-py3-none-macosx_26_0_arm64.whl", hash = "sha256:514df92d41a286895d2564b4b18f4da45096bd7a4a0c47e1042f345ad5a7f936", size = 78106861, upload-time = "2026-10-14T21:14:56.184Z" },
 ]
 
 [[package]]
@@ -918,6 +917,7 @@ source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "dacvae", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "e2k", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "ebooklib", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "fastapi", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "fugashi", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
@@ -952,6 +952,7 @@ dependencies = [
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "dacvae", git = "https://github.com/facebookresearch/dacvae" },
+    { name = "e2k", specifier = ">=0.8.1" },
     { name = "ebooklib", specifier = ">=0.18" },
     { name = "fastapi", specifier = ">=0.110" },
     { name = "fugashi", specifier = ">=1.3.0" },
@@ -963,7 +964,7 @@ requires-dist = [
     { name = "llvmlite", specifier = ">=0.40" },
     { name = "lxml", specifier = ">=5.0" },
     { name = "mecab-python3", specifier = ">=1.0.6" },
-    { name = "mlx-audio", git = "https://github.com/Blaizzy/mlx-audio?rev=1ded4f4" },
+    { name = "mlx-audio", specifier = ">=0.6.3" },
     { name = "numba", specifier = ">=0.57" },
     { name = "numpy", specifier = ">=1.24" },
     { name = "openai-whisper", specifier = ">=20231117" },
@@ -978,7 +979,7 @@ requires-dist = [
     { name = "torch", specifier = ">=2.10" },
     { name = "torchaudio", specifier = ">=2.10" },
     { name = "torchcodec", specifier = ">=0.10" },
-    { name = "transformers", specifier = ">=5.5,<6" },
+    { name = "transformers", specifier = ">=5.14,<6" },
     { name = "uvicorn", specifier = ">=0.27" },
 ]
 
@@ -1378,11 +1379,11 @@ wheels = [
 
 [[package]]
 name = "safetensors"
-version = "0.7.0"
+version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/29/9c/6e74567782559a63bd040a236edca26fd71bc7ba88de2ef35d75df3bca5e/safetensors-0.7.0.tar.gz", hash = "sha256:07663963b67e8bd9f0b8ad15bb9163606cd27cc5a1b96235a50d8369803b96b0", size = 200878, upload-time = "2025-11-19T15:18:43.199Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/45/06/f955dbbb1859e3bd23c8ac6141af5106e7ad5fedec4a3a6e3d60f94b7001/safetensors-0.8.0.tar.gz", hash = "sha256:fabaf3e0f18a6618d9b36560682562157f77c2b71fcffc7b432be2baed9d753d", size = 325846, upload-time = "2026-06-09T07:52:25.563Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e8/00/374c0c068e30cd31f1e1b46b4b5738168ec79e7689ca82ee93ddfea05109/safetensors-0.7.0-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:94fd4858284736bb67a897a41608b5b0c2496c9bdb3bf2af1fa3409127f20d57", size = 447058, upload-time = "2025-11-19T15:18:34.416Z" },
+    { url = "https://files.pythonhosted.org/packages/f5/b1/fa7c600e7dceae12e9606c7578cbc9ff1e1ed55844883ee5c92205e86226/safetensors-0.8.0-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:c80201d22cbf405b80647a60ada77bba06c8fba2da2743ba1e89cdcc39a81f25", size = 484562, upload-time = "2026-06-09T07:52:17.518Z" },
 ]
 
 [[package]]
@@ -1604,14 +1605,14 @@ wheels = [
 
 [[package]]
 name = "tokenizers"
-version = "0.22.2"
+version = "0.23.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/73/6f/f80cfef4a312e1fb34baf7d85c72d4411afde10978d4657f8cdd811d3ccc/tokenizers-0.22.2.tar.gz", hash = "sha256:473b83b915e547aa366d1eee11806deaf419e17be16310ac0a14077f1e28f917", size = 372115, upload-time = "2026-01-05T10:45:15.988Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e0/7c/2cabb2174e772636683008f2c5621949b645da7d303c596589e84516a184/tokenizers-0.23.3.tar.gz", hash = "sha256:cded33237c77caeef62944d32aa9a7ef42bdce2b3497e18d137e072a8c4be438", size = 385286, upload-time = "2026-10-09T10:16:55.759Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2e/47/174dca0502ef88b28f1c9e06b73ce33500eedfac7a7692108aec220464e7/tokenizers-0.22.2-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:1e418a55456beedca4621dbab65a318981467a2b188e982a23e117f115ce5001", size = 2981472, upload-time = "2026-01-05T10:41:00.276Z" },
+    { url = "https://files.pythonhosted.org/packages/b2/72/01e49f032bb346e5aaf06c10c74fe8aeec847173adbadd66eb7c53054bf2/tokenizers-0.23.3-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:68649e97d5b43c44c031d8d848874a6eecae8f8fe40ea989aa777a5a83aca716", size = 3101381, upload-time = "2026-10-09T10:00:54.063Z" },
 ]
 
 [[package]]
@@ -1682,7 +1683,7 @@ wheels = [
 
 [[package]]
 name = "transformers"
-version = "5.7.0"
+version = "5.22.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
@@ -1695,9 +1696,14 @@ dependencies = [
     { name = "tqdm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "typer", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4d/fe/7e84d20ac7d4d5d14bac2eab5976088d86342959fc2c0da54b4c2fc99856/transformers-5.7.0.tar.gz", hash = "sha256:a9d35cf39804e3456c1f9bc1a79ad5ffa878640a61f51f66f71c97f4b4e2ce10", size = 8401287, upload-time = "2026-04-28T18:30:09.75Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/17/d6/a610b37bbc3450c056ea68c7f5016d06da8e787c1ac32b20ce58d18a1eb0/transformers-5.22.1.tar.gz", hash = "sha256:bed9fd76d6f43b4a1a9fc5d0c565ace7c77edbd029784f8cbcdf772cb5e924d8", size = 10381794, upload-time = "2026-10-30T07:48:03.721Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/60/60/86a9fe3037bec221094e2acb680219ad88b77006edba42fc0407a577ca93/transformers-5.7.0-py3-none-any.whl", hash = "sha256:869660cd8fc92badc041f5551bf755a42f4b9558c93341bf3fa3eeed7065079c", size = 10474236, upload-time = "2026-04-28T18:30:05.655Z" },
+    { url = "https://files.pythonhosted.org/packages/75/75/47ebe0e2f1b04a180000e3a49ebdf4669dbab0c63489bcecf7855c26e4f4/transformers-5.22.1-py3-none-any.whl", hash = "sha256:c940b4bf98de4f568723895f330ba1460a398bd83061b93b70238c3fe32e4389", size = 13051755, upload-time = "2026-10-30T07:47:59.888Z" },
+]
+
+[package.optional-dependencies]
+chat-template = [
+    { name = "jinja2", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
 ]
 
 [[package]]

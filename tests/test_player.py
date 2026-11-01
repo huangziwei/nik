@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
+from nik import latin as latin_util
 from nik import player as player_util
 from nik import voice as voice_util
 
@@ -552,6 +553,28 @@ def test_synth_chunk_passes_selected_voice(
     assert captured["voice_map_path"] is None
 
 
+def test_synth_chunk_requests_a_new_take_each_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, root_dir = _make_repo(tmp_path)
+    _make_book(root_dir)
+    seeds: list[int] = []
+    draws = iter([11, 22])
+
+    monkeypatch.setattr(
+        player_util.tts_util,
+        "synthesize_chunk",
+        lambda **kwargs: seeds.append(kwargs["seed"]) or {"chapter_id": "c1"},
+    )
+    monkeypatch.setattr(player_util.secrets, "randbelow", lambda _n: next(draws))
+
+    client = TestClient(player_util.create_app(root_dir))
+    payload = {"book_id": "book", "chapter_id": "c1", "chunk_index": 0}
+    assert client.post("/api/synth/chunk", json=payload).status_code == 200
+    assert client.post("/api/synth/chunk", json=payload).status_code == 200
+    assert seeds == [11, 22]
+
+
 def test_synth_chunk_passes_voice_map_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -811,6 +834,47 @@ def test_chapter_text_prefers_overrides_over_propagated_ruby(tmp_path: Path) -> 
             "kind": "propagated",
         }
     ]
+
+
+def test_chapter_text_shows_latin_readings_under_overrides(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lexicon = latin_util._Lexicon(exact={}, folded={"line": [["ライン", 2750]]})
+    monkeypatch.setattr(latin_util, "_lexicon", lambda: lexicon)
+    monkeypatch.setattr(latin_util, "_c2k", lambda word: "ブギーポップス")
+    monkeypatch.setattr(latin_util, "_pronounceable", lambda word: True)
+    latin_util.word_reading.cache_clear()
+    _, root_dir = _make_repo(tmp_path)
+    book_dir = _make_book(root_dir)
+    chapter_text = "ハコにLINEした。Boogiepopは笑わない。"
+    chapter_rel = "clean/c1.txt"
+    (book_dir / chapter_rel).write_text(chapter_text, encoding="utf-8")
+    (book_dir / "tts" / "manifest.json").write_text(
+        json.dumps(
+            {
+                "voice": "manifest-voice",
+                "chapters": [{"id": "c1", "path": chapter_rel, "chunks": ["chunk"]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (book_dir / "reading-overrides.json").write_text(
+        json.dumps(
+            {"global": [{"base": "Boogiepop", "reading": "ブギーポップ"}]},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    client = TestClient(player_util.create_app(root_dir))
+    response = client.get("/api/books/book/chapter-text", params={"chapter_id": "c1"})
+    latin_util.word_reading.cache_clear()
+
+    assert response.status_code == 200
+    spans = [
+        (span["base"], span["reading"]) for span in response.json()["ruby_prop_spans"]
+    ]
+    assert spans == [("LINE", "ライン"), ("Boogiepop", "ブギーポップ")]
 
 
 def test_ruby_review_endpoint_returns_groups(
